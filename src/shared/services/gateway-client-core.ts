@@ -46,6 +46,13 @@ export abstract class BaseGatewayClient implements IGatewayClient {
   }
 
   /**
+   * 设置事件回调
+   */
+  public setEventCallback(onEvent: (evt: EventFrame) => void) {
+    this.opts.onEvent = onEvent
+  }
+
+  /**
    * 由子类实现具体的 WebSocket 创建逻辑
    */
   protected abstract createSocket(url: string): any

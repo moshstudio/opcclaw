@@ -18,7 +18,7 @@
 
 import http from 'node:http'
 import { WebSocketServer, WebSocket } from 'ws'
-import type { Agent } from '@main/services/agent/agent'
+import type { AgentRegistry } from '@main/services/agent/registry'
 import {
   type RequestFrame,
   type ResponseFrame,
@@ -38,7 +38,7 @@ import { handlers, type GwClient, type BroadcastFn, type HandlerContext } from '
 export type GatewayServerOptions = {
   port?: number
   token?: string
-  agent: Agent
+  registry: AgentRegistry
 }
 
 export type GatewayServer = {
@@ -90,7 +90,7 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
   const startedAt = Date.now()
 
   const ctx: HandlerContext = {
-    agent: opts.agent,
+    registry: opts.registry,
     broadcast,
     clients,
     token: opts.token,

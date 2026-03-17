@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Settings as SettingsIcon, Search } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -6,13 +6,10 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
+import { useAgentStore } from '@renderer/store/useAgentStore'
 
-interface Agent {
-  id: string
-  name: string
-  avatar: string
-  lastMessage?: string
-}
+// 引入 ChatStore
+import { useChatStore } from '@renderer/store/useChatStore'
 
 interface SidebarProps {
   collapsed: boolean
@@ -21,28 +18,25 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
   const navigate = useNavigate()
   const { t } = useTranslation()
-  const [agents] = useState<Agent[]>([
-    {
-      id: '1',
-      name: 'OpenClaw Assistant',
-      avatar: 'OA',
-      lastMessage: t('common.message_assistant')
-    },
-    {
-      id: '2',
-      name: 'Code Expert',
-      avatar: 'CE',
-      lastMessage: 'The refactoring is complete.'
-    },
-    {
-      id: '3',
-      name: 'Writing Buddy',
-      avatar: 'WB',
-      lastMessage: 'Check this draft.'
-    }
-  ])
+  const { agents, activeAgentId, setActiveAgent, fetchAgents } = useAgentStore()
+  const { fetchHistory } = useChatStore()
 
-  const [activeId, setActiveId] = useState('1')
+  useEffect(() => {
+    fetchAgents()
+  }, [])
+
+  // 监听 activeAgentId 变化，自动触发历史载入
+  useEffect(() => {
+    if (activeAgentId) {
+      fetchHistory(activeAgentId)
+    }
+  }, [activeAgentId, fetchHistory])
+
+  const handleAgentClick = (id: string) => {
+    setActiveAgent(id)
+    // 切换时预加载，增强体验
+    fetchHistory(id)
+  }
 
   return (
     <motion.aside
@@ -99,39 +93,39 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
         {agents.map((agent) => (
           <button
             key={agent.id}
-            onClick={() => setActiveId(agent.id)}
+            onClick={() => handleAgentClick(agent.id)}
             className={cn(
               'w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group text-left',
-              activeId === agent.id
+              activeAgentId === agent.id
                 ? 'bg-primary/10 border border-primary/20 shadow-sm'
                 : 'hover:bg-muted/50 border border-transparent'
             )}
           >
             <div
               className={cn(
-                'w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 shadow-sm transition-all',
-                activeId === agent.id
+                'w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 shadow-sm transition-all uppercase',
+                activeAgentId === agent.id
                   ? 'bg-primary text-primary-foreground scale-105'
                   : 'bg-muted text-muted-foreground'
               )}
             >
-              {agent.avatar}
+              {agent.config.name?.[0] || agent.id[0]}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex justify-between items-center mb-0.5">
                 <p
                   className={cn(
                     'text-sm font-bold truncate',
-                    activeId === agent.id
+                    activeAgentId === agent.id
                       ? 'text-foreground'
                       : 'text-muted-foreground group-hover:text-foreground'
                   )}
                 >
-                  {agent.name}
+                  {agent.config.name || agent.id}
                 </p>
               </div>
               <p className="text-[11px] text-muted-foreground/60 truncate font-medium">
-                {agent.lastMessage}
+                {agent.config.description || 'AI Assistant'}
               </p>
             </div>
           </button>

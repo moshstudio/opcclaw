@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Server, Save, CheckCircle2, Shield, Copy, Eye, EyeOff, RefreshCw } from 'lucide-react'
+import { Server, Save, CheckCircle2, Copy, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NumberInput } from '@renderer/components/ui/number-input'
 import { Button } from '@renderer/components/ui/button'
@@ -7,23 +7,14 @@ import { Input } from '@renderer/components/ui/input'
 import { Card } from '@renderer/components/ui/card'
 import { cn } from '@renderer/lib/utils'
 
-interface AIModelConfig {
-  id: string
-  name: string
-  provider: string
-  model: string
-  supportsVision?: boolean
-}
 
 interface GatewaySettings {
   port: number
   token: string
-  selectedModelId: string
 }
 
 const GatewayTab: React.FC = () => {
   const { t } = useTranslation()
-  const [models, setModels] = useState<AIModelConfig[]>([])
   const [config, setConfig] = useState<{ gateway: GatewaySettings } | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -49,7 +40,6 @@ const GatewayTab: React.FC = () => {
   useEffect(() => {
     const loadData = async () => {
       const appConfig = await window.api.config.get()
-      setModels(appConfig.models || [])
       setConfig({ gateway: appConfig.gateway })
     }
     loadData()
@@ -108,9 +98,7 @@ const GatewayTab: React.FC = () => {
               <label className="text-xs text-muted-foreground ml-1">{t('gateway.port')}</label>
               <NumberInput
                 value={config.gateway.port}
-                onChange={(val) =>
-                  setConfig({ ...config, gateway: { ...config.gateway, port: val } })
-                }
+                onChange={(val) => setConfig({ ...config, gateway: { ...config.gateway, port: val } })}
               />
             </div>
 
@@ -150,11 +138,7 @@ const GatewayTab: React.FC = () => {
                       copied ? 'text-green-500' : 'text-muted-foreground hover:text-foreground'
                     )}
                   >
-                    {copied ? (
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
+                    {copied ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                   </Button>
                   <Button
                     variant="ghost"
@@ -165,47 +149,6 @@ const GatewayTab: React.FC = () => {
                     <RefreshCw className="w-3.5 h-3.5" />
                   </Button>
                 </div>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <div className="flex items-center gap-2 mb-2">
-            <Shield className="w-4 h-4 text-purple-400" />
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-              {t('gateway.assignment')}
-            </span>
-          </div>
-
-          <Card className="p-6 space-y-4 font-bold border-muted">
-            <div className="space-y-2">
-              <label className="text-xs text-muted-foreground ml-1">
-                {t('gateway.default_model')}
-              </label>
-              <div className="grid grid-cols-1 gap-2">
-                {models.map((model) => (
-                  <button
-                    key={model.id}
-                    onClick={() =>
-                      setConfig({
-                        ...config,
-                        gateway: { ...config.gateway, selectedModelId: model.id }
-                      })
-                    }
-                    className={cn(
-                      'flex flex-col items-start p-3 rounded-xl border text-left transition-all',
-                      config.gateway.selectedModelId === model.id
-                        ? 'bg-primary/10 border-primary/30 text-primary shadow-sm'
-                        : 'bg-muted/20 border-transparent text-muted-foreground hover:border-muted hover:bg-muted/40'
-                    )}
-                  >
-                    <span className="text-sm font-bold">{model.name}</span>
-                    <span className="text-[10px] opacity-60">
-                      {model.provider} · {model.model}
-                    </span>
-                  </button>
-                ))}
               </div>
             </div>
           </Card>

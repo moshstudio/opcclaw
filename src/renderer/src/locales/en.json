@@ -32,14 +32,16 @@
     "normal": "Normal",
     "large": "Large",
     "huge": "Huge",
-    "giant": "Giant"
+    "giant": "Giant",
+    "no_messages": "No messages yet",
+    "typing": "Typing...",
+    "loading_history": "Loading History...",
+    "testing": "Testing connection..."
   },
   "onboarding": {
     "title": "Welcome to OpenClaw",
-    "desc": "We noticed that you haven't configured any AI models yet. To enable the agent gateway, please add at least one AI model provider.",
-    "action": "Configure Now",
-    "set_default_title": "Model Assignment",
-    "set_default_desc": "Detecting that the agent gateway has no linked model. Would you like to set this new model as the gateway's default model immediately?"
+    "desc": "No AI models configured. Please add a model to enable agent capabilities.",
+    "action": "Configure Now"
   },
   "settings": {
     "title": "System Settings",
@@ -54,7 +56,11 @@
     "maxTokens_label": "Max Tokens",
     "webSearch_label": "Web Search",
     "codeExecution_label": "Code Execution",
-    "vision_label": "Vision Processing"
+    "vision_label": "Vision Processing",
+    "danger_zone": "Danger Zone",
+    "reset_app": "Reset App",
+    "reset_app_desc": "Resetting the app will clear all settings, model configurations, and agent data. This action is irreversible.",
+    "reset_app_confirm": "Are you sure you want to reset the app? All data will be permanently deleted and the app will restart."
   },
   "models": {
     "title": "AI Model Library",
@@ -78,8 +84,6 @@
     "port": "Listen Port",
     "token": "Access Token",
     "network": "Network Settings",
-    "assignment": "Model Assignment",
-    "default_model": "Gateway Default Model",
     "saving": "Restarting Server...",
     "save_applied": "Save & Applied Changes"
   }

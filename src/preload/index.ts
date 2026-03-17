@@ -8,7 +8,11 @@ const api = {
     save: (config: any) => ipcRenderer.invoke('config:save', config),
     addModel: (model: any) => ipcRenderer.invoke('model:add', model),
     updateModel: (id: string, updates: any) => ipcRenderer.invoke('model:update', id, updates),
-    deleteModel: (id: string) => ipcRenderer.invoke('model:delete', id)
+    deleteModel: (id: string) => ipcRenderer.invoke('model:delete', id),
+    testModel: (modelConfig: any) => ipcRenderer.invoke('config:testModel', modelConfig)
+  },
+  app: {
+    reset: () => ipcRenderer.invoke('app:reset')
   }
 }
 

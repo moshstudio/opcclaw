@@ -1,6 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { app } from 'electron'
+import os from 'node:os'
+import { completeSimple } from '@mariozechner/pi-ai'
+
+const OPCCLAW_ROOT = path.join(os.homedir(), '.opcclaw')
 
 export interface AIModelConfig {
   id: string
@@ -15,21 +18,21 @@ export interface AIModelConfig {
 export interface GatewaySettings {
   port: number
   token?: string
-  selectedModelId?: string
 }
 
 export interface AppConfig {
   models: AIModelConfig[]
   gateway: GatewaySettings
+  defaultModelId?: string
 }
 
 const DEFAULT_CONFIG: AppConfig = {
   models: [],
   gateway: {
     port: 18789,
-    token: 'openclaw-mini-secret',
-    selectedModelId: ''
-  }
+    token: 'openclaw-mini-secret'
+  },
+  defaultModelId: ''
 }
 
 export class ConfigService {
@@ -38,8 +41,16 @@ export class ConfigService {
   private config: AppConfig
 
   private constructor() {
-    this.configPath = path.join(app.getPath('userData'), 'config.json')
+    this.ensureDir(OPCCLAW_ROOT)
+    this.ensureDir(path.join(OPCCLAW_ROOT, 'agents'))
+    this.configPath = path.join(OPCCLAW_ROOT, 'config.json')
     this.config = this.loadConfig()
+  }
+
+  private ensureDir(p: string): void {
+    if (!fs.existsSync(p)) {
+      fs.mkdirSync(p, { recursive: true })
+    }
   }
 
   public static getInstance(): ConfigService {
@@ -107,10 +118,74 @@ export class ConfigService {
 
   public deleteModel(id: string): void {
     this.config.models = this.config.models.filter((m) => m.id !== id)
-    // 如果删除的是网关选中的模型，则重置网关选中 ID
-    if (this.config.gateway.selectedModelId === id) {
-      this.config.gateway.selectedModelId = this.config.models[0]?.id || ''
+    // 如果删除的是选中的默认模型，则重置默认 ID
+    if (this.config.defaultModelId === id) {
+      this.config.defaultModelId = this.config.models[0]?.id || ''
     }
     this.saveConfig({})
+  }
+
+  // --- Agent 路径管理 ---
+
+  public getRootPath(): string {
+    return OPCCLAW_ROOT
+  }
+
+  public getAgentsRootDir(): string {
+    return path.join(OPCCLAW_ROOT, 'agents')
+  }
+
+  public getAgentDir(agentId: string): string {
+    return path.join(this.getAgentsRootDir(), agentId)
+  }
+
+  public async testModel(modelConfig: AIModelConfig): Promise<{ ok: boolean; error?: string }> {
+    try {
+      // 简单测试连接：发送一个极短的消息
+      const provider = modelConfig.provider
+      const modelId = modelConfig.model
+      const apiKey = modelConfig.apiKey
+      const baseUrl = modelConfig.baseUrl
+
+      // 构造临时 Model 定义
+      const API_FOR_PROVIDER: Record<string, string> = {
+        openai: 'openai-completions',
+        anthropic: 'anthropic-messages',
+        google: 'google-generative-ai',
+        groq: 'openai-completions' // groq 也是 openai 兼容
+      }
+
+      const api = API_FOR_PROVIDER[provider] || 'openai-completions'
+
+      const testModelDef = {
+        id: modelId,
+        name: modelId,
+        api,
+        provider,
+        baseUrl: baseUrl || '',
+        reasoning: true,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 4096
+      }
+
+      const message = await completeSimple(
+        testModelDef as any,
+        {
+          systemPrompt: 'You are a connection tester. Reply with "OK".',
+          messages: [{ role: 'user', content: 'Test connection', timestamp: Date.now() }]
+        },
+        { maxTokens: 10, apiKey }
+      )
+      if (message.stopReason === 'error') {
+        throw new Error(message.errorMessage)
+      }
+
+      return { ok: true }
+    } catch (err: any) {
+      console.error('[ConfigService] Model test failed:', err)
+      return { ok: false, error: err.message || String(err) }
+    }
   }
 }

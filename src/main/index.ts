@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { GatewayManager } from './services/gateway/manager'
+import { initIpcServices } from './ipc'
 
 function createWindow(): void {
   // Create the browser window.
@@ -52,6 +53,9 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+
+  // --- 初始化 IPC 服务 ---
+  initIpcServices()
 
   // --- 初始化核心服务 ---
   GatewayManager.getInstance()

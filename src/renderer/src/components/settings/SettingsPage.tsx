@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Globe, Brain, Network } from 'lucide-react'
+import { ArrowLeft, Globe, Brain, Network, AlertTriangle } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@renderer/store/useSettingsStore'
@@ -177,6 +177,42 @@ const SettingsPage: React.FC = () => {
                           ))}
                         </SelectContent>
                       </Select>
+                    </Card>
+                  </div>
+
+                  <div className="space-y-6 pt-10 border-t border-destructive/20">
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-bold text-destructive flex items-center gap-2">
+                        <AlertTriangle className="w-5 h-5" />
+                        {t('settings.danger_zone')}
+                      </h3>
+                      <p className="text-xs text-muted-foreground font-medium">
+                        {t('settings.reset_app_desc')}
+                      </p>
+                    </div>
+
+                    <Card className="flex items-center justify-between p-6 font-bold border-destructive/30 bg-destructive/5">
+                      <div>
+                        <h4 className="text-sm mb-1">{t('settings.reset_app')}</h4>
+                        <p className="text-[10px] text-destructive uppercase tracking-widest">
+                          {t('settings.danger_zone')}
+                        </p>
+                      </div>
+                      <Button
+                        variant="destructive"
+                        onClick={async () => {
+                          if (window.confirm(t('settings.reset_app_confirm'))) {
+                            try {
+                              await window.api.app.reset()
+                            } catch (err) {
+                              console.error('Failed to reset app:', err)
+                              alert('Reset failed: ' + err)
+                            }
+                          }
+                        }}
+                      >
+                        {t('settings.reset_app')}
+                      </Button>
                     </Card>
                   </div>
                 </motion.div>

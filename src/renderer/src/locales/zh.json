@@ -32,14 +32,16 @@
     "normal": "标准",
     "large": "大",
     "huge": "超大",
-    "giant": "特大"
+    "giant": "特大",
+    "no_messages": "暂无消息",
+    "typing": "正在输入...",
+    "loading_history": "正在加载历史记录...",
+    "testing": "正在测试连接..."
   },
   "onboarding": {
     "title": "欢迎启用 OpenClaw",
-    "desc": "检测到您尚未配置任何 AI 模型。为了让智能体网关正常工作，请先添加至少一个 AI 模型提供商。",
-    "action": "立即配置",
-    "set_default_title": "模型指派",
-    "set_default_desc": "检测到智能体网关尚未关联模型。是否立即将此新模型设为网关的默认模型？"
+    "desc": "检测到您尚未配置任何 AI 模型。请通过侧边栏或设置添加模型以启用智能体能力。",
+    "action": "立即配置"
   },
   "settings": {
     "title": "系统设置",
@@ -54,7 +56,11 @@
     "maxTokens_label": "最大生成长度",
     "webSearch_label": "联网搜索",
     "codeExecution_label": "代码执行",
-    "vision_label": "视觉解析"
+    "vision_label": "视觉解析",
+    "danger_zone": "危险操作",
+    "reset_app": "重置软件",
+    "reset_app_desc": "重置软件将清空所有配置、模型信息和智能体数据。此操作不可逆。",
+    "reset_app_confirm": "确定要重置软件吗？所有数据都将被永久删除，软件将自动重启。"
   },
   "models": {
     "title": "AI 模型库",
@@ -78,8 +84,6 @@
     "port": "监听端口",
     "token": "访问令牌",
     "network": "网络设置",
-    "assignment": "模型指派",
-    "default_model": "网关默认模型",
     "saving": "正在重启服务...",
     "save_applied": "保存并应用更改"
   }

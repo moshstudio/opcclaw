@@ -18,6 +18,7 @@ import { Agent } from '@main/services/agent/agent'
 import { getEnvApiKey } from '@mariozechner/pi-ai'
 import { startGatewayServer } from './server.js'
 import { GatewayClient } from './client.js'
+import { AgentRegistry } from '@main/services/agent/registry.js'
 import type { EventFrame } from './protocol.js'
 
 // ============== .env ==============
@@ -73,10 +74,15 @@ async function serve() {
   const agent = new Agent({
     apiKey,
     provider,
+    agentId: 'main',
     ...(model ? { model } : {}),
     ...(baseUrl ? { baseUrl } : {})
   })
-  const gw = await startGatewayServer({ port, token, agent })
+  
+  const registry = AgentRegistry.getInstance()
+  registry.registerAgent('main', agent)
+  
+  const gw = await startGatewayServer({ port, token, registry })
 
   console.log(`\n\x1b[36m\u25cf\x1b[0m \x1b[1mMini Gateway\x1b[0m`)
   console.log(`\x1b[2m  ws://localhost:${gw.port}\x1b[0m`)

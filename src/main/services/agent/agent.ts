@@ -60,6 +60,7 @@ import { runAgentLoop } from './agent-loop.js'
 import { installSessionToolResultGuard } from '@main/services/session/session-tool-result-guard'
 import type { Model, StreamFunction, ThinkingLevel } from '@mariozechner/pi-ai'
 import { streamSimple, completeSimple, getModel, getEnvApiKey } from '@mariozechner/pi-ai'
+import { ConfigService } from '@main/services/config/config-service.js'
 
 // ============== 类型定义 ==============
 
@@ -191,7 +192,7 @@ export class Agent {
    * - 可在运行时替换（如 failover 切换 provider）
    */
   streamFn: StreamFunction
-  private modelDef: Model<any>
+  private modelDef?: Model<any>
   private apiKey?: string
   private temperature?: number
   private reasoning?: ThinkingLevel
@@ -274,31 +275,31 @@ export class Agent {
     }
     let modelDef: Model<any> | undefined =
       config.modelDef ?? getModel(provider as any, modelId as any)
+
     if (!modelDef && modelId) {
       const api = API_FOR_PROVIDER[provider]
-      if (!api) {
-        throw new Error(`未知 provider: ${provider}，请指定 modelDef。`)
-      }
-      modelDef = {
-        id: modelId,
-        name: modelId,
-        api,
-        provider,
-        baseUrl: config.baseUrl ?? '',
-        reasoning: true,
-        input: config.supportsVision ? ['text', 'image'] : ['text'],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 200_000,
-        maxTokens: 8192
+      if (api) {
+        modelDef = {
+          id: modelId,
+          name: modelId,
+          api,
+          provider,
+          baseUrl: config.baseUrl ?? '',
+          reasoning: true,
+          input: config.supportsVision ? ['text', 'image'] : ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 200_000,
+          maxTokens: 8192
+        }
       }
     }
-    if (!modelDef) {
-      throw new Error(`未知模型: provider=${provider} model=${modelId}`)
-    }
+
+    // 保留原始逻辑，直接进行后续处理
+
     // 使用代理时剥离 Anthropic SDK 和 pi-ai 添加的非标准 headers
     // 代理通常会拒绝 SDK 的 User-Agent / X-Stainless-* tracking headers
     // Anthropic SDK applyHeadersMut: null → 删除, undefined → 跳过
-    if (config.baseUrl) {
+    if (config.baseUrl && modelDef) {
       this.modelDef = {
         ...modelDef,
         baseUrl: config.baseUrl,
@@ -316,9 +317,10 @@ export class Agent {
         } as any
       }
     } else {
-      this.modelDef = config.headers
-        ? { ...modelDef, headers: { ...modelDef.headers, ...config.headers } as any }
-        : modelDef
+      this.modelDef =
+        config.headers && modelDef
+          ? { ...modelDef, headers: { ...modelDef.headers, ...config.headers } as any }
+          : modelDef
     }
     this.streamFn = config.streamFn ?? streamSimple
     this.agentId = normalizeAgentId(config.agentId ?? 'main')
@@ -400,6 +402,9 @@ export class Agent {
   private createSummarizeFn(): SummarizeFn {
     const model = this.modelDef
     const apiKey = this.apiKey
+    if (!model || !apiKey) {
+      return async () => '无法进行总结（未配置模型）'
+    }
     return async (params) => {
       const result = await completeSimple(
         model,
@@ -597,6 +602,17 @@ export class Agent {
    * 运行 Agent
    */
   async run(sessionIdOrKey: string, userMessage: string): Promise<RunResult> {
+    // 动态检查模型配置：如果缺失，尝试从全局配置刷新（更好的逻辑，应对 UI 配置异步性）
+    if (!this.modelDef || !this.apiKey) {
+      this.refreshModelConfig()
+    }
+
+    if (!this.modelDef || !this.apiKey) {
+      throw new Error(
+        '未检测到可用的 AI 模型配置。请前往“设置 -> AI 模型库”添加模型，并确保已设置默认模型或智能体模型。'
+      )
+    }
+
     const sessionKey = resolveSessionKey({
       agentId: this.agentId,
       sessionId: sessionIdOrKey,
@@ -623,7 +639,7 @@ export class Agent {
           runId,
           sessionKey,
           agentId: this.agentId,
-          model: this.modelDef.id
+          model: this.modelDef?.id || 'none'
         })
 
         // 标记 loop 内部已 emit 过 agent_error，避免 catch 中重复 emit
@@ -764,7 +780,7 @@ export class Agent {
             systemPrompt,
             toolsForRun,
             toolCtx,
-            modelDef: this.modelDef,
+            modelDef: this.modelDef!,
             streamFn: this.streamFn,
             apiKey: this.apiKey,
             temperature: this.temperature,
@@ -900,13 +916,13 @@ export class Agent {
   /**
    * 获取会话历史
    */
-  getHistory(sessionIdOrKey: string): Message[] {
+  async getHistory(sessionIdOrKey: string): Promise<Message[]> {
     const sessionKey = resolveSessionKey({
       agentId: this.agentId,
       sessionId: sessionIdOrKey,
       sessionKey: sessionIdOrKey
     })
-    return this.sessions.get(sessionKey)
+    return this.sessions.load(sessionKey)
   }
 
   /**
@@ -932,5 +948,47 @@ export class Agent {
 
   getHeartbeat(): HeartbeatManager {
     return this.heartbeat
+  }
+
+  /**
+   * 运行时尝试刷新模型配置（应对用户在启动应用后才配置模型的情况）
+   */
+  private refreshModelConfig(): void {
+    try {
+      const configService = ConfigService.getInstance()
+      const appConfig = configService.getConfig()
+
+      // 尝试获取全局默认模型
+      const defaultModel = configService.getModel(appConfig.defaultModelId || '')
+
+      if (defaultModel) {
+        const provider = defaultModel.provider || 'anthropic'
+        const modelId = defaultModel.model || 'claude-sonnet-4-20250514'
+
+        const API_FOR_PROVIDER: Record<string, string> = {
+          anthropic: 'anthropic-messages',
+          openai: 'openai-completions',
+          google: 'google-generative-ai'
+        }
+
+        const api = API_FOR_PROVIDER[provider] || 'openai-completions'
+        this.modelDef = {
+          id: modelId,
+          name: modelId,
+          api,
+          provider,
+          baseUrl: defaultModel.baseUrl ?? '',
+          reasoning: true,
+          input: defaultModel.supportsVision ? ['text', 'image'] : ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 200_000,
+          maxTokens: 8192
+        }
+        this.apiKey = defaultModel.apiKey
+        console.log(`[Agent] Runtime config refresh successful for agent ID: ${this.agentId}`)
+      }
+    } catch (err) {
+      console.warn('[Agent] Failed to refresh model config at runtime:', err)
+    }
   }
 }

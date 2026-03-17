@@ -16,8 +16,39 @@ export class RendererGatewayClient extends BaseGatewayClient {
     })
   }
 
+  private connectPromise: Promise<HelloOk> | null = null
+
   protected createSocket(url: string): any {
     return new window.WebSocket(url)
+  }
+
+  /**
+   * 确保已连接
+   */
+  async ensureConnected(): Promise<HelloOk> {
+    // 检查 socket 状态 (1 为 OPEN)
+    if (this.ws && (this.ws as WebSocket).readyState === 1) {
+      return { protocol: '1.0', methods: [], events: [], policy: {} } as any
+    }
+
+    if (this.connectPromise) {
+      return this.connectPromise
+    }
+
+    this.connectPromise = this.connect()
+    try {
+      return await this.connectPromise
+    } finally {
+      this.connectPromise = null
+    }
+  }
+
+  /**
+   * 重写请求逻辑，增加自动连接
+   */
+  async request<T = unknown>(method: string, params?: unknown): Promise<T> {
+    await this.ensureConnected()
+    return super.request(method, params)
   }
 
   /**
@@ -50,6 +81,8 @@ let client: RendererGatewayClient | null = null
 export function getGatewayClient(onEvent?: (evt: EventFrame) => void): RendererGatewayClient {
   if (!client) {
     client = new RendererGatewayClient({ onEvent })
+  } else if (onEvent) {
+    client.setEventCallback(onEvent)
   }
   return client
 }

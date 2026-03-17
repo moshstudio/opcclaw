@@ -1,8 +1,7 @@
-import { Agent } from '@main/services/agent/agent'
 import { startGatewayServer, type GatewayServer } from './server.js'
 import { GatewayClient } from './client.js'
 import { ConfigService } from '@main/services/config/config-service.js'
-import { initIpcServices } from '@main/ipc'
+import { AgentRegistry } from '@main/services/agent/registry.js'
 
 export class GatewayManager {
   private static instance: GatewayManager
@@ -27,27 +26,14 @@ export class GatewayManager {
     const configService = ConfigService.getInstance()
     const appConfig = configService.getConfig()
     const gwSettings = appConfig.gateway
-    const modelConfig = configService.getModel(gwSettings.selectedModelId ?? '')
 
-    if (!modelConfig || !modelConfig.apiKey) {
-      console.warn(
-        '[GatewayManager] No valid AI model configured. Gateway may not function properly.'
-      )
-    }
-
-    // 1. 初始化 Agent
-    const agent = new Agent({
-      apiKey: modelConfig?.apiKey ?? '',
-      provider: modelConfig?.provider ?? 'anthropic',
-      model: modelConfig?.model,
-      baseUrl: modelConfig?.baseUrl,
-      supportsVision: modelConfig?.supportsVision,
-      agentId: 'main'
-    })
+    // 1. 初始化并加载所有智能体
+    const registry = AgentRegistry.getInstance()
+    await registry.loadAllAgents()
 
     // 2. 启动 Server
     this.server = await startGatewayServer({
-      agent,
+      registry,
       port: gwSettings.port,
       token: gwSettings.token
     })
@@ -64,9 +50,6 @@ export class GatewayManager {
     try {
       await this.client.connect()
       console.log('[GatewayManager] Local client connected')
-
-      // 4. 初始化 IPC 服务
-      initIpcServices()
     } catch (err) {
       console.error('[GatewayManager] Failed to connect local client:', err)
     }

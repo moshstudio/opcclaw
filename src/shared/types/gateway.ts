@@ -58,7 +58,8 @@ export type ErrorShape = { code: string; message: string }
 export const ErrorCodes = {
   INVALID_REQUEST: 'INVALID_REQUEST',
   UNAUTHORIZED: 'UNAUTHORIZED',
-  UNAVAILABLE: 'UNAVAILABLE'
+  UNAVAILABLE: 'UNAVAILABLE',
+  NOT_FOUND: 'NOT_FOUND'
 } as const
 
 export function errorShape(code: string, message: string): ErrorShape {
@@ -102,6 +103,7 @@ export const REQUEST_TIMEOUT_MS = 60_000
 
 export const GATEWAY_METHODS = [
   'connect',
+  'agent.list',
   'chat.send',
   'chat.history',
   'sessions.list',

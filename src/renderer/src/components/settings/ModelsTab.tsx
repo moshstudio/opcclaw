@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Edit2, X, Server, Eye } from 'lucide-react'
+import { Plus, Trash2, Edit2, Server, Eye, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 import { Switch } from '@renderer/components/ui/switch'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
@@ -18,31 +18,33 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter
+  DialogFooter,
+  DialogBody
 } from '@renderer/components/ui/dialog'
 import { cn } from '@renderer/lib/utils'
 
-interface AIModelConfig {
-  id: string
-  name: string
-  provider: string
-  model: string
-  apiKey: string
-  baseUrl?: string
-  supportsVision?: boolean
-}
+import { useModelStore, AIModelConfig } from '@renderer/store/useModelStore'
 
 const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => {
   const { t } = useTranslation()
-  const [models, setModels] = useState<AIModelConfig[]>([])
+  const { models, fetchModels, addModel, updateModel, deleteModel, testModel } = useModelStore()
+
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<AIModelConfig>>({})
-  const [showDefaultPrompt, setShowDefaultPrompt] = useState<string | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const scrollRef = React.useRef<HTMLDivElement>(null)
 
-  const loadModels = useCallback(async () => {
-    const config = await window.api.config.get()
-    setModels(config.models || [])
-  }, [])
+  useEffect(() => {
+    if (testResult && scrollRef.current) {
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({
+          top: scrollRef.current.scrollHeight,
+          behavior: 'smooth'
+        })
+      }, 100)
+    }
+  }, [testResult])
 
   const handleAdd = useCallback(() => {
     const newId = Date.now().toString()
@@ -56,7 +58,46 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
       baseUrl: '',
       supportsVision: false
     })
+    setTestResult(null)
+    setTesting(false)
   }, [t])
+
+  const handleSave = async () => {
+    if (!editingId || !editForm.id) return
+
+    setTesting(true)
+    setTestResult(null)
+
+    try {
+      // 1. 尝试测试连接
+      const result = await testModel(editForm as AIModelConfig)
+
+      setTestResult({
+        ok: result.ok,
+        message: result.ok ? 'Connection successful' : result.error || 'Connection failed'
+      })
+
+      // 2. 无论测试结果如何，都执行保存逻辑（支持带错保存）
+      const isNew = !models.find((m) => m.id === editingId)
+
+      if (isNew) {
+        await addModel(editForm as AIModelConfig)
+      } else {
+        await updateModel(editingId, editForm)
+      }
+
+      // 3. 只有测试成功才关闭对话框
+      if (result.ok) {
+        // 成功则给用户一个极短的视觉反馈，然后关闭
+        setTimeout(() => setEditingId(null), 500)
+      }
+    } catch (err: any) {
+      console.error('Save failed:', err)
+      setTestResult({ ok: false, message: err.message || 'Save error' })
+    } finally {
+      setTesting(false)
+    }
+  }
 
   const hasTriggeredAutoAction = React.useRef(false)
 
@@ -64,7 +105,7 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
     let isMounted = true
     const init = async (): Promise<void> => {
       // Fetch models first
-      await loadModels()
+      await fetchModels()
 
       if (isMounted && autoAction === 'add' && !hasTriggeredAutoAction.current) {
         hasTriggeredAutoAction.current = true
@@ -79,44 +120,11 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
     return (): void => {
       isMounted = false
     }
-  }, [autoAction, handleAdd, loadModels])
-
-  const handleSave = async () => {
-    if (!editingId || !editForm.id) return
-
-    const isNew = !models.find((m) => m.id === editingId)
-    const savedModel = editForm as AIModelConfig
-
-    if (isNew) {
-      await window.api.config.addModel(savedModel)
-    } else {
-      await window.api.config.updateModel(editingId, editForm)
-    }
-
-    setEditingId(null)
-    await loadModels()
-
-    if (isNew) {
-      const config = await window.api.config.get()
-      if (!config.gateway.selectedModelId) {
-        setShowDefaultPrompt(savedModel.id)
-      }
-    }
-  }
-
-  const handleSetDefault = async (confirm: boolean) => {
-    if (confirm && showDefaultPrompt) {
-      const config = await window.api.config.get()
-      config.gateway.selectedModelId = showDefaultPrompt
-      await window.api.config.save(config)
-    }
-    setShowDefaultPrompt(null)
-  }
+  }, [autoAction, handleAdd, fetchModels])
 
   const handleDelete = async (id: string) => {
     if (confirm(t('models.delete_confirm'))) {
-      await window.api.config.deleteModel(id)
-      loadModels()
+      await deleteModel(id)
     }
   }
 
@@ -130,31 +138,6 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
 
   return (
     <div className="space-y-6">
-      {/* Set Default Prompt Dialog */}
-      <Dialog open={!!showDefaultPrompt} onOpenChange={(open) => !open && handleSetDefault(false)}>
-        <DialogContent className="max-w-sm text-center p-8">
-          <DialogHeader>
-            <DialogTitle className="text-xl mb-2">{t('onboarding.set_default_title')}</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground mb-6">{t('onboarding.set_default_desc')}</p>
-          <DialogFooter className="flex gap-3 sm:justify-center">
-            <Button
-              onClick={() => handleSetDefault(false)}
-              variant="outline"
-              className="flex-1 py-6 rounded-xl"
-            >
-              {t('common.no')}
-            </Button>
-            <Button
-              onClick={() => handleSetDefault(true)}
-              className="flex-1 py-6 rounded-xl shadow-lg shadow-primary/20"
-            >
-              {t('common.yes')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h2 className="text-xl font-bold">{t('models.title')}</h2>
@@ -233,7 +216,7 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
 
       {/* Edit/Add Model Dialog */}
       <Dialog open={!!editingId} onOpenChange={(open) => !open && setEditingId(null)}>
-        <DialogContent className="max-w-lg p-8">
+        <DialogContent className="max-w-lg p-0">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
               {models.find((m) => m.id === editingId)
@@ -242,7 +225,7 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-5 my-6">
+          <DialogBody ref={scrollRef} className="space-y-4">
             <div className="space-y-2">
               <label className="text-xs font-bold text-muted-foreground ml-1">
                 {t('models.name')}
@@ -325,21 +308,48 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
                 onCheckedChange={(checked) => setEditForm({ ...editForm, supportsVision: checked })}
               />
             </div>
-          </div>
 
-          <DialogFooter className="gap-3 sm:justify-start">
+            {testResult && (
+              <div
+                className={cn(
+                  'p-3 rounded-xl flex items-center gap-2 text-xs font-bold animate-in fade-in slide-in-from-top-1 mb-2',
+                  testResult.ok
+                    ? 'bg-green-500/10 text-green-500 border border-green-500/20'
+                    : 'bg-destructive/10 text-destructive border border-destructive/20'
+                )}
+              >
+                {testResult.ok ? (
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                ) : (
+                  <XCircle className="w-4 h-4 flex-shrink-0" />
+                )}
+                <span className="break-all">{testResult.message}</span>
+              </div>
+            )}
+          </DialogBody>
+
+          <DialogFooter className="gap-3">
             <Button
               onClick={() => setEditingId(null)}
               variant="outline"
-              className="flex-1 px-4 h-12 rounded-xl font-bold bg-muted/50 transition-all border-muted"
+              disabled={testing}
+              className="px-4 h-12 rounded-xl font-bold bg-muted/50 transition-all border-muted"
             >
               {t('common.cancel')}
             </Button>
             <Button
               onClick={handleSave}
-              className="flex-1 px-4 h-12 rounded-xl font-bold shadow-lg shadow-primary/20 transition-all"
+              disabled={testing}
+              className="px-6 h-12 rounded-xl font-bold shadow-lg shadow-primary/20 transition-all min-w-[120px]"
             >
-              {t('models.save_config')}
+              {testing ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {t('common.testing', 'Testing...')}
+                </>
+              ) : (
+                t('models.save_config')
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

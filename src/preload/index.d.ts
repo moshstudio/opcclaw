@@ -14,6 +14,10 @@ declare global {
         addModel: (model: any) => Promise<any>
         updateModel: (id: string, updates: any) => Promise<any>
         deleteModel: (id: string) => Promise<any>
+        testModel: (modelConfig: any) => Promise<{ ok: boolean; error?: string }>
+      }
+      app: {
+        reset: () => Promise<any>
       }
     }
   }

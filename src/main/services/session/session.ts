@@ -27,41 +27,8 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { acquireSessionWriteLock } from './session-write-lock.js'
 
-// ============== 类型定义 ==============
-
-/**
- * 消息结构
- * 与 Anthropic API 的 MessageParam 兼容
- */
-export interface Message {
-  /** 角色: user 或 assistant */
-  role: 'user' | 'assistant'
-  /** 内容: 可以是纯文本，也可以是多个内容块（包含工具调用） */
-  content: string | ContentBlock[]
-  /** 时间戳: 用于排序和调试 */
-  timestamp: number
-}
-
-/**
- * 内容块结构
- * 支持文本、工具调用、工具结果三种类型
- */
-export interface ContentBlock {
-  /** 类型 */
-  type: 'text' | 'tool_use' | 'tool_result'
-  /** 文本内容 (type=text 时) */
-  text?: string
-  /** 工具调用 ID (type=tool_use 时由 API 生成) */
-  id?: string
-  /** 工具名称 (type=tool_use 时) */
-  name?: string
-  /** 工具输入参数 (type=tool_use 时) */
-  input?: Record<string, unknown>
-  /** 关联的工具调用 ID (type=tool_result 时) */
-  tool_use_id?: string
-  /** 工具执行结果 (type=tool_result 时) */
-  content?: string
-}
+import { Message, ContentBlock } from '@shared/types/agent'
+export type { Message, ContentBlock }
 
 // ============== Session Entry 结构（对齐 OpenClaw） ==============
 
