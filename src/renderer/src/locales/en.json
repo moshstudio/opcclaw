@@ -35,8 +35,22 @@
     "giant": "Giant",
     "no_messages": "No messages yet",
     "typing": "Typing...",
+    "waiting": "Connecting...",
+    "thinking": "Thinking...",
+    "executing_tool": "Executing Tool...",
+    "aborted": "Aborted",
     "loading_history": "Loading History...",
-    "testing": "Testing connection..."
+    "testing": "Testing connection...",
+    "new_session": "New Session",
+    "reset_session": "Reset Session",
+    "confirm_delete_session": "Are you sure you want to delete this session?",
+    "confirm_delete_session_desc": "This will permanently delete all messages in this session. This action cannot be undone.",
+    "confirm_delete": "Confirm Delete",
+    "delete": "Delete",
+    "success": "Success",
+    "history": "History",
+    "sessions": "Sessions",
+    "loading": "Loading..."
   },
   "onboarding": {
     "title": "Welcome to OpenClaw",

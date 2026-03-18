@@ -225,34 +225,40 @@ export class SessionManager {
    * 获取会话消息 (仅内存)
    * 用于快速读取，不触发磁盘 IO
    */
-  get(sessionKey: string): Message[] {
-    const state = this.states.get(sessionKey)
-    if (!state) {
-      return []
-    }
-    return buildSessionContext(state)
+  async get(sk: string): Promise<Message[]> {
+    const state = this.states.get(sk)
+    return state ? buildSessionContext(state) : []
   }
 
   /**
-   * 清空会话
-   * 同时清理内存缓存和磁盘文件
+   * 显式创建一个物理会话文件
    */
-  async clear(sessionKey: string): Promise<void> {
-    this.states.delete(sessionKey)
-    const filePath = this.getPath(sessionKey)
-    try {
-      await fs.unlink(filePath)
-    } catch {
-      // 文件不存在，忽略
-    }
-    try {
-      const legacyPath = this.getLegacyPath(sessionKey)
-      if (legacyPath !== filePath) {
-        await fs.unlink(legacyPath)
+  async create(sk: string): Promise<void> {
+    const state = await this.ensureState(sk)
+    // 强制执行一次文件重写以确保持久化
+    await rewriteSessionFile(state, this.baseDir)
+  }
+
+  async delete(sk: string): Promise<void> {
+    this.states.delete(sk)
+    const paths = [this.getPath(sk), this.getLegacyPath(sk)]
+    for (const p of paths) {
+      try {
+        await fs.unlink(p)
+      } catch {
+        // 忽略文件不存在或删除失败的错误
       }
-    } catch {
-      // 旧文件不存在，忽略
     }
+  }
+
+  async reset(sk: string): Promise<void> {
+    const state = await this.ensureState(sk)
+    state.entries = []
+    state.byId.clear()
+    state.leafId = null
+    state.hasAssistant = false
+    state.flushed = true
+    await rewriteSessionFile(state, this.baseDir)
   }
 
   /**

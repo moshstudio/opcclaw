@@ -95,8 +95,8 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
           >
             <div className="px-4 pb-4 pt-2 space-y-3">
               {/* Input Section */}
-              <div className='space-y-1.5'>
-                <div className='text-[10px] font-bold text-foreground/70 dark:text-foreground/80 uppercase tracking-widest px-1'>
+              <div className="space-y-1.5">
+                <div className="text-[10px] font-bold text-foreground/70 dark:text-foreground/80 uppercase tracking-widest px-1">
                   Parameters
                 </div>
                 <div
@@ -107,8 +107,8 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
                 >
                   <SyntaxHighlighter
                     style={isDarkMode ? vscDarkPlus : oneLight}
-                    language='json'
-                    PreTag='div'
+                    language="json"
+                    PreTag="div"
                     customStyle={{
                       ...highlightStyle,
                       backgroundColor: 'transparent'
@@ -122,8 +122,8 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
 
               {/* Result Section */}
               {result && (
-                <div className='space-y-1.5'>
-                  <div className='text-[10px] font-bold text-foreground/70 dark:text-foreground/80 uppercase tracking-widest px-1'>
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-bold text-foreground/70 dark:text-foreground/80 uppercase tracking-widest px-1">
                     Output
                   </div>
                   <div
@@ -135,7 +135,7 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
                     <SyntaxHighlighter
                       style={isDarkMode ? vscDarkPlus : oneLight}
                       language={isJson(result) ? 'json' : 'text'}
-                      PreTag='div'
+                      PreTag="div"
                       customStyle={{
                         ...highlightStyle,
                         backgroundColor: 'transparent'

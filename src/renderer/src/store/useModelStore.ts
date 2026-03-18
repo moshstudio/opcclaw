@@ -38,10 +38,10 @@ export const useModelStore = create<ModelState>((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const config = await window.api.config.get()
-      set({ 
-        models: config.models || [], 
+      set({
+        models: config.models || [],
         defaultModelId: config.defaultModelId || null,
-        isLoading: false 
+        isLoading: false
       })
     } catch (err) {
       set({ error: (err as Error).message, isLoading: false })
@@ -51,14 +51,14 @@ export const useModelStore = create<ModelState>((set, get) => ({
   addModel: async (model) => {
     try {
       await window.api.config.addModel(model)
-      
+
       // 如果没有默认模型，设置它
       const config = await window.api.config.get()
       if (!config.defaultModelId) {
         config.defaultModelId = model.id
         await window.api.config.save(config)
       }
-      
+
       await get().fetchModels()
       return true
     } catch (err) {

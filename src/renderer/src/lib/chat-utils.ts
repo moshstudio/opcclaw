@@ -3,8 +3,10 @@ export const isJson = (val: any): boolean => {
   if (typeof val !== 'string') return false
   const trimmed = val.trim()
   if (
-    !((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-      (trimmed.startsWith('[') && trimmed.endsWith(']')))
+    !(
+      (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))
+    )
   ) {
     return false
   }

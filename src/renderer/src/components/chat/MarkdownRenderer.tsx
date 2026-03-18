@@ -23,7 +23,12 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className 
   } as React.CSSProperties
 
   return (
-    <div className={cn('markdown-content prose prose-sm dark:prose-invert max-w-none w-full min-w-0 overflow-hidden', className)}>
+    <div
+      className={cn(
+        'markdown-content prose prose-sm dark:prose-invert max-w-none w-full min-w-0 overflow-hidden',
+        className
+      )}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

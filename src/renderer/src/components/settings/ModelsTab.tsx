@@ -22,11 +22,13 @@ import {
   DialogBody
 } from '@renderer/components/ui/dialog'
 import { cn } from '@renderer/lib/utils'
+import { useConfirm } from '@renderer/hooks/use-confirm'
 
 import { useModelStore, AIModelConfig } from '@renderer/store/useModelStore'
 
 const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const { models, fetchModels, addModel, updateModel, deleteModel, testModel } = useModelStore()
 
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -123,7 +125,12 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
   }, [autoAction, handleAdd, fetchModels])
 
   const handleDelete = async (id: string) => {
-    if (confirm(t('models.delete_confirm'))) {
+    const isConfirmed = await confirm({
+      title: t('models.delete_confirm_title') || t('common.confirm_delete') || 'Delete Model',
+      description: t('models.delete_confirm'),
+      variant: 'destructive'
+    })
+    if (isConfirmed) {
       await deleteModel(id)
     }
   }

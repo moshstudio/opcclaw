@@ -108,6 +108,7 @@ export const GATEWAY_METHODS = [
   'chat.history',
   'sessions.list',
   'sessions.reset',
+  'sessions.delete',
   'health'
 ] as const
 

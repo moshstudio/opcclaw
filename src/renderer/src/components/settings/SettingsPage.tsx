@@ -16,12 +16,15 @@ import {
 } from '@renderer/components/ui/select'
 import { Button } from '@renderer/components/ui/button'
 import { Card } from '@renderer/components/ui/card'
+import { toast } from 'sonner'
+import { useConfirm } from '@renderer/hooks/use-confirm'
 
 const SettingsPage: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useTranslation()
   const { appSettings, setAppSetting } = useSettingsStore()
+  const confirm = useConfirm()
 
   const queryParams = new URLSearchParams(location.search)
   const initialTab = (queryParams.get('tab') as 'general' | 'models' | 'gateway') || 'general'
@@ -201,12 +204,19 @@ const SettingsPage: React.FC = () => {
                       <Button
                         variant="destructive"
                         onClick={async () => {
-                          if (window.confirm(t('settings.reset_app_confirm'))) {
+                          const isConfirmed = await confirm({
+                            title: t('settings.reset_app'),
+                            description: t('settings.reset_app_confirm'),
+                            variant: 'destructive',
+                            confirmText: t('common.confirm')
+                          })
+                          if (isConfirmed) {
                             try {
                               await window.api.app.reset()
+                              toast.success(t('common.success') || 'Reset successfully')
                             } catch (err) {
                               console.error('Failed to reset app:', err)
-                              alert('Reset failed: ' + err)
+                              toast.error('Reset failed: ' + err)
                             }
                           }
                         }}

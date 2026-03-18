@@ -7,6 +7,9 @@ import { useSettingsStore } from './store/useSettingsStore'
 import { OnboardingOverlay } from './components/layout/OnboardingOverlay'
 import { ThemeProvider } from './components/ThemeProvider'
 
+import { Toaster } from 'sonner'
+import { ConfirmProvider } from './components/ui/confirm-dialog'
+
 function AppContent(): React.JSX.Element {
   const { i18n } = useTranslation()
   const { appSettings } = useSettingsStore()
@@ -19,11 +22,14 @@ function AppContent(): React.JSX.Element {
 
   return (
     <ThemeProvider>
-      <OnboardingOverlay />
-      <Routes>
-        <Route path="/" element={<MainLayout />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Routes>
+      <ConfirmProvider>
+        <OnboardingOverlay />
+        <Routes>
+          <Route path="/" element={<MainLayout />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Routes>
+        <Toaster position="top-center" richColors closeButton />
+      </ConfirmProvider>
     </ThemeProvider>
   )
 }

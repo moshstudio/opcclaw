@@ -33,3 +33,17 @@ export interface Message {
   /** 时间戳: 用于排序和调试 */
   timestamp: number | string
 }
+
+/**
+ * AI 对话输出状态机状态枚举
+ */
+export type ChatStatus =
+  | 'idle'
+  | 'waiting' // 请求已发送，尚无任何回应
+  | 'thinking' // 大脑思考中 (Thought/Reasoning)
+  | 'streaming' // 正在输出正文或工具参数
+  | 'tool_calling' // 正在生成工具调用
+  | 'tool_executing' // 正在执行工具
+  | 'completed' // 已完成（本次运行结束）
+  | 'error' // 发生错误
+  | 'aborted' // 用户手动中止

@@ -46,7 +46,8 @@ import {
   normalizeAgentId,
   resolveAgentIdFromSessionKey,
   resolveSessionKey,
-  isSubagentSessionKey
+  isSubagentSessionKey,
+  parseAgentSessionKey
 } from '@main/services/session/session-key'
 import {
   enqueueInLane,
@@ -224,12 +225,13 @@ export class Agent {
 
   /**
    * 运行中的 AbortController 映射 (runId → controller)
-   *
-   * 对应 OpenClaw: pi-embedded-runner/run/attempt.ts
-   * - 每次 run() 创建一个 runAbortController
-   * - abort() 可从外部取消指定或全部运行
    */
   private runAbortControllers = new Map<string, AbortController>()
+
+  /**
+   * Session 与 RunId 的映射关系 (sessionKey → Set<runId>)
+   */
+  private sessionRunIds = new Map<string, Set<string>>()
 
   /**
    * Steering 消息队列 (sessionKey → messages[])
@@ -531,7 +533,7 @@ export class Agent {
         }
         await this.sessions.append(params.parentSessionKey, summaryMsg)
         if (params.cleanup === 'delete') {
-          await this.sessions.clear(childSessionKey)
+          await this.sessions.delete(childSessionKey)
         }
       })
       .catch((err) => {
@@ -633,6 +635,12 @@ export class Agent {
         if (!this.steeringQueues.has(sessionKey)) {
           this.steeringQueues.set(sessionKey, [])
         }
+
+        // 记录 session 对应的 runId
+        if (!this.sessionRunIds.has(sessionKey)) {
+          this.sessionRunIds.set(sessionKey, new Set())
+        }
+        this.sessionRunIds.get(sessionKey)!.add(runId)
 
         this.emit({
           type: 'agent_start',
@@ -833,6 +841,7 @@ export class Agent {
           // 对应 OpenClaw: attempt.ts finally → flushPendingToolResults()
           await this.toolResultGuard.flushPendingToolResults(sessionKey)
           this.runAbortControllers.delete(runId)
+          this.sessionRunIds.get(sessionKey)?.delete(runId)
         }
       })
     )
@@ -852,6 +861,18 @@ export class Agent {
     } else {
       for (const controller of this.runAbortControllers.values()) {
         controller.abort()
+      }
+    }
+  }
+
+  /**
+   * 中止指定会话的所有运行
+   */
+  abortSession(sessionKey: string): void {
+    const runIds = this.sessionRunIds.get(sessionKey)
+    if (runIds) {
+      for (const rid of runIds) {
+        this.abort(rid)
       }
     }
   }
@@ -901,28 +922,41 @@ export class Agent {
     return this.heartbeat.trigger()
   }
 
-  /**
-   * 重置会话
-   */
-  async reset(sessionIdOrKey: string): Promise<void> {
-    const sessionKey = resolveSessionKey({
-      agentId: this.agentId,
-      sessionId: sessionIdOrKey,
-      sessionKey: sessionIdOrKey
-    })
-    await this.sessions.clear(sessionKey)
+  async createSession(): Promise<string> {
+    const sessions = await this.sessions.list()
+    let maxIdx = 0
+    for (const key of sessions) {
+      const parsed = parseAgentSessionKey(key)
+      if (parsed && parsed.agentId === this.agentId) {
+        const match = parsed.rest.match(/^s(\d+)$/)
+        if (match) {
+          const idx = parseInt(match[1], 10)
+          if (idx > maxIdx) maxIdx = idx
+        }
+      }
+    }
+    const mainKey = `s${maxIdx + 1}`
+    const fullKey = resolveSessionKey({ agentId: this.agentId, sessionKey: mainKey })
+    await this.sessions.create(fullKey)
+    return fullKey
   }
 
-  /**
-   * 获取会话历史
-   */
-  async getHistory(sessionIdOrKey: string): Promise<Message[]> {
-    const sessionKey = resolveSessionKey({
-      agentId: this.agentId,
-      sessionId: sessionIdOrKey,
-      sessionKey: sessionIdOrKey
-    })
-    return this.sessions.load(sessionKey)
+  async reset(id: string): Promise<void> {
+    await this.sessions.reset(
+      resolveSessionKey({ agentId: this.agentId, sessionId: id, sessionKey: id })
+    )
+  }
+
+  async deleteSession(id: string): Promise<void> {
+    await this.sessions.delete(
+      resolveSessionKey({ agentId: this.agentId, sessionId: id, sessionKey: id })
+    )
+  }
+
+  async getHistory(id: string): Promise<Message[]> {
+    return this.sessions.load(
+      resolveSessionKey({ agentId: this.agentId, sessionId: id, sessionKey: id })
+    )
   }
 
   /**

@@ -115,12 +115,18 @@ const handleChatSend: Handler = async (params, _client, ctx) => {
     return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `agent not found: ${agentId}`) }
   }
 
-  const sessionKey = p.sessionKey || 'main'
+  let sessionKey = p.sessionKey
+  if (!sessionKey || sessionKey === 'main') {
+    sessionKey = await agent.createSession()
+  }
+
+  // 开始新运行前，先终止该会话中可能存在的旧运行（标准行为，防止输出重叠）
+  agent.abortSession(sessionKey)
 
   // 追踪 agent 内部的 runId（通过 agent_start 事件获取）
   let agentRunId: string | undefined
 
-  // Delta 限流状态（对齐 openclaw server-chat.ts: 150ms 限流 + 文本累积）
+  // Delta 限流状态
   let deltaBuffer = ''
   let lastDeltaSentAt = 0
   let lastDeltaSentLen = 0 // 上次广播时 buffer 的长度，用于计算新增部分
@@ -141,7 +147,15 @@ const handleChatSend: Handler = async (params, _client, ctx) => {
     ctx.broadcast('agent', { ...event, sessionKey, agentId })
 
     // 转换为 chat delta/final（对齐 openclaw emitChatDelta / emitChatFinal）
-    if (event.type === 'message_delta') {
+    if (event.type === 'message_start') {
+      ctx.broadcast('chat', {
+        agentId,
+        runId: agentRunId,
+        sessionKey,
+        state: 'start',
+        message: event.message
+      })
+    } else if (event.type === 'message_delta') {
       // Delta 限流（对齐 openclaw: 150ms 内最多发送一次，只广播新增部分）
       deltaBuffer += event.delta
       const now = Date.now()
@@ -156,13 +170,14 @@ const handleChatSend: Handler = async (params, _client, ctx) => {
         )
       }
     } else if (event.type === 'message_end') {
-      // Final 发送完整文本（对齐 openclaw emitChatFinal: 从 buffer 取完整文本）
+      // Final 发送完整消息对象（包含已填充的工具调用等）
       ctx.broadcast('chat', {
         agentId,
         runId: agentRunId,
         sessionKey,
         state: 'final',
-        text: event.text
+        text: event.text,
+        message: event.message
       })
     } else if (event.type === 'agent_error') {
       ctx.broadcast('chat', {
@@ -177,23 +192,11 @@ const handleChatSend: Handler = async (params, _client, ctx) => {
 
   // 启动运行逻辑
   try {
-    // 异步执行后续过程
-    agent
-      .run(sessionKey, p.message)
-      .catch((err) => {
-        // 广播运行时错误到事件流
-        ctx.broadcast('chat', {
-          agentId,
-          runId: agentRunId,
-          sessionKey,
-          state: 'error',
-          error: String(err)
-        })
-      })
-      .finally(() => unsub())
+    // 向 agent 发起主循环请求
+    agent.run(sessionKey, p.message).finally(() => unsub())
 
-    // 立即响应 ACK
-    return { ok: true, payload: { sessionKey, agentId } }
+    // 立即响应 ACK，包含最终确定的 sessionKey
+    return { ok: true, payload: { sessionKey, sessionId: sessionKey, agentId } }
   } catch (err) {
     // 捕获启动时的同步错误（例如模型配置缺失）
     unsub()
@@ -202,6 +205,21 @@ const handleChatSend: Handler = async (params, _client, ctx) => {
       error: errorShape(ErrorCodes.UNAVAILABLE, String(err))
     }
   }
+}
+
+// ============== chat.abort ==============
+
+const handleChatAbort: Handler = async (params, _client, ctx) => {
+  const p = params as { agentId?: string; sessionKey?: string } | undefined
+  const agentId = p?.agentId || 'main'
+  const agent = ctx.registry.getAgent(agentId)
+  if (!agent) {
+    return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `agent not found: ${agentId}`) }
+  }
+
+  const sessionKey = p?.sessionKey || 'main'
+  agent.abortSession(sessionKey)
+  return { ok: true, payload: { agentId, sessionKey } }
 }
 
 // ============== chat.history ==============
@@ -218,6 +236,19 @@ const handleChatHistory: Handler = async (params, _client, ctx) => {
   const messages = await agent.getHistory(sessionKey)
   return { ok: true, payload: { agentId, sessionKey, messages } }
 }
+
+// ============== sessions.create ==============
+const handleSessionsCreate: Handler = async (params, _client, ctx) => {
+  const p = params as { agentId?: string } | undefined
+  const agentId = p?.agentId || 'main'
+  const agent = ctx.registry.getAgent(agentId)
+  if (!agent) {
+    return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `agent not found: ${agentId}`) }
+  }
+  const sessionKey = await agent.createSession()
+  return { ok: true, payload: { agentId, sessionKey, sessionId: sessionKey } }
+}
+
 
 // ============== sessions.list ==============
 
@@ -245,6 +276,21 @@ const handleSessionsReset: Handler = async (params, _client, ctx) => {
 
   const sessionKey = p?.sessionKey || 'main'
   await agent.reset(sessionKey)
+  return { ok: true, payload: { agentId, sessionKey } }
+}
+
+// ============== sessions.delete ==============
+
+const handleSessionsDelete: Handler = async (params, _client, ctx) => {
+  const p = params as { agentId?: string; sessionKey?: string } | undefined
+  const agentId = p?.agentId || 'main'
+  const agent = ctx.registry.getAgent(agentId)
+  if (!agent) {
+    return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `agent not found: ${agentId}`) }
+  }
+
+  const sessionKey = p?.sessionKey || 'main'
+  await agent.deleteSession(sessionKey)
   return { ok: true, payload: { agentId, sessionKey } }
 }
 
@@ -278,8 +324,11 @@ export const handlers: Record<string, Handler> = {
   connect: handleConnect,
   'agent.list': handleAgentList,
   'chat.send': handleChatSend,
+  'chat.abort': handleChatAbort,
   'chat.history': handleChatHistory,
+  'sessions.create': handleSessionsCreate,
   'sessions.list': handleSessionsList,
   'sessions.reset': handleSessionsReset,
+  'sessions.delete': handleSessionsDelete,
   health: handleHealth
 }

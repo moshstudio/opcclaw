@@ -78,10 +78,10 @@ async function serve() {
     ...(model ? { model } : {}),
     ...(baseUrl ? { baseUrl } : {})
   })
-  
+
   const registry = AgentRegistry.getInstance()
   registry.registerAgent('main', agent)
-  
+
   const gw = await startGatewayServer({ port, token, registry })
 
   console.log(`\n\x1b[36m\u25cf\x1b[0m \x1b[1mMini Gateway\x1b[0m`)

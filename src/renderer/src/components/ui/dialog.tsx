@@ -53,7 +53,10 @@ DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn('flex flex-col space-y-1.5 text-center sm:text-left px-8 pt-8 pb-2 flex-shrink-0', className)}
+    className={cn(
+      'flex flex-col space-y-1.5 text-center sm:text-left px-8 pt-8 pb-2 flex-shrink-0',
+      className
+    )}
     {...props}
   />
 )
@@ -70,12 +73,11 @@ const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
 )
 DialogFooter.displayName = 'DialogFooter'
 
-const DialogBody = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn('flex-1 overflow-y-auto px-8 py-4', className)} {...props} />
-))
+const DialogBody = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn('flex-1 overflow-y-auto px-8 py-4', className)} {...props} />
+  )
+)
 DialogBody.displayName = 'DialogBody'
 
 const DialogTitle = React.forwardRef<

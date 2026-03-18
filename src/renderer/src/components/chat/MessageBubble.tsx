@@ -2,7 +2,8 @@ import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Copy, Check } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
-import { Message, ContentBlock } from '@renderer/store/useChatStore'
+import { Message, ContentBlock, ChatStatus } from '@shared/types/agent'
+import { useTranslation } from 'react-i18next'
 import { isJson } from '@renderer/lib/chat-utils'
 import MarkdownRenderer from './MarkdownRenderer'
 import ToolBlock from './ToolBlock'
@@ -10,9 +11,18 @@ import ToolBlock from './ToolBlock'
 interface MessageBubbleProps {
   message: Message
   allToolResults?: Map<string, ContentBlock>
+  isTyping?: boolean
+  isFinished?: boolean
+  status?: ChatStatus
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, allToolResults }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = ({
+  message,
+  allToolResults,
+  isTyping,
+  status = 'idle'
+}) => {
+  const { t } = useTranslation()
   const { role, content, timestamp } = message
   const isUser = role === 'user'
   const isSystem = role === 'system'
@@ -42,36 +52,76 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, allToolResults }
     return null
   }
 
+  const LoadingDots = () => (
+    <div className="flex gap-1.5 px-1 py-2">
+      <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:-0.3s]" />
+      <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:-0.15s]" />
+      <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce" />
+    </div>
+  )
+
   const renderContent = () => {
+    const isEmpty =
+      !content || (typeof content === 'string' ? !content.trim() : content.length === 0)
+
+    if (isEmpty && isTyping) {
+      return (
+        <div className="flex flex-col gap-2">
+          {status === 'thinking' && (
+            <div className="flex items-center gap-2 text-[10px] text-purple-500 font-bold uppercase tracking-widest animate-pulse">
+              <span className="w-2 h-2 bg-purple-500 rounded-full" />
+              {t('common.thinking')}
+            </div>
+          )}
+          {status === 'tool_executing' && (
+            <div className="flex items-center gap-2 text-[10px] text-blue-500 font-bold uppercase tracking-widest animate-pulse">
+              <span className="w-2 h-2 bg-blue-500 rounded-full" />
+              {t('common.executing_tool')}
+            </div>
+          )}
+          {status === 'waiting' && (
+            <div className="flex items-center gap-2 text-[10px] text-zinc-400 font-bold uppercase tracking-widest animate-pulse">
+              <span className="w-2 h-2 bg-zinc-300 rounded-full" />
+              {t('common.waiting')}
+            </div>
+          )}
+          <LoadingDots />
+        </div>
+      )
+    }
+
     if (typeof content === 'string') {
-      if (isJson(content)) {
-        return <MarkdownRenderer content={`\`\`\`json\n${content}\n\`\`\``} />
-      }
-      return <MarkdownRenderer content={content} />
+      return (
+        <div className="flex flex-col gap-2">
+          {isJson(content) ? (
+            <MarkdownRenderer content={`\`\`\`json\n${content}\n\`\`\``} />
+          ) : (
+            <MarkdownRenderer content={content} />
+          )}
+          {isTyping && status === 'streaming' && <LoadingDots />}
+        </div>
+      )
     }
 
     // Process ContentBlocks
-    const blocks = content
     const renderedBlocks: React.ReactNode[] = []
-
-    // Track which blocks we've already "consumed" by grouping within this message
     const consumedBlockIndices = new Set<number>()
 
-    blocks.forEach((block, idx) => {
+    content.forEach((block, idx) => {
       if (consumedBlockIndices.has(idx)) return
 
       if (block.type === 'text' && block.text) {
         renderedBlocks.push(<MarkdownRenderer key={`text-${idx}`} content={block.text} />)
       } else if (block.type === 'tool_use' && block.id) {
         // Find result: prioritize results in the current message, then search the global map
-        let resultBlock = blocks.find((b) => b.type === 'tool_result' && b.tool_use_id === block.id)
+        let resultBlock = content.find((b) => b.type === 'tool_result' && b.tool_use_id === block.id)
 
         if (!resultBlock && allToolResults) {
           resultBlock = allToolResults.get(block.id)
         }
 
         // Find the index of the result block if it's in the current message to mark it as consumed
-        const resultIdxInCurrentMsg = blocks.findIndex(
+        const resultIdxInCurrentMsg = content.findIndex(
           (b) => b.type === 'tool_result' && b.tool_use_id === block.id
         )
         if (resultIdxInCurrentMsg !== -1) {
@@ -80,7 +130,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, allToolResults }
 
         renderedBlocks.push(
           <ToolBlock
-            key={`tool-${block.id}`}
+            key={`tool-${block.id}-${idx}`}
             name={block.name || 'Unknown Tool'}
             input={block.input}
             result={resultBlock?.content}
@@ -88,7 +138,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, allToolResults }
           />
         )
       } else if (block.type === 'tool_result' && !consumedBlockIndices.has(idx)) {
-        // Fallback for tool results without a preceding tool use in the same message (rare but possible)
         renderedBlocks.push(
           <ToolBlock
             key={`result-${idx}`}
@@ -100,7 +149,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, allToolResults }
       }
     })
 
-    return <div className="space-y-4 w-full min-w-0">{renderedBlocks}</div>
+    return (
+      <div className="space-y-4 w-full min-w-0">
+        {renderedBlocks}
+        {isTyping && (status === 'streaming' || status === 'waiting') && (
+          <LoadingDots />
+        )}
+      </div>
+    )
   }
 
   return (

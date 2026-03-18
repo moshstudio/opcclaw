@@ -7,6 +7,7 @@ import { Input } from '@renderer/components/ui/input'
 import { Card } from '@renderer/components/ui/card'
 import { cn } from '@renderer/lib/utils'
 
+import { useConfirm } from '@renderer/hooks/use-confirm'
 
 interface GatewaySettings {
   port: number
@@ -15,6 +16,7 @@ interface GatewaySettings {
 
 const GatewayTab: React.FC = () => {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const [config, setConfig] = useState<{ gateway: GatewaySettings } | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -29,11 +31,20 @@ const GatewayTab: React.FC = () => {
     }
   }
 
-  const handleRefreshToken = () => {
-    if (config && confirm(t('models.delete_confirm'))) {
-      const newToken =
-        Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-      setConfig({ ...config, gateway: { ...config.gateway, token: newToken } })
+  const handleRefreshToken = async () => {
+    if (config) {
+      const isConfirmed = await confirm({
+        title: t('gateway.refresh_token_title') || 'Refresh Token',
+        description: t('gateway.refresh_token_confirm') || 'Are you sure you want to refresh the gateway token? External apps will need to be updated.',
+        variant: 'destructive',
+        confirmText: t('common.confirm')
+      })
+      
+      if (isConfirmed) {
+        const newToken =
+          Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+        setConfig({ ...config, gateway: { ...config.gateway, token: newToken } })
+      }
     }
   }
 
@@ -98,7 +109,9 @@ const GatewayTab: React.FC = () => {
               <label className="text-xs text-muted-foreground ml-1">{t('gateway.port')}</label>
               <NumberInput
                 value={config.gateway.port}
-                onChange={(val) => setConfig({ ...config, gateway: { ...config.gateway, port: val } })}
+                onChange={(val) =>
+                  setConfig({ ...config, gateway: { ...config.gateway, port: val } })
+                }
               />
             </div>
 
@@ -138,7 +151,11 @@ const GatewayTab: React.FC = () => {
                       copied ? 'text-green-500' : 'text-muted-foreground hover:text-foreground'
                     )}
                   >
-                    {copied ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copied ? (
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
                   </Button>
                   <Button
                     variant="ghost"

@@ -7,8 +7,6 @@ import { cn } from '@renderer/lib/utils'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { useAgentStore } from '@renderer/store/useAgentStore'
-
-// 引入 ChatStore
 import { useChatStore } from '@renderer/store/useChatStore'
 
 interface SidebarProps {
@@ -19,23 +17,24 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { agents, activeAgentId, setActiveAgent, fetchAgents } = useAgentStore()
-  const { fetchHistory } = useChatStore()
+  const { fetchHistory, fetchSessions, newSession } = useChatStore()
 
   useEffect(() => {
     fetchAgents()
-  }, [])
+  }, [fetchAgents])
 
-  // 监听 activeAgentId 变化，自动触发历史载入
+  // 监听 activeAgentId 变化，自动触发历史载入和会话列表载入
   useEffect(() => {
     if (activeAgentId) {
       fetchHistory(activeAgentId)
+      fetchSessions(activeAgentId)
     }
-  }, [activeAgentId, fetchHistory])
+  }, [activeAgentId, fetchHistory, fetchSessions])
 
   const handleAgentClick = (id: string) => {
     setActiveAgent(id)
-    // 切换时预加载，增强体验
     fetchHistory(id)
+    fetchSessions(id)
   }
 
   return (
@@ -68,11 +67,12 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
       <div className="px-4 mb-4">
         <Button
           variant="outline"
+          onClick={() => activeAgentId && newSession(activeAgentId)}
           className="w-full flex items-center justify-start gap-2 px-3 py-6 border-muted bg-background/50 hover:bg-background rounded-xl transition-all group"
         >
           <Plus className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
           <span className="text-sm font-bold text-muted-foreground group-hover:text-foreground transition-colors">
-            {t('common.new_agent')}
+            {t('common.new_session')}
           </span>
         </Button>
       </div>
