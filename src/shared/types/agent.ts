@@ -68,6 +68,8 @@ export interface Message {
   usage?: Usage
   /** 性能指标 (仅 agent_end 时) */
   performance?: AgentPerformance
+  /** 最后一个处理过的 Chunk ID (用于去重) */
+  lastChunkId?: string
 }
 
 /**

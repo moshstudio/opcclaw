@@ -5,19 +5,10 @@ declare global {
     electron: ElectronAPI
     api: {
       gateway: {
-        request: (method: string, params?: unknown) => Promise<any>
-        onEvent: (callback: (data: any) => void) => () => void
-      }
-      config: {
-        get: () => Promise<any>
-        save: (config: any) => Promise<any>
-        addModel: (model: any) => Promise<any>
-        updateModel: (id: string, updates: any) => Promise<any>
-        deleteModel: (id: string) => Promise<any>
-        testModel: (modelConfig: any) => Promise<{ ok: boolean; error?: string }>
+        info: () => Promise<{ port: number; token?: string }>
       }
       app: {
-        reset: () => Promise<any>
+        reset: () => Promise<{ ok: boolean; error?: string }>
       }
     }
   }

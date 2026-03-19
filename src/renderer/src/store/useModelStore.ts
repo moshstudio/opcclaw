@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { getGatewayClient } from '../services/gateway-client'
 
 export interface AIModelConfig {
   id: string
@@ -21,6 +22,9 @@ interface ModelState {
   isLoading: boolean
   error: string | null
 
+  initialized: boolean
+  init: () => void
+
   fetchModels: () => Promise<void>
   addModel: (model: Omit<AIModelConfig, 'id'>) => Promise<boolean>
   updateModel: (id: string, updates: Partial<AIModelConfig>) => Promise<boolean>
@@ -34,16 +38,32 @@ export const useModelStore = create<ModelState>((set, get) => ({
   defaultModelId: null,
   isLoading: false,
   error: null,
+  initialized: false,
+
+
+  init: () => {
+    if (get().initialized) return
+    set({ initialized: true })
+
+    // 监听模型列表变化事件 (使用解耦的 onModels 订阅器)
+    getGatewayClient().onModels((payload) => {
+      if (payload.type === 'models.list') {
+        set({
+          models: payload.models || [],
+          defaultModelId: payload.defaultModelId || null,
+          isLoading: false
+        })
+      }
+    })
+    // 初始加载
+    get().fetchModels()
+  },
 
   fetchModels: async () => {
     set({ isLoading: true, error: null })
     try {
-      const config = await window.api.config.get()
-      set({
-        models: config.models || [],
-        defaultModelId: config.defaultModelId || null,
-        isLoading: false
-      })
+      // 仅触发拉取，更新由 onModels 广播闭环
+      await getGatewayClient().request('models.fetch', {})
     } catch (err) {
       set({ error: (err as Error).message, isLoading: false })
     }
@@ -51,16 +71,7 @@ export const useModelStore = create<ModelState>((set, get) => ({
 
   addModel: async (model) => {
     try {
-      const result = await window.api.config.addModel(model)
-
-      // 如果没有默认模型，设置它
-      const config = await window.api.config.get()
-      if (!config.defaultModelId && result.model) {
-        config.defaultModelId = result.model.id
-        await window.api.config.save(config)
-      }
-
-      await get().fetchModels()
+      await getGatewayClient().request('models.add', model)
       return true
     } catch (err) {
       console.error('Failed to add model:', err)
@@ -70,8 +81,7 @@ export const useModelStore = create<ModelState>((set, get) => ({
 
   updateModel: async (id, updates) => {
     try {
-      await window.api.config.updateModel(id, updates)
-      await get().fetchModels()
+      await getGatewayClient().request('models.update', { id, updates })
       return true
     } catch (err) {
       console.error('Failed to update model:', err)
@@ -81,8 +91,7 @@ export const useModelStore = create<ModelState>((set, get) => ({
 
   deleteModel: async (id) => {
     try {
-      await window.api.config.deleteModel(id)
-      await get().fetchModels()
+      await getGatewayClient().request('models.delete', { id })
       return true
     } catch (err) {
       console.error('Failed to delete model:', err)
@@ -92,16 +101,15 @@ export const useModelStore = create<ModelState>((set, get) => ({
 
   testModel: async (model) => {
     try {
-      const result = await window.api.config.testModel(model)
-      return result
+      return await getGatewayClient().request<ModelTestResult>('models.test', model)
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }
   },
+
   setDefaultModel: async (id) => {
     try {
-      await window.api.config.save({ defaultModelId: id })
-      set({ defaultModelId: id })
+      await getGatewayClient().request('models.setDefault', { id })
       return true
     } catch (err) {
       console.error('Failed to set default model:', err)

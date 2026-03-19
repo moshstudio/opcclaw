@@ -1,13 +1,10 @@
-import React, { createContext, useContext, useEffect } from 'react'
+import React, { useEffect } from 'react'
 import { useSettingsStore } from '@renderer/store/useSettingsStore'
-
-type Theme = 'dark' | 'light' | 'system'
+import { Theme, ThemeProviderContext } from '@renderer/hooks/use-theme'
 
 interface ThemeProviderProps {
   children: React.ReactNode
 }
-
-const ThemeProviderContext = createContext<{ theme: Theme } | undefined>(undefined)
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const { appSettings } = useSettingsStore()
@@ -45,10 +42,4 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   }, [fontSize])
 
   return <ThemeProviderContext.Provider value={{ theme }}>{children}</ThemeProviderContext.Provider>
-}
-
-export const useTheme = () => {
-  const context = useContext(ThemeProviderContext)
-  if (context === undefined) throw new Error('useTheme must be used within a ThemeProvider')
-  return context
 }

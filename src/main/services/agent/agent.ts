@@ -391,18 +391,29 @@ export class Agent {
   }
 
   /**
-   * 向所有订阅者发送事件
+   * 向所有订阅者发送事件（异步，避免阻塞主流程）
    *
    * 对应 pi-agent-core/agent.js → Agent.emit(e)
    */
   private emit(event: MiniAgentEvent): void {
-    for (const listener of this.listeners) {
-      try {
-        listener(event)
-      } catch {
-        // 忽略监听器错误，避免影响主流程
+    setImmediate(() => {
+      for (const listener of this.listeners) {
+        try {
+          listener(event)
+        } catch (err) {
+          console.error(`[Agent:${this.agentId}] Listener Error:`, err)
+        }
       }
-    }
+    })
+  }
+
+  /**
+   * 分发智能体/会话生命周期事件
+   *
+   * 相比于普通 emit，更有语义化，且未来可根据需要扩展特殊的生命周期处理逻辑
+   */
+  private emitLifecycle(event: MiniAgentEvent): void {
+    this.emit(event)
   }
 
   /**
@@ -790,22 +801,6 @@ export class Agent {
               timestamp: Date.now()
             }))
           }
-          console.log('debug:', {
-            runId,
-            sessionKey,
-            agentId: this.agentId,
-            currentMessages,
-            compactionSummary,
-            systemPrompt,
-            toolsForRun,
-            toolCtx,
-            modelDef: this.modelDef!,
-            apiKey: this.apiKey,
-            temperature: this.temperature,
-            reasoning: this.reasoning,
-            maxTurns: this.maxTurns,
-            contextTokens: this.contextTokens
-          })
 
           const stream = runAgentLoop({
             runId,
@@ -967,20 +962,20 @@ export class Agent {
     const mainKey = `s${maxIdx + 1}`
     const fullKey = resolveSessionKey({ agentId: this.agentId, sessionKey: mainKey })
     await this.sessions.create(fullKey)
-    this.emit({ type: 'session_created', sessionKey: fullKey, agentId: this.agentId })
+    this.emitLifecycle({ type: 'session_created', sessionKey: fullKey, agentId: this.agentId })
     return fullKey
   }
 
   async reset(id: string): Promise<void> {
     const sessionKey = resolveSessionKey({ agentId: this.agentId, sessionId: id, sessionKey: id })
     await this.sessions.reset(sessionKey)
-    this.emit({ type: 'session_reset', sessionKey })
+    this.emitLifecycle({ type: 'session_reset', sessionKey })
   }
 
   async deleteSession(id: string): Promise<void> {
     const sessionKey = resolveSessionKey({ agentId: this.agentId, sessionId: id, sessionKey: id })
     await this.sessions.delete(sessionKey)
-    this.emit({ type: 'session_deleted', sessionKey })
+    this.emitLifecycle({ type: 'session_deleted', sessionKey })
   }
 
   async getHistory(id: string): Promise<Message[]> {

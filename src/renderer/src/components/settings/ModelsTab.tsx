@@ -73,7 +73,7 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
   }, [t])
 
   const handleSave = async () => {
-    if (!editingId || !editForm.id) return
+    if (!editingId) return
 
     setTesting(true)
     setTestResult(null)

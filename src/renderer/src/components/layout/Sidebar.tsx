@@ -9,6 +9,8 @@ import { Input } from '@renderer/components/ui/input'
 import { useAgentStore } from '@renderer/store/useAgentStore'
 import { useChatStore } from '@renderer/store/useChatStore'
 
+import { useSystemStore } from '@renderer/store/useSystemStore'
+
 import NewAgentModal from '../modals/NewAgentModal'
 import { AgentInfo } from '@renderer/store/useAgentStore'
 
@@ -23,6 +25,8 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
   const { fetchHistory, fetchSessions } = useChatStore()
   const [isNewAgentOpen, setIsNewAgentOpen] = React.useState(false)
   const navigate = useNavigate()
+
+  const { status: connStatus } = useSystemStore()
 
   useEffect(() => {
     fetchAgents()
@@ -43,8 +47,8 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
   }
 
   const sortedAgents = [...agents].sort((a, b) => {
-    const aPinned = a.config.isPinned ?? (a.id === 'main')
-    const bPinned = b.config.isPinned ?? (b.id === 'main')
+    const aPinned = a.config.isPinned ?? a.id === 'main'
+    const bPinned = b.config.isPinned ?? b.id === 'main'
     if (aPinned && !bPinned) return -1
     if (!aPinned && bPinned) return 1
     if (aPinned && bPinned) {
@@ -70,13 +74,30 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
       {/* Header */}
       <div className="p-6 flex items-center justify-between">
         {!collapsed && (
-          <motion.h1
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent"
-          >
-            OpcClaw
-          </motion.h1>
+          <div className="flex flex-col">
+            <motion.h1
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent"
+            >
+              OpcClaw
+            </motion.h1>
+            <div className="flex items-center gap-1.5 mt-0.5 ml-0.5">
+              <div
+                className={cn(
+                  'w-1.5 h-1.5 rounded-full shadow-[0_0_8px]',
+                  connStatus === 'connected'
+                    ? 'bg-green-500 shadow-green-500/50'
+                    : connStatus === 'reconnecting'
+                      ? 'bg-yellow-500 animate-pulse shadow-yellow-500/50'
+                      : 'bg-red-500 shadow-red-500/50'
+                )}
+              />
+              <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest leading-none">
+                Gateway {connStatus}
+              </span>
+            </div>
+          </div>
         )}
         <Button
           variant="ghost"

@@ -6,15 +6,8 @@ import { completeSimple } from '@mariozechner/pi-ai'
 
 const OPCCLAW_ROOT = path.join(os.homedir(), '.opcclaw')
 
-export interface AIModelConfig {
-  id: string
-  name: string
-  provider: string
-  model: string
-  apiKey: string
-  baseUrl?: string
-  supportsVision?: boolean
-}
+import { type AIModelConfig } from '../../../shared/types/models.js'
+
 
 export interface GatewaySettings {
   port: number

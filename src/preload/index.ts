@@ -3,13 +3,8 @@ import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
 const api = {
-  config: {
-    get: () => ipcRenderer.invoke('config:get'),
-    save: (config: any) => ipcRenderer.invoke('config:save', config),
-    addModel: (model: any) => ipcRenderer.invoke('model:add', model),
-    updateModel: (id: string, updates: any) => ipcRenderer.invoke('model:update', id, updates),
-    deleteModel: (id: string) => ipcRenderer.invoke('model:delete', id),
-    testModel: (modelConfig: any) => ipcRenderer.invoke('config:testModel', modelConfig)
+  gateway: {
+    info: () => ipcRenderer.invoke('gateway:info')
   },
   app: {
     reset: () => ipcRenderer.invoke('app:reset')

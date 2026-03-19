@@ -19,4 +19,4 @@ export {
   GATEWAY_METHODS,
   GATEWAY_EVENTS
 } from './protocol.js'
-export { handlers, type Handler, type HandlerContext } from './handlers.js'
+export { handlers, type Handler, type HandlerContext } from './handlers/index.js'

@@ -1,30 +1,25 @@
-import React, { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { motion } from 'framer-motion'
 import { Brain, Sparkles } from 'lucide-react'
 import { Dialog, DialogContent, DialogBody } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
+import { useModelStore } from '@renderer/store/useModelStore'
 
 export function OnboardingOverlay() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [show, setShow] = useState(false)
+  const models = useModelStore((s) => s.models)
+  const isLoading = useModelStore((s) => s.isLoading)
 
-  useEffect(() => {
-    const checkModels = async () => {
-      const config = await window.api.config.get()
-      if (!config.models || config.models.length === 0) {
-        setShow(true)
-      }
-    }
-    checkModels()
-  }, [])
+  // 仅在非加载状态且模型为空时展示
+  const [hasClosed, setHasClosed] = useState(false)
+  const show = !isLoading && models.length === 0 && !hasClosed
 
   if (!show) return null
 
   return (
-    <Dialog open={show} onOpenChange={setShow}>
+    <Dialog open={show} onOpenChange={(open) => !open && setHasClosed(true)}>
       <DialogContent className="max-w-md p-0 overflow-hidden">
         <DialogBody className="p-10 text-center flex flex-col items-center">
           <div className="relative inline-block mb-8 mx-auto">
@@ -42,7 +37,7 @@ export function OnboardingOverlay() {
 
           <Button
             onClick={() => {
-              setShow(false)
+              setHasClosed(true)
               navigate('/settings?tab=models&action=add')
             }}
             size="lg"

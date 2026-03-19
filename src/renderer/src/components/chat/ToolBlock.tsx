@@ -6,7 +6,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { cn } from '@renderer/lib/utils'
 import { isJson, formatJson } from '@renderer/lib/chat-utils'
-import { useTheme } from '../ThemeProvider'
+import { useTheme } from '@renderer/hooks/use-theme'
 
 interface ToolBlockProps {
   name: string

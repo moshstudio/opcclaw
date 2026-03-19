@@ -5,6 +5,8 @@ import {
   type HelloOk,
   type GatewayClientOptions,
   type IGatewayClient,
+  type GatewayMethod,
+  type GatewayEvent,
   isResponseFrame,
   isEventFrame,
   REQUEST_TIMEOUT_MS,
@@ -31,6 +33,7 @@ export abstract class BaseGatewayClient implements IGatewayClient {
   private lastSeq: number | null = null
   protected opts: GatewayClientOptions
   private closed = false
+  private onCloseListeners = new Set<(code: number, reason: string) => void>()
 
   // 指数退避
   private backoffMs = 1000
@@ -45,11 +48,38 @@ export abstract class BaseGatewayClient implements IGatewayClient {
     this.opts = opts
   }
 
+  private eventListeners = new Set<(evt: EventFrame) => void>()
+  private onConnectListeners = new Set<(hello: HelloOk) => void>()
+
   /**
-   * 设置事件回调
+   * 添加事件监听
    */
-  public setEventCallback(onEvent: (evt: EventFrame) => void) {
-    this.opts.onEvent = onEvent
+  public addEventListener(listener: (evt: EventFrame) => void) {
+    this.eventListeners.add(listener)
+    return () => this.removeEventListener(listener)
+  }
+
+  /**
+   * 移除事件监听
+   */
+  public removeEventListener(listener: (evt: EventFrame) => void) {
+    this.eventListeners.delete(listener)
+  }
+
+  /**
+   * 添加连接成功监听
+   */
+  public onConnect(listener: (hello: HelloOk) => void) {
+    this.onConnectListeners.add(listener)
+    return () => this.onConnectListeners.delete(listener)
+  }
+
+  /**
+   * 添加连接关闭监听
+   */
+  public onClose(listener: (code: number, reason: string) => void) {
+    this.onCloseListeners.add(listener)
+    return () => this.onCloseListeners.delete(listener)
   }
 
   /**
@@ -111,8 +141,9 @@ export abstract class BaseGatewayClient implements IGatewayClient {
           }
 
           if (evt.event === 'connect.challenge') {
-            const nonce = (evt.payload as { nonce?: string })?.nonce
-            this.request<HelloOk>('connect', { token: this.opts.token, nonce })
+            const nonce = (evt.payload as { nonce: string; ts: number }).nonce
+            this.request<HelloOk>('connect' as GatewayMethod, { token: this.opts.token, nonce })
+
               .then((hello) => {
                 if (hello.policy?.tickIntervalMs) {
                   this.tickIntervalMs = hello.policy.tickIntervalMs
@@ -122,9 +153,8 @@ export abstract class BaseGatewayClient implements IGatewayClient {
                 if (!handshakeResolved) {
                   handshakeResolved = true
                   resolve(hello)
-                } else {
-                  this.opts.onConnect?.(hello)
                 }
+                this.onConnectListeners.forEach((l) => l(hello))
               })
               .catch((err) => {
                 if (!handshakeResolved) {
@@ -135,7 +165,7 @@ export abstract class BaseGatewayClient implements IGatewayClient {
             return
           }
 
-          this.opts.onEvent?.(evt)
+          this.eventListeners.forEach((l) => l(evt))
         }
       }
 
@@ -143,6 +173,7 @@ export abstract class BaseGatewayClient implements IGatewayClient {
         this.ws = null
         this.stopTickWatch()
         this.flushPendingErrors(new Error(`connection closed (${code})`))
+        this.onCloseListeners.forEach((l) => l(code, reason))
         this.opts.onClose?.(code, reason)
         this.scheduleReconnect()
       }
@@ -162,7 +193,7 @@ export abstract class BaseGatewayClient implements IGatewayClient {
     })
   }
 
-  async request<T = unknown>(method: string, params?: unknown): Promise<T> {
+  async request<T = unknown>(method: GatewayMethod, params?: unknown): Promise<T> {
     if (!this.ws || !this.isSocketOpen()) {
       throw new Error('not connected')
     }
@@ -180,7 +211,6 @@ export abstract class BaseGatewayClient implements IGatewayClient {
         reject,
         timer
       })
-
       this.ws!.send(JSON.stringify(frame))
     })
   }

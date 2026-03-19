@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@renderer/store/useChatStore'
 import { useAgentStore } from '@renderer/store/useAgentStore'
@@ -24,7 +24,6 @@ const ChatBox: React.FC<ChatBoxProps> = ({
   const {
     getVisibleMessages,
     sendMessage,
-    init: initChat,
     chatStatuses,
     errorMessages,
     isLoadingHistory,
@@ -74,9 +73,6 @@ const ChatBox: React.FC<ChatBoxProps> = ({
     }
   }, [isTyping, chatStatus, currentSessionKey, t])
 
-  useEffect(() => {
-    initChat()
-  }, [initChat])
 
   const handleSend = async () => {
     if (isTyping) {

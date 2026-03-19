@@ -18,6 +18,7 @@ const GatewayTab: React.FC = () => {
   const { t } = useTranslation()
   const confirm = useConfirm()
   const [config, setConfig] = useState<{ gateway: GatewaySettings } | null>(null)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showToken, setShowToken] = useState(false)
@@ -39,7 +40,7 @@ const GatewayTab: React.FC = () => {
         variant: 'destructive',
         confirmText: t('common.confirm')
       })
-      
+
       if (isConfirmed) {
         const newToken =
           Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
@@ -49,17 +50,39 @@ const GatewayTab: React.FC = () => {
   }
 
   useEffect(() => {
-    const loadData = async () => {
-      const appConfig = await window.api.config.get()
-      setConfig({ gateway: appConfig.gateway })
+    const fetchConfig = async () => {
+      try {
+        const { getGatewayClient } = await import('@renderer/services/gateway-client')
+        const res = await getGatewayClient().request<any>('config.get', {})
+        if (res) {
+          setConfig(res)
+        }
+      } catch (err) {
+        console.error('Failed to fetch config via gateway:', err)
+      } finally {
+        setLoading(false)
+      }
     }
-    loadData()
+    fetchConfig()
   }, [])
 
   const handleSave = async () => {
     if (!config) return
     setSaving(true)
-    await window.api.config.save(config)
+    
+    try {
+      const { getGatewayClient } = await import('@renderer/services/gateway-client')
+      const client = getGatewayClient()
+      
+      // 1. 通过 Gateway 保存新配置
+      await client.request('config.save', config)
+      
+      // 2. 触发重连 (因为修改了端口或 Token)
+      client.close()
+    } catch (err) {
+      console.warn('Failed to save config via gateway:', err)
+    }
+
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
@@ -67,8 +90,16 @@ const GatewayTab: React.FC = () => {
 
   if (!config) return null
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[400px]">
+        <RefreshCw className="w-6 h-6 animate-spin text-primary/40" />
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-10">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex items-start justify-between">
         <div className="space-y-2">
           <h2 className="text-xl font-bold">{t('gateway.title')}</h2>
