@@ -44,7 +44,8 @@ import { assertSandboxPath } from '@main/services/sandbox-paths.js'
  */
 export const readTool: Tool<{ file_path: string; limit?: number }> = {
   name: 'read',
-  description: '读取文件内容，返回带行号的文本',
+  category: 'file',
+  description: '读取本地文件内容，返回带行号的文本',
   inputSchema: {
     type: 'object',
     properties: {
@@ -95,6 +96,7 @@ export const readTool: Tool<{ file_path: string; limit?: number }> = {
  */
 export const writeTool: Tool<{ file_path: string; content: string }> = {
   name: 'write',
+  category: 'file',
   description: '写入文件，会覆盖已存在的文件',
   inputSchema: {
     type: 'object',
@@ -152,6 +154,7 @@ export const editTool: Tool<{
   new_string: string
 }> = {
   name: 'edit',
+  category: 'file',
   description: '编辑文件，替换指定文本（只替换第一个匹配）',
   inputSchema: {
     type: 'object',
@@ -226,6 +229,7 @@ export const editTool: Tool<{
  */
 export const execTool: Tool<{ command: string; timeout?: number }> = {
   name: 'exec',
+  category: 'runtime',
   description: '执行 shell 命令',
   inputSchema: {
     type: 'object',
@@ -334,6 +338,7 @@ export const execTool: Tool<{ command: string; timeout?: number }> = {
  */
 export const listTool: Tool<{ path?: string; limit?: number }> = {
   name: 'list',
+  category: 'file',
   description: '列出目录内容（按字母排序，目录以 / 结尾）',
   inputSchema: {
     type: 'object',
@@ -405,6 +410,7 @@ export const listTool: Tool<{ path?: string; limit?: number }> = {
  */
 export const grepTool: Tool<{ pattern: string; path?: string }> = {
   name: 'grep',
+  category: 'file',
   description: '在文件中搜索文本（支持正则表达式）',
   inputSchema: {
     type: 'object',
@@ -518,6 +524,7 @@ async function runRipgrep(params: {
  */
 export const memorySearchTool: Tool<{ query: string; limit?: number }> = {
   name: 'memory_search',
+  category: 'memory',
   description: '检索长期记忆索引，返回相关记忆摘要列表',
   inputSchema: {
     type: 'object',
@@ -552,6 +559,7 @@ export const memorySearchTool: Tool<{ query: string; limit?: number }> = {
  */
 export const memoryGetTool: Tool<{ id: string }> = {
   name: 'memory_get',
+  category: 'memory',
   description: '按 ID 读取一条记忆的完整内容',
   inputSchema: {
     type: 'object',
@@ -592,6 +600,7 @@ export const memorySaveTool: Tool<{
   content: string
 }> = {
   name: 'memory_save',
+  category: 'memory',
   description:
     '将重要信息写入长期记忆（仅当信息值得长期保存时使用：用户偏好、关键决策、重要待办等）',
   inputSchema: {
@@ -626,6 +635,7 @@ export const sessionsSpawnTool: Tool<{
   cleanup?: 'keep' | 'delete'
 }> = {
   name: 'sessions_spawn',
+  category: 'session',
   description: '启动子代理执行后台任务，并回传摘要',
   inputSchema: {
     type: 'object',

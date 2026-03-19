@@ -40,9 +40,15 @@ import {
   describeError
 } from '@main/services/provider/errors.js'
 import { pruneContextMessages } from '@main/services/context/index.js'
-import { createMiniAgentStream, type MiniAgentEvent, type MiniAgentResult } from './agent-events.js'
+import {
+  createMiniAgentStream,
+  type MiniAgentEvent,
+  type MiniAgentResult,
+  type AgentPerformance
+} from './agent-events.js'
 import { abortable } from '@main/services/tools/abort'
 import { convertMessagesToPi } from './message-convert.js'
+import type { Usage } from '@mariozechner/pi-ai'
 
 // ============== 类型定义 ==============
 
@@ -63,6 +69,7 @@ export interface AgentLoopParams {
   /** 思考级别: 传入后启用 extended thinking */
   reasoning?: ThinkingLevel
   maxTurns: number
+  maxTokens?: number
   contextTokens: number
   /**
    * 获取 steering 消息
@@ -91,6 +98,8 @@ export interface AgentLoopParams {
     summary?: string
     summaryMessage?: Message
   }>
+  /** 记录用量结果 */
+  recordUsage?: (record: any) => Promise<void>
   /** 外部 abort 信号 */
   abortSignal: AbortSignal
 }
@@ -145,11 +154,13 @@ export function runAgentLoop(
       temperature,
       reasoning,
       maxTurns,
+      maxTokens,
       contextTokens,
       getSteeringMessages,
       getFollowUpMessages,
       appendMessage,
       prepareCompaction,
+      recordUsage,
       abortSignal
     } = params
 
@@ -158,6 +169,18 @@ export function runAgentLoop(
     let totalToolCalls = 0
     let finalText = ''
     let overflowCompactionAttempted = false
+
+    const startTime = Date.now()
+    let firstTokenTime: number | undefined
+    let lastTurnUsage: Usage | undefined
+    const accumulatedUsage: Usage = {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+    }
 
     try {
       // 对应 OpenClaw: 循环开始前检查 steering（用户可能在等待期间输入）
@@ -180,6 +203,7 @@ export function runAgentLoop(
           // 注入 pending 消息（steering 或 follow-up）
           if (pendingMessages.length > 0) {
             for (const msg of pendingMessages) {
+              msg.runId = runId
               await appendMessage(sessionKey, msg)
               currentMessages.push(msg)
             }
@@ -221,7 +245,7 @@ export function runAgentLoop(
                 turnTextParts.length = 0
 
                 const streamOpts: SimpleStreamOptions = {
-                  maxTokens: modelDef.maxTokens,
+                  maxTokens: maxTokens ?? modelDef.maxTokens,
                   signal: abortSignal,
                   apiKey,
                   ...(temperature !== undefined ? { temperature } : {}),
@@ -229,26 +253,56 @@ export function runAgentLoop(
                 }
                 const eventStream = streamFn(modelDef, piContext, streamOpts)
 
+                let accumulatedThinking = ''
                 for await (const event of eventStream) {
                   if (abortSignal.aborted) break
 
                   switch (event.type) {
                     case 'thinking_delta':
-                      stream.push({ type: 'thinking_delta', delta: (event as any).delta })
+                      accumulatedThinking += event.delta
+                      stream.push({ type: 'thinking_delta', delta: event.delta })
                       break
 
                     case 'thinking_end':
-                      // thinking 内容保存到 assistant message（对齐 pi-agent-core）
-                      // 但不计入 turnTextParts（思考不是最终输出）
+                      if (accumulatedThinking) {
+                        const contentIdx = event.contentIndex
+                        const block = event.partial.content[contentIdx]
+                        const signature =
+                          block?.type === 'thinking' ? block.thinkingSignature : undefined
+                        assistantContent.push({
+                          type: 'thinking',
+                          text: accumulatedThinking,
+                          thinking_signature: signature
+                        })
+                      }
                       break
 
                     case 'text_delta':
+                      if (firstTokenTime === undefined) {
+                        firstTokenTime = Date.now()
+                      }
                       stream.push({ type: 'message_delta', delta: event.delta })
                       break
 
                     case 'text_end':
                       turnTextParts.push(event.content)
                       assistantContent.push({ type: 'text', text: event.content })
+                      break
+
+                    case 'done':
+                      lastTurnUsage = event.message.usage
+                      if (lastTurnUsage) {
+                        accumulatedUsage.input += lastTurnUsage.input
+                        accumulatedUsage.output += lastTurnUsage.output
+                        accumulatedUsage.cacheRead += lastTurnUsage.cacheRead
+                        accumulatedUsage.cacheWrite += lastTurnUsage.cacheWrite
+                        accumulatedUsage.totalTokens += lastTurnUsage.totalTokens
+                        accumulatedUsage.cost.input += lastTurnUsage.cost.input
+                        accumulatedUsage.cost.output += lastTurnUsage.cost.output
+                        accumulatedUsage.cost.cacheRead += lastTurnUsage.cost.cacheRead
+                        accumulatedUsage.cost.cacheWrite += lastTurnUsage.cost.cacheWrite
+                        accumulatedUsage.cost.total += lastTurnUsage.cost.total
+                      }
                       break
 
                     case 'toolcall_start':
@@ -327,14 +381,21 @@ export function runAgentLoop(
           const assistantMsg: Message = {
             role: 'assistant',
             content: assistantContent,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            runId,
+            usage: lastTurnUsage
           }
           await appendMessage(sessionKey, assistantMsg)
           currentMessages.push(assistantMsg)
 
           const turnText = turnTextParts.join('')
           if (turnText) {
-            stream.push({ type: 'message_end', message: assistantMsg, text: turnText })
+            stream.push({
+              type: 'message_end',
+              message: assistantMsg,
+              text: turnText,
+              usage: lastTurnUsage
+            })
           }
 
           hasMoreToolCalls = toolCalls.length > 0
@@ -414,7 +475,8 @@ export function runAgentLoop(
           const resultMsg: Message = {
             role: 'user',
             content: toolResults,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            runId
           }
           await appendMessage(sessionKey, resultMsg)
           currentMessages.push(resultMsg)
@@ -441,12 +503,53 @@ export function runAgentLoop(
         break
       }
       // ========== 外层循环结束 ==========
+      const totalDurationMs = Date.now() - startTime
+      const performance: AgentPerformance = {
+        totalDurationMs,
+        firstTokenLatencyMs: firstTokenTime ? firstTokenTime - startTime : undefined,
+        throughput:
+          accumulatedUsage.output > 0
+            ? (accumulatedUsage.output / totalDurationMs) * 1000
+            : undefined
+      }
 
-      stream.push({ type: 'agent_end', runId, messages: currentMessages })
-      stream.end({ finalText, turns, totalToolCalls, messages: currentMessages })
+      // 后端持久化统计
+      if (recordUsage) {
+        await recordUsage({
+          runId,
+          sessionKey,
+          agentId,
+          model: modelDef.id,
+          timestamp: Date.now(),
+          usage: accumulatedUsage,
+          performance
+        })
+      }
+
+      stream.push({
+        type: 'agent_end',
+        runId,
+        messages: currentMessages,
+        usage: accumulatedUsage,
+        performance
+      })
+      stream.end({
+        finalText,
+        turns,
+        totalToolCalls,
+        messages: currentMessages,
+        usage: accumulatedUsage,
+        performance
+      })
     } catch (err) {
       stream.push({ type: 'agent_error', runId, error: describeError(err) })
-      stream.end({ finalText, turns, totalToolCalls, messages: currentMessages })
+      stream.end({
+        finalText,
+        turns,
+        totalToolCalls,
+        messages: currentMessages,
+        usage: accumulatedUsage
+      })
     }
   })()
 

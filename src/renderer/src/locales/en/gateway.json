@@ -1,0 +1,9 @@
+{
+  "title": "Gateway Settings",
+  "desc": "Configure the internal agent gateway. Changes will restart the server.",
+  "port": "Listen Port",
+  "token": "Access Token",
+  "network": "Network Settings",
+  "saving": "Restarting Server...",
+  "save_applied": "Save & Applied Changes"
+}

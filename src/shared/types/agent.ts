@@ -4,9 +4,11 @@
 
 export interface ContentBlock {
   /** 类型 */
-  type: 'text' | 'tool_use' | 'tool_result'
-  /** 文本内容 (type=text 时) */
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking'
+  /** 文本内容 (type=text 或 type=thinking 时) */
   text?: string
+  /** 思考签名 (type=thinking 时用于记录原始字段名，如 reasoning_content) */
+  thinking_signature?: string
   /** 工具调用 ID (type=tool_use 时由 API 生成) */
   id?: string
   /** 工具名称 (type=tool_use 时) */
@@ -17,6 +19,34 @@ export interface ContentBlock {
   tool_use_id?: string
   /** 工具执行结果 (type=tool_result 时) */
   content?: string
+}
+
+/**
+ * Usage 统计结构
+ */
+export interface Usage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  totalTokens: number
+  cost: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+    total: number
+  }
+}
+
+/**
+ * AgentPerformance 性能指标
+ */
+export interface AgentPerformance {
+  totalDurationMs: number
+  generationDurationMs?: number
+  throughput?: number
+  firstTokenLatencyMs?: number
 }
 
 /**
@@ -32,6 +62,12 @@ export interface Message {
   content: string | ContentBlock[]
   /** 时间戳: 用于排序和调试 */
   timestamp: number | string
+  /** 所属的任务 ID (同一个任务内的多次迭代共享 ID) */
+  runId?: string
+  /** Token 消耗和成本统计 (仅 assistant 角色) */
+  usage?: Usage
+  /** 性能指标 (仅 agent_end 时) */
+  performance?: AgentPerformance
 }
 
 /**

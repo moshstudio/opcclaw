@@ -23,13 +23,23 @@ import {
 } from '@renderer/components/ui/dialog'
 import { cn } from '@renderer/lib/utils'
 import { useConfirm } from '@renderer/hooks/use-confirm'
+import { toast } from 'sonner'
 
 import { useModelStore, AIModelConfig } from '@renderer/store/useModelStore'
 
 const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => {
   const { t } = useTranslation()
   const confirm = useConfirm()
-  const { models, fetchModels, addModel, updateModel, deleteModel, testModel } = useModelStore()
+  const {
+    models,
+    defaultModelId,
+    fetchModels,
+    addModel,
+    updateModel,
+    deleteModel,
+    testModel,
+    setDefaultModel
+  } = useModelStore()
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<AIModelConfig>>({})
@@ -49,10 +59,8 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
   }, [testResult])
 
   const handleAdd = useCallback(() => {
-    const newId = Date.now().toString()
-    setEditingId(newId)
+    setEditingId('new')
     setEditForm({
-      id: newId,
       name: t('models.add_model'),
       provider: 'openai',
       model: 'gpt-4o',
@@ -76,14 +84,16 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
 
       setTestResult({
         ok: result.ok,
-        message: result.ok ? 'Connection successful' : result.error || 'Connection failed'
+        message: result.ok
+          ? t('common.connection_success')
+          : result.error || t('common.connection_failed')
       })
 
       // 2. 无论测试结果如何，都执行保存逻辑（支持带错保存）
-      const isNew = !models.find((m) => m.id === editingId)
+      const isNew = editingId === 'new'
 
       if (isNew) {
-        await addModel(editForm as AIModelConfig)
+        await addModel(editForm as Omit<AIModelConfig, 'id'>)
       } else {
         await updateModel(editingId, editForm)
       }
@@ -126,7 +136,8 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
 
   const handleDelete = async (id: string) => {
     const isConfirmed = await confirm({
-      title: t('models.delete_confirm_title') || t('common.confirm_delete') || 'Delete Model',
+      title:
+        t('models.delete_confirm_title') || t('common.confirm_delete') || t('common.delete_model'),
       description: t('models.delete_confirm'),
       variant: 'destructive'
     })
@@ -174,13 +185,41 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
               exit={{ opacity: 0, scale: 0.95 }}
               key={model.id}
             >
-              <Card className="p-5 flex items-center justify-between group hover:border-primary/50 transition-all font-bold border-muted overflow-hidden">
+              <Card
+                onClick={async () => {
+                  const success = await setDefaultModel(model.id)
+                  if (success) {
+                    toast.success(t('common.default_model_updated') || 'Default model updated')
+                  }
+                }}
+                className={cn(
+                  'p-5 flex items-center justify-between group transition-all font-bold border-muted overflow-hidden cursor-pointer',
+                  defaultModelId === model.id
+                    ? 'border-primary/50 bg-primary/5 shadow-inner'
+                    : 'hover:border-primary/30 hover:bg-muted/30'
+                )}
+              >
                 <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-primary/10 text-primary">
+                  <div
+                    className={cn(
+                      'p-3 rounded-xl transition-colors',
+                      defaultModelId === model.id
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-primary/10 text-primary'
+                    )}
+                  >
                     <Server className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-sm">{model.name}</h4>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm">{model.name}</h4>
+                      {defaultModelId === model.id && (
+                        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-primary text-primary-foreground">
+                          <CheckCircle2 className="w-3 h-3" />
+                          {t('common.default')}
+                        </div>
+                      )}
+                    </div>
                     <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
                       {model.provider} · {model.model}
                     </p>
@@ -197,7 +236,8 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation()
                         setEditingId(model.id)
                         setEditForm(model)
                       }}
@@ -208,7 +248,10 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleDelete(model.id)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDelete(model.id)
+                      }}
                       className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -352,7 +395,7 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
               {testing ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  {t('common.testing', 'Testing...')}
+                  {t('common.testing')}
                 </>
               ) : (
                 t('models.save_config')

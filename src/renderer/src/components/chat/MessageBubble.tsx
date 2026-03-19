@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Copy, Check } from 'lucide-react'
+import { Copy, Check, Brain } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { Message, ContentBlock, ChatStatus } from '@shared/types/agent'
 import { useTranslation } from 'react-i18next'
@@ -16,6 +16,32 @@ interface MessageBubbleProps {
   status?: ChatStatus
 }
 
+const ThinkingBlock: React.FC<{ text: string; isThinking?: boolean }> = ({ text, isThinking }) => {
+  const { t } = useTranslation()
+  return (
+    <div className="group/think bg-zinc-50/50 dark:bg-zinc-800/20 border border-zinc-100 dark:border-zinc-800/50 rounded-lg p-3 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400 font-medium overflow-hidden">
+      <div className="flex items-center gap-1.5 mb-2 text-[10px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider">
+        <Brain
+          className={cn(
+            'w-3 h-3 transition-colors group-hover/think:text-purple-500',
+            isThinking && 'animate-pulse text-purple-500'
+          )}
+        />
+        {isThinking ? t('common.thinking') : t('common.thought')}
+      </div>
+      <div className="whitespace-pre-wrap opacity-80 overflow-hidden">{text}</div>
+    </div>
+  )
+}
+
+const LoadingDots: React.FC = () => (
+  <div className="flex gap-1.5 px-1 py-2">
+    <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:-0.3s]" />
+    <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:-0.15s]" />
+    <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce" />
+  </div>
+)
+
 const MessageBubble: React.FC<MessageBubbleProps> = ({
   message,
   allToolResults,
@@ -26,7 +52,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const { role, content, timestamp } = message
   const isUser = role === 'user'
   const isSystem = role === 'system'
-
   const [copied, setCopied] = useState(false)
 
   const handleCopy = () => {
@@ -40,25 +65,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // Helper to check if a message only contains tool results
   const isOnlyToolResults =
     Array.isArray(content) &&
     content.length > 0 &&
     content.every((block) => block.type === 'tool_result')
 
-  // If this message only contains tool results, we return null because
-  // they should be displayed inside the corresponding tool_use bubbles.
-  if (isOnlyToolResults && allToolResults) {
-    return null
-  }
-
-  const LoadingDots = () => (
-    <div className="flex gap-1.5 px-1 py-2">
-      <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:-0.3s]" />
-      <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:-0.15s]" />
-      <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce" />
-    </div>
-  )
+  if (isOnlyToolResults && allToolResults) return null
 
   const renderContent = () => {
     const isEmpty =
@@ -67,22 +79,37 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     if (isEmpty && isTyping) {
       return (
         <div className="flex flex-col gap-2">
-          {status === 'thinking' && (
-            <div className="flex items-center gap-2 text-[10px] text-purple-500 font-bold uppercase tracking-widest animate-pulse">
-              <span className="w-2 h-2 bg-purple-500 rounded-full" />
-              {t('common.thinking')}
-            </div>
-          )}
-          {status === 'tool_executing' && (
-            <div className="flex items-center gap-2 text-[10px] text-blue-500 font-bold uppercase tracking-widest animate-pulse">
-              <span className="w-2 h-2 bg-blue-500 rounded-full" />
-              {t('common.executing_tool')}
-            </div>
-          )}
-          {status === 'waiting' && (
-            <div className="flex items-center gap-2 text-[10px] text-zinc-400 font-bold uppercase tracking-widest animate-pulse">
-              <span className="w-2 h-2 bg-zinc-300 rounded-full" />
-              {t('common.waiting')}
+          {['thinking', 'tool_executing', 'waiting'].includes(status) && (
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest animate-pulse overflow-hidden">
+              <span
+                className={cn(
+                  'w-2 h-2 rounded-full',
+                  status === 'thinking'
+                    ? 'bg-purple-500'
+                    : status === 'tool_executing'
+                      ? 'bg-blue-500'
+                      : 'bg-zinc-300'
+                )}
+              />
+              <span
+                className={cn(
+                  status === 'thinking'
+                    ? 'text-purple-500'
+                    : status === 'tool_executing'
+                      ? 'text-blue-500'
+                      : 'text-zinc-400'
+                )}
+              >
+                {t(
+                  `common.${
+                    status === 'thinking'
+                      ? 'thinking'
+                      : status === 'tool_executing'
+                        ? 'executing_tool'
+                        : 'waiting'
+                  }`
+                )}
+              </span>
             </div>
           )}
           <LoadingDots />
@@ -92,7 +119,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
     if (typeof content === 'string') {
       return (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 overflow-hidden">
           {isJson(content) ? (
             <MarkdownRenderer content={`\`\`\`json\n${content}\n\`\`\``} />
           ) : (
@@ -103,56 +130,59 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
       )
     }
 
-    // Process ContentBlocks
-    const renderedBlocks: React.ReactNode[] = []
     const consumedBlockIndices = new Set<number>()
-
-    content.forEach((block, idx) => {
-      if (consumedBlockIndices.has(idx)) return
-
-      if (block.type === 'text' && block.text) {
-        renderedBlocks.push(<MarkdownRenderer key={`text-${idx}`} content={block.text} />)
-      } else if (block.type === 'tool_use' && block.id) {
-        // Find result: prioritize results in the current message, then search the global map
-        let resultBlock = content.find((b) => b.type === 'tool_result' && b.tool_use_id === block.id)
-
-        if (!resultBlock && allToolResults) {
-          resultBlock = allToolResults.get(block.id)
-        }
-
-        // Find the index of the result block if it's in the current message to mark it as consumed
-        const resultIdxInCurrentMsg = content.findIndex(
-          (b) => b.type === 'tool_result' && b.tool_use_id === block.id
-        )
-        if (resultIdxInCurrentMsg !== -1) {
-          consumedBlockIndices.add(resultIdxInCurrentMsg)
-        }
-
-        renderedBlocks.push(
-          <ToolBlock
-            key={`tool-${block.id}-${idx}`}
-            name={block.name || 'Unknown Tool'}
-            input={block.input}
-            result={resultBlock?.content}
-            status={resultBlock ? 'success' : 'loading'}
-          />
-        )
-      } else if (block.type === 'tool_result' && !consumedBlockIndices.has(idx)) {
-        renderedBlocks.push(
-          <ToolBlock
-            key={`result-${idx}`}
-            name="Tool Result"
-            input={{ note: 'Unmatched tool result' }}
-            result={block.content}
-          />
-        )
-      }
-    })
-
     return (
-      <div className="space-y-4 w-full min-w-0">
-        {renderedBlocks}
-        {isTyping && (status === 'streaming' || status === 'waiting') && (
+      <div className="space-y-4 w-full min-w-0 overflow-hidden">
+        {content.map((block, idx) => {
+          if (consumedBlockIndices.has(idx)) return null
+
+          switch (block.type) {
+            case 'thinking': {
+              const isCurrentThinking =
+                isTyping && status === 'thinking' && idx === content.length - 1
+              return block.text ? (
+                <ThinkingBlock
+                  key={`thinking-${idx}`}
+                  text={block.text}
+                  isThinking={isCurrentThinking}
+                />
+              ) : null
+            }
+            case 'text':
+              return block.text ? (
+                <MarkdownRenderer key={`text-${idx}`} content={block.text} />
+              ) : null
+            case 'tool_use': {
+              const resIdx = content.findIndex(
+                (b) => b.type === 'tool_result' && b.tool_use_id === block.id
+              )
+              const resultBlock = resIdx !== -1 ? content[resIdx] : allToolResults?.get(block.id!)
+              if (resIdx !== -1) consumedBlockIndices.add(resIdx)
+
+              return (
+                <ToolBlock
+                  key={`tool-${block.id}-${idx}`}
+                  name={block.name || t('common.unknown_tool')}
+                  input={block.input}
+                  result={resultBlock?.content}
+                  status={resultBlock ? 'success' : 'loading'}
+                />
+              )
+            }
+            case 'tool_result':
+              return !consumedBlockIndices.has(idx) ? (
+                <ToolBlock
+                  key={`result-${idx}`}
+                  name={t('common.tool_result')}
+                  input={{ note: t('common.unmatched_tool_result') }}
+                  result={block.content}
+                />
+              ) : null
+            default:
+              return null
+          }
+        })}
+        {isTyping && ['streaming', 'waiting', 'thinking', 'tool_executing'].includes(status) && (
           <LoadingDots />
         )}
       </div>
@@ -181,7 +211,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
       >
         <div className="min-w-0 w-full overflow-hidden leading-relaxed">{renderContent()}</div>
 
-        {/* Copy Button for AI messages */}
         {!isUser && !isSystem && (
           <button
             onClick={handleCopy}
@@ -191,7 +220,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
               'bg-zinc-100/80 dark:bg-zinc-800/80 backdrop-blur-sm hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700',
               'text-zinc-500 hover:text-indigo-600 shadow-sm z-10'
             )}
-            title="Copy message"
+            title={t('common.copy_message')}
           >
             <AnimatePresence mode="wait" initial={false}>
               {copied ? (

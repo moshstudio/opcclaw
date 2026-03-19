@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Settings as SettingsIcon, Search } from 'lucide-react'
+import { Plus, Settings as SettingsIcon, Search, PanelLeft } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
@@ -9,15 +9,20 @@ import { Input } from '@renderer/components/ui/input'
 import { useAgentStore } from '@renderer/store/useAgentStore'
 import { useChatStore } from '@renderer/store/useChatStore'
 
+import NewAgentModal from '../modals/NewAgentModal'
+import { AgentInfo } from '@renderer/store/useAgentStore'
+
 interface SidebarProps {
   collapsed: boolean
+  toggleSidebar: () => void
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
-  const navigate = useNavigate()
+const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
   const { t } = useTranslation()
   const { agents, activeAgentId, setActiveAgent, fetchAgents } = useAgentStore()
-  const { fetchHistory, fetchSessions, newSession } = useChatStore()
+  const { fetchHistory, fetchSessions } = useChatStore()
+  const [isNewAgentOpen, setIsNewAgentOpen] = React.useState(false)
+  const navigate = useNavigate()
 
   useEffect(() => {
     fetchAgents()
@@ -36,6 +41,18 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
     fetchHistory(id)
     fetchSessions(id)
   }
+
+  const sortedAgents = [...agents].sort((a, b) => {
+    const aPinned = a.config.isPinned ?? (a.id === 'main')
+    const bPinned = b.config.isPinned ?? (b.id === 'main')
+    if (aPinned && !bPinned) return -1
+    if (!aPinned && bPinned) return 1
+    if (aPinned && bPinned) {
+      if (a.id === 'main') return -1
+      if (b.id === 'main') return 1
+    }
+    return 0
+  })
 
   return (
     <motion.aside
@@ -58,24 +75,34 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
             animate={{ opacity: 1 }}
             className="text-xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent"
           >
-            OpenClaw
+            OpcClaw
           </motion.h1>
         )}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleSidebar}
+          className="h-8 w-8 text-muted-foreground hover:text-primary transition-all"
+        >
+          <PanelLeft className="w-4 h-4" />
+        </Button>
       </div>
 
-      {/* New Chat Button */}
+      {/* New Agent Button */}
       <div className="px-4 mb-4">
         <Button
           variant="outline"
-          onClick={() => activeAgentId && newSession(activeAgentId)}
+          onClick={() => setIsNewAgentOpen(true)}
           className="w-full flex items-center justify-start gap-2 px-3 py-6 border-muted bg-background/50 hover:bg-background rounded-xl transition-all group"
         >
           <Plus className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
           <span className="text-sm font-bold text-muted-foreground group-hover:text-foreground transition-colors">
-            {t('common.new_session')}
+            {t('common.new_agent')}
           </span>
         </Button>
       </div>
+
+      <NewAgentModal open={isNewAgentOpen} onOpenChange={setIsNewAgentOpen} />
 
       {/* Search */}
       <div className="px-4 mb-6">
@@ -90,12 +117,17 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
 
       {/* Agent List */}
       <div className="flex-1 overflow-y-auto px-2 space-y-1 custom-scrollbar">
-        {agents.map((agent) => (
+        {sortedAgents.map((agent) => {
+          const agentName = agent.id === 'main' && (!agent.config.name || agent.config.name === 'Default Assistant')
+            ? t('common.default_assistant')
+            : (agent.config.name || agent.id)
+
+          return (
           <button
             key={agent.id}
             onClick={() => handleAgentClick(agent.id)}
             className={cn(
-              'w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group text-left',
+              'w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group text-left relative',
               activeAgentId === agent.id
                 ? 'bg-primary/10 border border-primary/20 shadow-sm'
                 : 'hover:bg-muted/50 border border-transparent'
@@ -109,7 +141,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
                   : 'bg-muted text-muted-foreground'
               )}
             >
-              {agent.config.name?.[0] || agent.id[0]}
+              {agentName[0]}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex justify-between items-center mb-0.5">
@@ -121,15 +153,14 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
                       : 'text-muted-foreground group-hover:text-foreground'
                   )}
                 >
-                  {agent.config.name || agent.id}
+                  {agentName}
                 </p>
               </div>
-              <p className="text-[11px] text-muted-foreground/60 truncate font-medium">
-                {agent.config.description || 'AI Assistant'}
-              </p>
             </div>
+
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
-        ))}
+        )})}
       </div>
 
       {/* Footer */}
@@ -144,7 +175,9 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => navigate('/settings')}
+          onClick={() => {
+            navigate('/settings')
+          }}
           className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
         >
           <SettingsIcon className="w-4 h-4" />

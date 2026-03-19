@@ -21,11 +21,12 @@
  */
 
 import crypto from 'node:crypto'
+import path from 'node:path'
 import type { Tool, ToolContext } from '@main/services/tools/types.js'
 import { builtinTools } from '@main/services/tools/builtin'
 import { wrapToolWithAbortSignal } from '@main/services/tools/abort'
 import { SessionManager, type Message } from '@main/services/session/session'
-import { MemoryManager, type MemorySearchResult } from '@main/services/memory/memory'
+import { MemoryManager } from '@main/services/memory/memory'
 import {
   ContextLoader,
   DEFAULT_CONTEXT_WINDOW_TOKENS,
@@ -40,7 +41,7 @@ import {
   evaluateContextWindowGuard,
   resolveContextWindowInfo
 } from './context-window-guard.js'
-import { SkillManager, type SkillMatch } from '@main/services/skills/skills'
+import { SkillManager } from '@main/services/skills/skills'
 import { HeartbeatManager, type HeartbeatResult } from '@main/services/heartbeat/heartbeat'
 import {
   normalizeAgentId,
@@ -59,6 +60,7 @@ import { filterToolsByPolicy, type ToolPolicy } from './tool-policy.js'
 import type { MiniAgentEvent } from './agent-events.js'
 import { runAgentLoop } from './agent-loop.js'
 import { installSessionToolResultGuard } from '@main/services/session/session-tool-result-guard'
+import { UsageManager } from '@main/services/usage/usage-manager.js'
 import type { Model, StreamFunction, ThinkingLevel } from '@mariozechner/pi-ai'
 import { streamSimple, completeSimple, getModel, getEnvApiKey } from '@mariozechner/pi-ai'
 import { ConfigService } from '@main/services/config/config-service.js'
@@ -122,6 +124,8 @@ export interface AgentConfig {
   workspaceDir?: string
   /** 记忆存储目录 */
   memoryDir?: string
+  /** 用量统计存储目录 */
+  usageDir?: string
   /** 是否启用记忆 */
   enableMemory?: boolean
   /** 是否启用上下文加载 */
@@ -134,6 +138,8 @@ export interface AgentConfig {
   heartbeatInterval?: number
   /** 上下文窗口大小（token 估算） */
   contextTokens?: number
+  /** 最大输出 Token 数 */
+  maxTokens?: number
   /**
    * Global lane 最大并发数（跨 session 的总并行度）
    *
@@ -204,6 +210,7 @@ export class Agent {
   private workspaceDir: string
   private toolPolicy?: ToolPolicy
   private contextTokens: number
+  private maxTokens?: number
   private sandbox?: {
     enabled: boolean
     allowExec: boolean
@@ -216,12 +223,11 @@ export class Agent {
   private context: ContextLoader
   private skills: SkillManager
   private heartbeat: HeartbeatManager
+  public usage: UsageManager
 
-  // 功能开关
   private enableMemory: boolean
   private enableContext: boolean
   private enableSkills: boolean
-  private enableHeartbeat: boolean
 
   /**
    * 运行中的 AbortController 映射 (runId → controller)
@@ -329,6 +335,7 @@ export class Agent {
     this.baseSystemPrompt = config.systemPrompt ?? DEFAULT_SYSTEM_PROMPT
     this.tools = config.tools ?? builtinTools
     this.maxTurns = config.maxTurns ?? 20
+    this.maxTokens = config.maxTokens
     this.workspaceDir = config.workspaceDir ?? process.cwd()
     this.apiKey = config.apiKey ?? getEnvApiKey(provider)
     this.temperature = config.temperature
@@ -345,19 +352,21 @@ export class Agent {
     }
 
     // 初始化子系统
-    this.sessions = new SessionManager(config.sessionDir)
-    this.memory = new MemoryManager(config.memoryDir ?? './.mini-agent/memory')
+    const agentDataDir = ConfigService.getInstance().getAgentDir(this.agentId)
+
+    this.sessions = new SessionManager(config.sessionDir ?? path.join(agentDataDir, 'sessions'))
+    this.memory = new MemoryManager(config.memoryDir ?? path.join(agentDataDir, 'memory'))
     this.context = new ContextLoader(this.workspaceDir)
     this.skills = new SkillManager(this.workspaceDir)
     this.heartbeat = new HeartbeatManager(this.workspaceDir, {
       intervalMs: config.heartbeatInterval
     })
+    this.usage = new UsageManager(config.usageDir ?? path.join(agentDataDir, 'usage'))
 
     // 功能开关
     this.enableMemory = config.enableMemory ?? true
     this.enableContext = config.enableContext ?? true
     this.enableSkills = config.enableSkills ?? true
-    this.enableHeartbeat = config.enableHeartbeat ?? false
 
     // Global lane 并发数（对应 OpenClaw: DEFAULT_AGENT_MAX_CONCURRENT = 4）
     const globalLane = resolveGlobalLane()
@@ -534,6 +543,7 @@ export class Agent {
         await this.sessions.append(params.parentSessionKey, summaryMsg)
         if (params.cleanup === 'delete') {
           await this.sessions.delete(childSessionKey)
+          this.emit({ type: 'session_deleted', sessionKey: childSessionKey })
         }
       })
       .catch((err) => {
@@ -722,9 +732,11 @@ export class Agent {
           const userMsg: Message = {
             role: 'user',
             content: processedMessage,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            runId
           }
           await this.sessions.append(sessionKey, userMsg)
+          this.emit({ type: 'user_message', message: { ...userMsg } })
 
           const currentMessages = [...history, userMsg]
 
@@ -778,6 +790,22 @@ export class Agent {
               timestamp: Date.now()
             }))
           }
+          console.log('debug:', {
+            runId,
+            sessionKey,
+            agentId: this.agentId,
+            currentMessages,
+            compactionSummary,
+            systemPrompt,
+            toolsForRun,
+            toolCtx,
+            modelDef: this.modelDef!,
+            apiKey: this.apiKey,
+            temperature: this.temperature,
+            reasoning: this.reasoning,
+            maxTurns: this.maxTurns,
+            contextTokens: this.contextTokens
+          })
 
           const stream = runAgentLoop({
             runId,
@@ -794,6 +822,7 @@ export class Agent {
             temperature: this.temperature,
             reasoning: this.reasoning,
             maxTurns: this.maxTurns,
+            maxTokens: this.maxTokens,
             contextTokens: this.contextTokens,
             getSteeringMessages,
             appendMessage: (sk, msg) => this.sessions.append(sk, msg),
@@ -938,19 +967,20 @@ export class Agent {
     const mainKey = `s${maxIdx + 1}`
     const fullKey = resolveSessionKey({ agentId: this.agentId, sessionKey: mainKey })
     await this.sessions.create(fullKey)
+    this.emit({ type: 'session_created', sessionKey: fullKey, agentId: this.agentId })
     return fullKey
   }
 
   async reset(id: string): Promise<void> {
-    await this.sessions.reset(
-      resolveSessionKey({ agentId: this.agentId, sessionId: id, sessionKey: id })
-    )
+    const sessionKey = resolveSessionKey({ agentId: this.agentId, sessionId: id, sessionKey: id })
+    await this.sessions.reset(sessionKey)
+    this.emit({ type: 'session_reset', sessionKey })
   }
 
   async deleteSession(id: string): Promise<void> {
-    await this.sessions.delete(
-      resolveSessionKey({ agentId: this.agentId, sessionId: id, sessionKey: id })
-    )
+    const sessionKey = resolveSessionKey({ agentId: this.agentId, sessionId: id, sessionKey: id })
+    await this.sessions.delete(sessionKey)
+    this.emit({ type: 'session_deleted', sessionKey })
   }
 
   async getHistory(id: string): Promise<Message[]> {

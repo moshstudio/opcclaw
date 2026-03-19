@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import crypto from 'node:crypto'
 import { completeSimple } from '@mariozechner/pi-ai'
 
 const OPCCLAW_ROOT = path.join(os.homedir(), '.opcclaw')
@@ -43,6 +44,7 @@ export class ConfigService {
   private constructor() {
     this.ensureDir(OPCCLAW_ROOT)
     this.ensureDir(path.join(OPCCLAW_ROOT, 'agents'))
+    this.ensureDir(path.join(OPCCLAW_ROOT, 'skills')) // 新增：确保全局技能目录存在
     this.configPath = path.join(OPCCLAW_ROOT, 'config.json')
     this.config = this.loadConfig()
   }
@@ -103,9 +105,11 @@ export class ConfigService {
     return this.config.models.find((m) => m.id === id)
   }
 
-  public addModel(model: AIModelConfig): void {
-    this.config.models.push(model)
+  public addModel(model: Omit<AIModelConfig, 'id'>): AIModelConfig {
+    const newModel: AIModelConfig = { ...model, id: crypto.randomUUID() }
+    this.config.models.push(newModel)
     this.saveConfig({})
+    return newModel
   }
 
   public updateModel(id: string, updates: Partial<AIModelConfig>): void {
@@ -137,6 +141,11 @@ export class ConfigService {
 
   public getAgentDir(agentId: string): string {
     return path.join(this.getAgentsRootDir(), agentId)
+  }
+
+  /** 获取全局技能目录 (~/.opcclaw/skills) */
+  public getGlobalSkillsDir(): string {
+    return path.join(OPCCLAW_ROOT, 'skills')
   }
 
   public async testModel(modelConfig: AIModelConfig): Promise<{ ok: boolean; error?: string }> {

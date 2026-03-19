@@ -20,6 +20,7 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { ConfigService } from '../config/config-service.js'
 
 /**
  * 底层原语来自 skill-primitives（对应 pi-coding-agent SDK）
@@ -312,13 +313,11 @@ export class SkillManager {
 
   /**
    * @param workspaceDir 工作目录（最高优先级 skill 来源）
-   * @param managedDir 用户全局目录（~/.mini-agent/skills/）
+   * @param managedDir 用户全局目录（~/.opcclaw/skills/）
    */
   constructor(workspaceDir: string, managedDir?: string) {
     this.workspaceDir = workspaceDir
-    this.managedDir =
-      managedDir ??
-      path.join(process.env.HOME || process.env.USERPROFILE || '.', '.mini-agent', 'skills')
+    this.managedDir = managedDir ?? ConfigService.getInstance().getGlobalSkillsDir()
   }
 
   /**

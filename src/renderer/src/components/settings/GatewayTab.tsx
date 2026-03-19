@@ -34,8 +34,8 @@ const GatewayTab: React.FC = () => {
   const handleRefreshToken = async () => {
     if (config) {
       const isConfirmed = await confirm({
-        title: t('gateway.refresh_token_title') || 'Refresh Token',
-        description: t('gateway.refresh_token_confirm') || 'Are you sure you want to refresh the gateway token? External apps will need to be updated.',
+        title: t('gateway.refresh_token_title'),
+        description: t('gateway.refresh_token_confirm'),
         variant: 'destructive',
         confirmText: t('common.confirm')
       })
@@ -119,7 +119,7 @@ const GatewayTab: React.FC = () => {
               <div className="flex items-center justify-between ml-1">
                 <label className="text-xs text-muted-foreground">{t('gateway.token')}</label>
                 <span className="text-[10px] text-muted-foreground/40 font-medium whitespace-nowrap">
-                  仅用于外部接入
+                  {t('gateway.external_access_only')}
                 </span>
               </div>
               <div className="relative group">

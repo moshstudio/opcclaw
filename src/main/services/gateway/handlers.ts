@@ -25,6 +25,12 @@ import {
   type HelloOk,
   type ErrorShape
 } from './protocol.js'
+import { builtinTools } from '../tools/builtin.js'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import { loadWorkspaceBootstrapFiles } from '../context/bootstrap.js'
+import { ConfigService } from '../config/config-service.js'
+import { Broadcaster, type BroadcastFn } from './broadcaster.js'
 
 // ============== 类型 ==============
 
@@ -38,11 +44,10 @@ export type GwClient = {
   authed: boolean
 }
 
-export type BroadcastFn = (event: string, payload: unknown, opts?: { dropIfSlow?: boolean }) => void
-
 export type HandlerContext = {
   registry: AgentRegistry
   broadcast: BroadcastFn
+  broadcaster: Broadcaster
   clients: Set<GwClient>
   token?: string
   nonces: Map<string, string>
@@ -132,6 +137,28 @@ const handleChatSend: Handler = async (params, _client, ctx) => {
   let lastDeltaSentLen = 0 // 上次广播时 buffer 的长度，用于计算新增部分
   const DELTA_THROTTLE_MS = 150
 
+  // 辅助函数：统一处理 chat 事件的 delta/final 分发
+  const emitChatState = (
+    state: 'delta' | 'final' | 'error',
+    event?: { text?: string; message?: any; usage?: any; performance?: any; error?: string }
+  ) => {
+    const fullText = event?.text ?? deltaBuffer
+    const text = fullText.slice(lastDeltaSentLen)
+    lastDeltaSentLen = fullText.length
+
+    ctx.broadcaster.chat({
+      agentId,
+      runId: agentRunId,
+      sessionKey,
+      state,
+      text,
+      message: event?.message,
+      usage: event?.usage,
+      performance: event?.performance,
+      error: event?.error
+    })
+  }
+
   // 异步执行，不阻塞响应（对齐 openclaw chat.send 的 ACK-then-stream 模式）
   const unsub = agent.subscribe((event: MiniAgentEvent) => {
     // 捕获 agent 内部 runId，用于后续事件关联
@@ -144,49 +171,51 @@ const handleChatSend: Handler = async (params, _client, ctx) => {
     if (eventRunId && eventRunId !== agentRunId) return
 
     // 桥接 agent 事件 → gateway 广播
-    ctx.broadcast('agent', { ...event, sessionKey, agentId })
+    ctx.broadcaster.agentBridge(agentId, sessionKey, agentRunId, event)
 
-    // 转换为 chat delta/final（对齐 openclaw emitChatDelta / emitChatFinal）
-    if (event.type === 'message_start') {
-      ctx.broadcast('chat', {
-        agentId,
-        runId: agentRunId,
-        sessionKey,
-        state: 'start',
-        message: event.message
-      })
-    } else if (event.type === 'message_delta') {
-      // Delta 限流（对齐 openclaw: 150ms 内最多发送一次，只广播新增部分）
-      deltaBuffer += event.delta
-      const now = Date.now()
-      if (now - lastDeltaSentAt >= DELTA_THROTTLE_MS) {
-        lastDeltaSentAt = now
-        const newText = deltaBuffer.slice(lastDeltaSentLen)
-        lastDeltaSentLen = deltaBuffer.length
-        ctx.broadcast(
-          'chat',
-          { agentId, runId: agentRunId, sessionKey, state: 'delta', text: newText },
-          { dropIfSlow: true }
-        )
+    // 状态转换逻辑
+    switch (event.type) {
+      case 'message_start':
+        ctx.broadcaster.chat({
+          agentId,
+          runId: agentRunId,
+          sessionKey,
+          state: 'start',
+          message: event.message
+        })
+        break
+
+      case 'message_delta': {
+        deltaBuffer += event.delta
+        const now = Date.now()
+        // 增量限流发送
+        if (now - lastDeltaSentAt >= DELTA_THROTTLE_MS) {
+          lastDeltaSentAt = now
+          emitChatState('delta')
+        }
+        break
       }
-    } else if (event.type === 'message_end') {
-      // Final 发送完整消息对象（包含已填充的工具调用等）
-      ctx.broadcast('chat', {
-        agentId,
-        runId: agentRunId,
-        sessionKey,
-        state: 'final',
-        text: event.text,
-        message: event.message
-      })
-    } else if (event.type === 'agent_error') {
-      ctx.broadcast('chat', {
-        agentId,
-        runId: agentRunId,
-        sessionKey,
-        state: 'error',
-        error: event.error
-      })
+
+      case 'message_end':
+        // 强制刷新缓冲区并发送结束状态
+        emitChatState('final', {
+          text: event.text,
+          message: event.message,
+          usage: event.usage
+        })
+        break
+
+      case 'agent_end':
+        // Agent 运行彻底结束，包含累积用量和性能指标
+        emitChatState('final', {
+          usage: event.usage,
+          performance: event.performance
+        })
+        break
+
+      case 'agent_error':
+        emitChatState('error', { error: event.error })
+        break
     }
   })
 
@@ -246,9 +275,12 @@ const handleSessionsCreate: Handler = async (params, _client, ctx) => {
     return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `agent not found: ${agentId}`) }
   }
   const sessionKey = await agent.createSession()
+
+  // 广播新会话创建事件给所有客户端
+  ctx.broadcaster.sessionEvent('session_created', agentId, sessionKey)
+
   return { ok: true, payload: { agentId, sessionKey, sessionId: sessionKey } }
 }
-
 
 // ============== sessions.list ==============
 
@@ -276,6 +308,10 @@ const handleSessionsReset: Handler = async (params, _client, ctx) => {
 
   const sessionKey = p?.sessionKey || 'main'
   await agent.reset(sessionKey)
+
+  // 广播重置事件给所有客户端
+  ctx.broadcaster.sessionEvent('session_reset', agentId, sessionKey)
+
   return { ok: true, payload: { agentId, sessionKey } }
 }
 
@@ -291,6 +327,10 @@ const handleSessionsDelete: Handler = async (params, _client, ctx) => {
 
   const sessionKey = p?.sessionKey || 'main'
   await agent.deleteSession(sessionKey)
+
+  // 广播删除事件给所有客户端
+  ctx.broadcaster.sessionEvent('session_deleted', agentId, sessionKey)
+
   return { ok: true, payload: { agentId, sessionKey } }
 }
 
@@ -318,11 +358,153 @@ const handleAgentList: Handler = async (_params, _client, ctx) => {
   return { ok: true, payload: { agents } }
 }
 
+// ============== agent.create ==============
+
+const handleAgentCreate: Handler = async (params, _client, ctx) => {
+  const config = params as any
+  if (!config) {
+    return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, 'config required') }
+  }
+  const agentId = await ctx.registry.createAgent(config)
+
+  // 广播新智能体创建事件给所有客户端
+  ctx.broadcaster.agentLifecycle('agent_created', agentId)
+
+  return { ok: true, payload: { agentId } }
+}
+
+// ============== agent.update ==============
+
+const handleAgentUpdate: Handler = async (params, _client, ctx) => {
+  const p = params as { agentId: string; [key: string]: any } | undefined
+  if (!p?.agentId) {
+    return {
+      ok: false,
+      error: errorShape(ErrorCodes.INVALID_REQUEST, 'agentId required for update')
+    }
+  }
+  const { agentId, ...updates } = p
+  await ctx.registry.updateAgent(agentId, updates)
+
+  // 广播智能体配置更新事件给所有客户端
+  ctx.broadcaster.agentLifecycle('agent_updated', agentId)
+
+  return { ok: true, payload: { agentId } }
+}
+
+// ============== agent.delete ==============
+
+const handleAgentDelete: Handler = async (params, _client, ctx) => {
+  const p = params as { agentId?: string } | undefined
+  if (!p?.agentId) {
+    return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, 'agentId required') }
+  }
+  await ctx.registry.deleteAgent(p.agentId)
+
+  // 广播智能体删除事件给所有客户端
+  ctx.broadcaster.agentLifecycle('agent_deleted', p.agentId)
+
+  return { ok: true, payload: { agentId: p.agentId } }
+}
+
+// ============== tools.list ==============
+
+const handleToolsList: Handler = async (_params, _client, _ctx) => {
+  const tools = builtinTools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    category: t.category,
+    inputSchema: t.inputSchema
+  }))
+  return { ok: true, payload: { tools } }
+}
+
+// ============== skills.list ==============
+
+const handleSkillsList: Handler = async (params, _client, ctx) => {
+  const p = params as { agentId?: string } | undefined
+  const agentId = p?.agentId || 'main'
+  const configService = ConfigService.getInstance()
+  const agentDir = configService.getAgentDir(agentId)
+  const skillsDir = path.join(agentDir, 'skills')
+
+  try {
+    await fs.access(skillsDir)
+    const entries = await fs.readdir(skillsDir, { withFileTypes: true })
+    const skills = entries
+      .filter((e) => e.name.endsWith('.ts') || e.name.endsWith('.js'))
+      .map((e) => ({
+        name: e.name,
+        path: path.join(skillsDir, e.name)
+      }))
+    return { ok: true, payload: { agentId, skills } }
+  } catch {
+    // 目录不存在
+    return { ok: true, payload: { agentId, skills: [] } }
+  }
+}
+
+// ============== bootstrap.list ==============
+
+const handleBootstrapList: Handler = async (params, _client, _ctx) => {
+  const p = params as { workspaceDir?: string } | undefined
+  if (!p?.workspaceDir) {
+    return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, 'workspaceDir required') }
+  }
+
+  try {
+    const files = await loadWorkspaceBootstrapFiles(p.workspaceDir)
+    return { ok: true, payload: { files } }
+  } catch (err) {
+    return { ok: false, error: errorShape(ErrorCodes.UNAVAILABLE, String(err)) }
+  }
+}
+
+// ============== bootstrap.save ==============
+
+const handleBootstrapSave: Handler = async (params, _client, ctx) => {
+  const p = params as { path?: string; content?: string } | undefined
+  if (!p?.path || p.content === undefined) {
+    return {
+      ok: false,
+      error: errorShape(ErrorCodes.INVALID_REQUEST, 'path and content required')
+    }
+  }
+
+  try {
+    await fs.writeFile(p.path, p.content, 'utf-8')
+
+    // 广播配置/预设更新事件给所有客户端
+    ctx.broadcaster.bootstrapSaved(p.path)
+
+    return { ok: true, payload: { path: p.path } }
+  } catch (err) {
+    return { ok: false, error: errorShape(ErrorCodes.UNAVAILABLE, String(err)) }
+  }
+}
+
+// ============== usage.stats ==============
+
+const handleUsageStats: Handler = async (params, _client, ctx) => {
+  const p = params as { agentId?: string; sessionKey?: string } | undefined
+  const agentId = p?.agentId || 'main'
+  const agent = ctx.registry.getAgent(agentId)
+  if (!agent) {
+    return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `agent not found: ${agentId}`) }
+  }
+
+  const stats = await agent.usage.getStats(p?.sessionKey)
+  return { ok: true, payload: { stats } }
+}
+
 // ============== 方法注册表 ==============
 
 export const handlers: Record<string, Handler> = {
   connect: handleConnect,
   'agent.list': handleAgentList,
+  'agent.create': handleAgentCreate,
+  'agent.update': handleAgentUpdate,
+  'agent.delete': handleAgentDelete,
   'chat.send': handleChatSend,
   'chat.abort': handleChatAbort,
   'chat.history': handleChatHistory,
@@ -330,5 +512,10 @@ export const handlers: Record<string, Handler> = {
   'sessions.list': handleSessionsList,
   'sessions.reset': handleSessionsReset,
   'sessions.delete': handleSessionsDelete,
+  'tools.list': handleToolsList,
+  'skills.list': handleSkillsList,
+  'bootstrap.list': handleBootstrapList,
+  'bootstrap.save': handleBootstrapSave,
+  'usage.stats': handleUsageStats,
   health: handleHealth
 }

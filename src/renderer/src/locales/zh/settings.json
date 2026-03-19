@@ -1,0 +1,19 @@
+{
+  "title": "系统设置",
+  "agent_title": "智能体设置",
+  "app_settings": "应用设置",
+  "agent_settings": "智能体设置",
+  "ui_config": "界面配置",
+  "language_label": "界面语言",
+  "theme_label": "外观主题",
+  "fontSize_label": "字体大小",
+  "temperature_label": "采样温度",
+  "maxTokens_label": "最大生成长度",
+  "webSearch_label": "联网搜索",
+  "codeExecution_label": "代码执行",
+  "vision_label": "视觉解析",
+  "danger_zone": "危险操作",
+  "reset_app": "重置软件",
+  "reset_app_desc": "重置软件将清空所有配置、模型信息和智能体数据。此操作不可逆。",
+  "reset_app_confirm": "确定要重置软件吗？所有数据都将被永久删除，软件将自动重启。"
+}

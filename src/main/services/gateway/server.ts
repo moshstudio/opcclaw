@@ -31,7 +31,8 @@ import {
   MAX_BUFFERED_BYTES,
   HANDSHAKE_TIMEOUT_MS
 } from './protocol.js'
-import { handlers, type GwClient, type BroadcastFn, type HandlerContext } from './handlers.js'
+import { handlers, type GwClient, type HandlerContext } from './handlers.js'
+import { Broadcaster, type BroadcastFn } from './broadcaster.js'
 
 // ============== 类型 ==============
 
@@ -89,9 +90,12 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
   const broadcast = createBroadcaster(clients)
   const startedAt = Date.now()
 
+  const broadcaster = new Broadcaster(broadcast)
+
   const ctx: HandlerContext = {
     registry: opts.registry,
     broadcast,
+    broadcaster,
     clients,
     token: opts.token,
     nonces,
@@ -192,7 +196,7 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
 
   // Tick 定时器（对齐 openclaw server-maintenance.ts: 30s tick 广播，可丢弃）
   const tickTimer = setInterval(() => {
-    broadcast('tick', { ts: Date.now() }, { dropIfSlow: true })
+    broadcaster.tick(Date.now())
   }, TICK_INTERVAL_MS)
 
   // 监听
@@ -203,10 +207,7 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
 
   // 优雅关闭（对齐 openclaw server-close.ts: createGatewayCloseHandler）
   const close = (opts?: { restartExpectedMs?: number }) => {
-    broadcast('shutdown', {
-      reason: 'server closing',
-      restartExpectedMs: opts?.restartExpectedMs ?? null
-    })
+    broadcaster.shutdown('server closing', opts?.restartExpectedMs ?? null)
     clearInterval(tickTimer)
     for (const c of clients) {
       try {

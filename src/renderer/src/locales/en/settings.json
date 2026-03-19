@@ -1,0 +1,19 @@
+{
+  "title": "System Settings",
+  "agent_title": "Agent Settings",
+  "app_settings": "App Settings",
+  "agent_settings": "Agent Settings",
+  "ui_config": "UI Config",
+  "language_label": "Language",
+  "theme_label": "Theme",
+  "fontSize_label": "Font Size",
+  "temperature_label": "Temperature",
+  "maxTokens_label": "Max Tokens",
+  "webSearch_label": "Web Search",
+  "codeExecution_label": "Code Execution",
+  "vision_label": "Vision Processing",
+  "danger_zone": "Danger Zone",
+  "reset_app": "Reset App",
+  "reset_app_desc": "Resetting the app will clear all settings, model configurations, and agent data. This action is irreversible.",
+  "reset_app_confirm": "Are you sure you want to reset the app? All data will be permanently deleted and the app will restart."
+}

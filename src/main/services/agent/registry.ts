@@ -88,8 +88,8 @@ export class AgentRegistry {
     }
 
     // 默认工具策略
-    let toolPolicy = undefined
-    if (fs.existsSync(toolsPath)) {
+    let toolPolicy = agentJson.toolPolicy
+    if (!toolPolicy && fs.existsSync(toolsPath)) {
       toolPolicy = JSON.parse(fs.readFileSync(toolsPath, 'utf8'))
     }
 
@@ -103,24 +103,43 @@ export class AgentRegistry {
       provider: agentJson.provider || defaultModel?.provider,
       model: agentJson.model || defaultModel?.model,
       baseUrl: agentJson.baseUrl || defaultModel?.baseUrl,
+      headers: agentJson.headers,
       systemPrompt: systemPrompt || undefined,
       toolPolicy,
       // 路径隔离
       sessionDir: path.join(agentDir, 'sessions'),
       memoryDir: path.join(agentDir, 'memory'),
       workspaceDir: agentJson.workspaceDir || path.join(agentDir, 'workspace'),
-      // 其他参数
+      // 功能开关
+      enableMemory: agentJson.enableMemory,
+      enableSkills: agentJson.enableSkills,
+      enableContext: agentJson.enableContext,
+      enableHeartbeat: agentJson.enableHeartbeat,
+      heartbeatInterval: agentJson.heartbeatInterval,
+      // 参数设置
       temperature: agentJson.temperature,
       reasoning: agentJson.reasoning,
       maxTurns: agentJson.maxTurns,
-      supportsVision: agentJson.supportsVision ?? defaultModel?.supportsVision
+      contextTokens: agentJson.contextTokens,
+      maxTokens: agentJson.maxTokens,
+      maxConcurrentRuns: agentJson.maxConcurrentRuns,
+      supportsVision: agentJson.supportsVision ?? defaultModel?.supportsVision,
+      // 沙箱配置
+      sandbox: agentJson.sandbox
     }
 
     const instance = new Agent(agentConfig)
     this.agents.set(agentId, {
       id: agentId,
       instance,
-      config: agentJson
+      config: {
+        ...agentJson,
+        systemPrompt,
+        // 传递解析后的关键路径和设置，方便前端显示完整路径
+        workspaceDir: agentConfig.workspaceDir,
+        sessionDir: agentConfig.sessionDir,
+        memoryDir: agentConfig.memoryDir
+      }
     })
 
     console.log(`[AgentRegistry] Loaded agent: ${agentId}`)
@@ -141,8 +160,7 @@ export class AgentRegistry {
         path.join(agentDir, 'agent.json'),
         JSON.stringify(
           {
-            name: 'Default Assistant',
-            description: 'Initial default agent'
+            name: 'Default Assistant'
           },
           null,
           2
@@ -155,6 +173,76 @@ export class AgentRegistry {
 
   public getAgent(agentId: string): Agent | undefined {
     return this.agents.get(agentId)?.instance
+  }
+
+  public async createAgent(config: any): Promise<string> {
+    const agentId = config.id || `agent-${Date.now()}`
+    const configService = ConfigService.getInstance()
+    const agentDir = configService.getAgentDir(agentId)
+
+    if (fs.existsSync(agentDir)) {
+      throw new Error(`Agent ${agentId} already exists`)
+    }
+
+    fs.mkdirSync(agentDir, { recursive: true })
+    fs.mkdirSync(path.join(agentDir, 'workspace'), { recursive: true })
+    fs.mkdirSync(path.join(agentDir, 'sessions'), { recursive: true })
+
+    const { systemPrompt, ...agentJson } = config
+
+    // 保存配置
+    fs.writeFileSync(path.join(agentDir, 'agent.json'), JSON.stringify(agentJson, null, 2))
+
+    // 保存系统提示词
+    if (systemPrompt) {
+      fs.writeFileSync(path.join(agentDir, 'agent.md'), systemPrompt)
+    }
+
+    await this.loadAgent(agentId)
+    return agentId
+  }
+
+  public async deleteAgent(agentId: string): Promise<void> {
+    if (agentId === 'main') {
+      throw new Error('Cannot delete default agent')
+    }
+
+    const configService = ConfigService.getInstance()
+    const agentDir = configService.getAgentDir(agentId)
+
+    if (this.agents.has(agentId)) {
+      this.agents.delete(agentId)
+    }
+
+    if (fs.existsSync(agentDir)) {
+      fs.rmSync(agentDir, { recursive: true, force: true })
+    }
+  }
+
+  public async updateAgent(agentId: string, updates: any): Promise<void> {
+    const agentData = this.agents.get(agentId)
+    if (!agentData) {
+      throw new Error(`Agent ${agentId} not found`)
+    }
+
+    const configService = ConfigService.getInstance()
+    const agentDir = configService.getAgentDir(agentId)
+    const configPath = path.join(agentDir, 'agent.json')
+    const promptPath = path.join(agentDir, 'agent.md')
+
+    const { systemPrompt, ...otherUpdates } = updates
+
+    // 合并配置
+    const newConfig = { ...agentData.config, ...otherUpdates }
+    fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2))
+
+    // 更新系统提示词
+    if (systemPrompt !== undefined) {
+      fs.writeFileSync(promptPath, systemPrompt)
+    }
+
+    // 重新加载实例
+    await this.loadAgent(agentId)
   }
 
   public listAgents(): RegisteredAgent[] {

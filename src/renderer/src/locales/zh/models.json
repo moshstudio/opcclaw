@@ -1,0 +1,16 @@
+{
+  "title": "AI 模型库",
+  "desc": "管理您的 AI 模型提供商和 API 密钥。",
+  "add_model": "添加模型",
+  "edit_model": "编辑模型",
+  "delete_confirm": "确定要删除此模型配置吗？",
+  "name": "显示名称",
+  "provider": "服务商",
+  "model_name": "模型名称",
+  "api_key": "API 密钥",
+  "base_url": "接口地址 (选填)",
+  "save_config": "保存配置",
+  "supports_vision": "支持视觉规范",
+  "supports_vision_desc": "标识此具体模型是否具备多模态视觉处理能力，系统将据此决定是否允许发送图片。",
+  "empty": "暂无模型"
+}

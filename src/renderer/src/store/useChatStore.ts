@@ -3,10 +3,12 @@ import { persist } from 'zustand/middleware'
 import { getGatewayClient } from '../services/gateway-client'
 import { useAgentStore } from './useAgentStore'
 import { Message, ChatStatus } from '@shared/types/agent'
+import { handleChatEvent, handleAgentEvent } from './chat-handler'
 
 interface ChatState {
   sessions: Record<string, Message[]> // Key: sessionKey
   chatStatuses: Record<string, ChatStatus> // Key: sessionKey
+  errorMessages: Record<string, string | null> // Key: sessionKey
   isLoadingHistory: Record<string, boolean> // Key: sessionKey
   sessionKeys: Record<string, string> // agentId -> activeSessionKey
   allSessions: Record<string, string[]> // agentId -> keys[]
@@ -34,6 +36,7 @@ export const useChatStore = create<ChatState>()(
     (set, get) => ({
       sessions: {},
       chatStatuses: {},
+      errorMessages: {},
       isLoadingHistory: {},
       sessionKeys: {},
       allSessions: {},
@@ -47,138 +50,56 @@ export const useChatStore = create<ChatState>()(
       },
 
       init: () => {
+        const resetStatus = (sessionKey: string, delay: number) => {
+          setTimeout(() => {
+            set((inner) => ({
+              chatStatuses: { ...inner.chatStatuses, [sessionKey]: 'idle' }
+            }))
+          }, delay)
+        }
+
         getGatewayClient((evt) => {
           const { agentId, sessionKey } = (evt.payload as any) || {}
           if (!agentId || !sessionKey) return
 
-          // 处理核心聊天事件流
-          if (evt.event === 'chat') {
-            const { state, text, runId, error, message: remoteMsg } = evt.payload as any
-
+          if (evt.event === 'chat' || evt.event === 'agent') {
+            const payload = evt.payload as any
             set((s) => {
-              const msgs = [...(s.sessions[sessionKey] || [])]
-              const idx = runId
-                ? msgs.findLastIndex((m) => m.id === runId && m.role === 'assistant')
-                : msgs.findLastIndex((m) => m.role === 'assistant')
+              const messages = [...(s.sessions[sessionKey] || [])]
+              let newStatus: ChatStatus = s.chatStatuses[sessionKey] || 'idle'
+              let errorMsg: string | undefined
 
-              let status = s.chatStatuses[sessionKey] || 'idle'
+              if (evt.event === 'chat') {
+                const res = handleChatEvent(payload, messages)
+                newStatus = res.status
+                if (res.errorMessage) errorMsg = res.errorMessage
+              } else {
+                const res = handleAgentEvent(payload, messages, newStatus)
+                newStatus = res.status
+                if (res.errorMessage) errorMsg = res.errorMessage
 
-              if (state === 'start') {
-                status = 'streaming'
-                if (idx === -1) {
-                  msgs.push({
-                    ...remoteMsg,
-                    id: runId || remoteMsg.id || `t-${Date.now()}`
-                  })
-                } else {
-                  msgs[idx] = { ...msgs[idx], ...remoteMsg }
-                }
-              } else if (state === 'delta') {
-                status = 'streaming'
-                if (idx !== -1) {
-                  const m = msgs[idx]
-                  if (typeof m.content === 'string') {
-                    m.content += text || ''
-                  } else if (Array.isArray(m.content)) {
-                    // 找到最后一个文本块，或者追加一个新的
-                    const lastBlock = m.content[m.content.length - 1]
-                    if (lastBlock?.type === 'text') {
-                      lastBlock.text = (lastBlock.text || '') + (text || '')
-                    } else {
-                      m.content.push({ type: 'text', text: text || '' })
-                    }
-                  }
-                  msgs[idx] = { ...m }
-                }
-              } else if (state === 'final') {
-                status = 'completed'
-                if (remoteMsg) {
-                  if (idx !== -1) msgs[idx] = remoteMsg
-                  else msgs.push(remoteMsg)
-                } else if (idx !== -1) {
-                  // Fallback: 如果没有完整消息，确保文本最终是对的
-                  const m = msgs[idx]
-                  if (text && typeof m.content === 'string') m.content = text
-                }
-              } else if (state === 'error') {
-                const isAbort =
-                  error === '操作已中止' ||
-                  (error && String(error).toLowerCase().includes('aborted'))
-                status = isAbort ? 'aborted' : 'error'
-
-                if (!isAbort) {
-                  msgs.push({
-                    id: `e-${Date.now()}`,
-                    role: 'system',
-                    content: String(error).startsWith('Error:') ? error : `Error: ${error}`,
-                    timestamp: ''
-                  })
+                if (payload.type === 'agent_end' || payload.type === 'agent_error') {
+                  resetStatus(sessionKey, payload.type === 'agent_end' ? 800 : 1500)
                 }
               }
 
-              // 如果已完成、出错或中止，延迟回滚到 idle
-              if (state === 'final' || state === 'error') {
-                setTimeout(() => {
-                  set((inner) => ({
-                    chatStatuses: { ...inner.chatStatuses, [sessionKey]: 'idle' }
-                  }))
-                }, 800)
+              // 清除错误信息如果状态恢复正常
+              if (
+                newStatus === 'idle' ||
+                newStatus === 'streaming' ||
+                newStatus === 'thinking' ||
+                newStatus === 'tool_executing'
+              ) {
+                errorMsg = null as any
               }
 
               return {
-                sessions: { ...s.sessions, [sessionKey]: msgs },
-                chatStatuses: { ...s.chatStatuses, [sessionKey]: status }
+                sessions: { ...s.sessions, [sessionKey]: messages },
+                chatStatuses: { ...s.chatStatuses, [sessionKey]: newStatus },
+                ...(errorMsg !== undefined
+                  ? { errorMessages: { ...s.errorMessages, [sessionKey]: errorMsg } }
+                  : {})
               }
-            })
-          }
-
-          // 处理深度 Agent 事件（获取更精确的状态：思考、工具调用等）
-          if (evt.event === 'agent') {
-            const payload = evt.payload as any
-            set((s) => {
-              const currentStatus = s.chatStatuses[sessionKey] || 'idle'
-              let nextStatus = currentStatus
-
-              switch (payload.type) {
-                case 'thinking_delta':
-                  nextStatus = 'thinking'
-                  break
-                case 'tool_execution_start':
-                  nextStatus = 'tool_executing'
-                  break
-                case 'tool_execution_end': {
-                  // 保存工具执行结果到本地会话中，以便 MessageBubble 能够感知并渲染
-                  const toolResultMsg: Message = {
-                    id: `tr-${payload.toolCallId}-${Date.now()}`,
-                    role: 'assistant',
-                    content: [
-                      {
-                        type: 'tool_result',
-                        tool_use_id: payload.toolCallId,
-                        content: payload.result
-                      }
-                    ],
-                    timestamp: new Date().toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })
-                  }
-                  set((inner) => ({
-                    sessions: {
-                      ...inner.sessions,
-                      [sessionKey]: [...(inner.sessions[sessionKey] || []), toolResultMsg]
-                    }
-                  }))
-                  nextStatus = 'streaming'
-                  break
-                }
-                case 'agent_error':
-                  nextStatus = 'error'
-                  break
-              }
-
-              if (nextStatus === currentStatus) return s as any
-              return { chatStatuses: { ...s.chatStatuses, [sessionKey]: nextStatus } }
             })
           }
         })
@@ -194,9 +115,10 @@ export const useChatStore = create<ChatState>()(
             sessionKey: sk
           })) as any
           const mapped = (res?.messages || []).map((m: any) => ({
-            id: m.id || Math.random(),
+            id: m.id || `temp_history_${Math.random()}`,
             role: m.role,
             content: m.content || m.text || '',
+            runId: m.runId,
             timestamp: m.timestamp
               ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               : ''
@@ -212,15 +134,9 @@ export const useChatStore = create<ChatState>()(
         if (!agentId) return
         const sk = get().sessionKeys[agentId] || 'main'
 
-        const userMsg = {
-          id: Math.random().toString(36).slice(7),
-          role: 'user',
-          content: text,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        } as Message
         set((s) => ({
-          sessions: { ...s.sessions, [sk]: [...(s.sessions[sk] || []), userMsg] },
-          chatStatuses: { ...s.chatStatuses, [sk]: 'waiting' }
+          chatStatuses: { ...s.chatStatuses, [sk]: 'waiting' },
+          errorMessages: { ...s.errorMessages, [sk]: null }
         }))
 
         try {
@@ -232,19 +148,16 @@ export const useChatStore = create<ChatState>()(
           if (res?.sessionKey && res.sessionKey !== sk) {
             const newSk = res.sessionKey
             set((s) => ({
-              sessionKeys: { ...s.sessionKeys, [agentId]: newSk },
-              sessions: { ...s.sessions, [newSk]: [userMsg] }
+              sessionKeys: { ...s.sessionKeys, [agentId]: newSk }
             }))
             await get().fetchSessions(agentId)
           }
         } catch (err) {
           updateState(set, 'chatStatuses', sk, 'error')
-          updateState(set, 'sessions', sk, [
-            ...(get().sessions[sk] || []),
-            { id: `err-${Date.now()}`, role: 'system', content: `发送失败: ${err}`, timestamp: '' }
-          ])
-          // 延迟回滚
-          setTimeout(() => updateState(set, 'chatStatuses', sk, 'idle'), 1000)
+          updateState(set, 'errorMessages', sk, String(err))
+
+          // 如果出现紧接在 userMessage 之后的网络级错误，可以延迟后让其返回 idle
+          setTimeout(() => updateState(set, 'chatStatuses', sk, 'idle'), 3000)
         }
       },
 
@@ -252,7 +165,7 @@ export const useChatStore = create<ChatState>()(
         const currentSk = get().sessionKeys[agentId]
         const currentMsgs = currentSk ? get().sessions[currentSk] || [] : []
         if (!currentMsgs.length) return
-        
+
         try {
           // 停止当前会话输出（如果正在输出）
           if (currentSk) {
@@ -261,12 +174,12 @@ export const useChatStore = create<ChatState>()(
 
           const res = (await getGatewayClient().request('sessions.create', { agentId })) as any
           const key = res.sessionKey
-          
+
           set((s) => ({
             sessionKeys: { ...s.sessionKeys, [agentId]: key },
             sessions: { ...s.sessions, [key]: [] }
           }))
-          
+
           await get().fetchSessions(agentId)
         } catch (err) {
           console.error('Failed to create session:', err)
@@ -291,14 +204,18 @@ export const useChatStore = create<ChatState>()(
         try {
           const res = (await getGatewayClient().request('sessions.list', { agentId })) as any
           const remoteSessions = (res?.sessions || []).map((s: any) => s.key || s).filter(Boolean)
-          
+
           set((s) => {
             const currentKey = s.sessionKeys[agentId]
             // 如果本地已有活跃 Key，确保它在列表中；否则取列表第一个
-            const combined = Array.from(new Set(currentKey ? [currentKey, ...remoteSessions] : remoteSessions))
+            const combined = Array.from(
+              new Set(currentKey ? [currentKey, ...remoteSessions] : remoteSessions)
+            )
             return {
               allSessions: { ...s.allSessions, [agentId]: combined },
-              sessionKeys: (currentKey ? s.sessionKeys : { ...s.sessionKeys, [agentId]: combined[0] }) as Record<string, string>
+              sessionKeys: (currentKey
+                ? s.sessionKeys
+                : { ...s.sessionKeys, [agentId]: combined[0] }) as Record<string, string>
             } as Partial<ChatState>
           })
         } finally {
@@ -327,7 +244,7 @@ export const useChatStore = create<ChatState>()(
         const active = get().sessionKeys[agentId] === sk
 
         await getGatewayClient().request('sessions.delete', { agentId, sessionKey: sk })
-        
+
         const newList = list.filter((k) => k !== sk)
         updateState(set, 'allSessions', agentId, newList)
 

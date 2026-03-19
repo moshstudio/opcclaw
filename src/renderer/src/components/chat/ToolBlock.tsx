@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { ChevronDown, Wrench, CheckCircle2, Clock } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -15,6 +16,7 @@ interface ToolBlockProps {
 }
 
 const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'success' }) => {
+  const { t } = useTranslation()
   const [isExpanded, setIsExpanded] = useState(false)
   const { theme } = useTheme()
 
@@ -61,14 +63,14 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
                 <>
                   <Clock className="w-3 h-3 text-amber-500 animate-pulse" />
                   <span className="text-[10px] text-amber-500/80 font-medium font-mono uppercase">
-                    Executing...
+                    {t('common.executing')}
                   </span>
                 </>
               ) : (
                 <>
                   <CheckCircle2 className="w-3 h-3 text-green-500" />
                   <span className="text-[10px] text-green-500/80 font-medium font-mono uppercase">
-                    Completed
+                    {t('common.completed')}
                   </span>
                 </>
               )}
@@ -97,7 +99,7 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
               {/* Input Section */}
               <div className="space-y-1.5">
                 <div className="text-[10px] font-bold text-foreground/70 dark:text-foreground/80 uppercase tracking-widest px-1">
-                  Parameters
+                  {t('common.parameters')}
                 </div>
                 <div
                   className={cn(
@@ -124,7 +126,7 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
               {result && (
                 <div className="space-y-1.5">
                   <div className="text-[10px] font-bold text-foreground/70 dark:text-foreground/80 uppercase tracking-widest px-1">
-                    Output
+                    {t('common.output')}
                   </div>
                   <div
                     className={cn(

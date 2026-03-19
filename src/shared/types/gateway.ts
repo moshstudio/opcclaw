@@ -2,6 +2,8 @@
  * Gateway 协议帧定义 (Shared)
  */
 
+import type { Message, Usage, AgentPerformance } from './agent.js'
+
 // ============== 协议版本 ==============
 
 export const PROTOCOL_VERSION = 1
@@ -104,12 +106,52 @@ export const REQUEST_TIMEOUT_MS = 60_000
 export const GATEWAY_METHODS = [
   'connect',
   'agent.list',
+  'agent.create',
+  'agent.delete',
   'chat.send',
   'chat.history',
   'sessions.list',
   'sessions.reset',
   'sessions.delete',
+  'usage.stats',
   'health'
 ] as const
 
 export const GATEWAY_EVENTS = ['connect.challenge', 'tick', 'agent', 'chat', 'shutdown'] as const
+
+// ============== 广播 Payload 定义 ==============
+
+/** 聊天状态类型 */
+export type ChatState = 'start' | 'delta' | 'final' | 'error'
+
+/** chat 频道负载：主要用于流式输出文本和最终结果 */
+export interface ChatPayload {
+  agentId: string
+  sessionKey: string
+  runId?: string
+  state: ChatState
+  /** 增量文本 (state=delta) 或完整文本 (state=final) */
+  text?: string
+  /** 完整的消息对象 (state=start/final) */
+  message?: Message
+  /** 累计用量 */
+  usage?: Usage
+  /** 性能指标 */
+  performance?: AgentPerformance
+  /** 错误信息 */
+  error?: string
+}
+
+/** agent 频道负载：主要用于生命周期管理和智能体内部事件转发 */
+export interface AgentEventPayload {
+  /**
+   * 事件类型：
+   * - 管理类：session_created, agent_updated 等
+   * - 桥接类：agent_start, message_delta 等 (透传自 MiniAgentEvent)
+   */
+  type: string
+  agentId?: string
+  sessionKey?: string
+  runId?: string
+  [key: string]: unknown
+}

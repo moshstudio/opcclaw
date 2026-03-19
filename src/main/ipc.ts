@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { ConfigService } from './services/config/config-service.js'
 import { GatewayManager } from './services/gateway/manager.js'
+import { AgentRegistry } from './services/agent/registry.js'
 
 export function initIpcServices(): void {
   // 1. 配置读写 IPC
@@ -14,29 +15,48 @@ export function initIpcServices(): void {
 
   ipcMain.removeHandler('config:save')
   ipcMain.handle('config:save', async (_event, config) => {
-    ConfigService.getInstance().saveConfig(config)
+    const configService = ConfigService.getInstance()
+    const oldConfig = configService.getConfig()
+
+    configService.saveConfig(config)
+
     // 如果修改了网关配置，执行重启
     if (config.gateway) {
       await GatewayManager.getInstance().restart()
     }
+
+    // 如果修改了默认模型或模型列表，重新加载所有智能体以确保即时生效
+    const modelChanged =
+      config.defaultModelId !== undefined && config.defaultModelId !== oldConfig.defaultModelId
+    const modelsListChanged = config.models !== undefined // 简单判断，即只要传了 models 就重载
+
+    if (modelChanged || modelsListChanged) {
+      console.log('[IPC] Model config changed via saveConfig, reloading all agents...')
+      await AgentRegistry.getInstance().loadAllAgents()
+    }
+
     return { ok: true }
   })
 
   ipcMain.removeHandler('model:add')
   ipcMain.handle('model:add', async (_event, model) => {
-    ConfigService.getInstance().addModel(model)
-    return { ok: true }
+    const newModel = ConfigService.getInstance().addModel(model)
+    return { ok: true, model: newModel }
   })
 
   ipcMain.removeHandler('model:update')
   ipcMain.handle('model:update', async (_event, id, updates) => {
     ConfigService.getInstance().updateModel(id, updates)
+    // 模型配置更新后，重新加载所有智能体以确保即时生效
+    await AgentRegistry.getInstance().loadAllAgents()
     return { ok: true }
   })
 
   ipcMain.removeHandler('model:delete')
   ipcMain.handle('model:delete', async (_event, id) => {
     ConfigService.getInstance().deleteModel(id)
+    // 模型删除后（可能涉及默认模型重置），重新加载所有智能体
+    await AgentRegistry.getInstance().loadAllAgents()
     return { ok: true }
   })
 

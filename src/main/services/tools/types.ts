@@ -77,6 +77,9 @@ export interface Tool<TInput = any> {
   /** 工具描述: 告诉 LLM 这个工具做什么、什么时候用 */
   description: string
 
+  /** 工具分类: 用于 UI 分组 */
+  category: 'file' | 'runtime' | 'network' | 'memory' | 'session'
+
   /**
    * 输入参数的 JSON Schema
    *

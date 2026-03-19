@@ -11,11 +11,12 @@ const MainLayout: React.FC = () => {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* Left Sidebar */}
-      <Sidebar collapsed={uiConfig.sidebarCollapsed} />
+      <Sidebar collapsed={uiConfig.sidebarCollapsed} toggleSidebar={toggleSidebar} />
 
       {/* Center Chat Area */}
       <ChatBox
         toggleSidebar={toggleSidebar}
+        sidebarCollapsed={uiConfig.sidebarCollapsed}
         settingsVisible={uiConfig.settingsPanelVisible}
         toggleSettings={toggleSettingsPanel}
       />

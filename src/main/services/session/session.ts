@@ -95,7 +95,7 @@ export class SessionManager {
   /** Session 缓存（避免重复加载/解析） */
   private states = new Map<string, SessionState>()
 
-  constructor(baseDir: string = './.openclaw-mini/sessions') {
+  constructor(baseDir: string) {
     this.baseDir = baseDir
   }
 
@@ -161,9 +161,6 @@ export class SessionManager {
     state.byId.set(entry.id, entry)
     state.messageIdByRef.set(message, entry.id)
     state.leafId = entry.id
-    if (message.role === 'assistant') {
-      state.hasAssistant = true
-    }
     await this.persistEntry(state, entry)
   }
 
@@ -256,7 +253,6 @@ export class SessionManager {
     state.entries = []
     state.byId.clear()
     state.leafId = null
-    state.hasAssistant = false
     state.flushed = true
     await rewriteSessionFile(state, this.baseDir)
   }
@@ -291,7 +287,7 @@ export class SessionManager {
     const filePath = this.getPath(sessionKey)
     const legacyPath = this.getLegacyPath(sessionKey)
     let chosenPath = filePath
-    let state: SessionState | undefined
+    let state: SessionState | undefined = undefined
 
     try {
       const loaded = await loadSessionFile(filePath)
@@ -299,7 +295,7 @@ export class SessionManager {
         state = buildStateFromEntries(filePath, loaded.header, loaded.entries)
       } else if (loaded.legacyMessages) {
         state = buildStateFromLegacy(filePath, loaded.legacyMessages)
-        if (state.hasAssistant || state.entries.length > 0) {
+        if (state.entries.length > 0) {
           await rewriteSessionFile(state, this.baseDir)
           state.flushed = true
         }
@@ -317,7 +313,7 @@ export class SessionManager {
         } else if (loaded.legacyMessages) {
           chosenPath = legacyPath
           state = buildStateFromLegacy(legacyPath, loaded.legacyMessages)
-          if (state.hasAssistant || state.entries.length > 0) {
+          if (state.entries.length > 0) {
             await rewriteSessionFile(state, this.baseDir)
             state.flushed = true
           }
@@ -336,8 +332,7 @@ export class SessionManager {
         byId: new Map<string, SessionEntry>(),
         messageIdByRef: new WeakMap<Message, string>(),
         leafId: null,
-        flushed: false,
-        hasAssistant: false
+        flushed: false
       }
     }
 
@@ -346,9 +341,6 @@ export class SessionManager {
   }
 
   private async persistEntry(state: SessionState, entry: SessionEntry): Promise<void> {
-    if (!state.hasAssistant) {
-      return
-    }
     const lock = await acquireSessionWriteLock({ sessionFile: state.filePath })
     try {
       if (!state.flushed) {
@@ -372,7 +364,6 @@ type SessionState = {
   messageIdByRef: WeakMap<Message, string>
   leafId: string | null
   flushed: boolean
-  hasAssistant: boolean
 }
 
 function generateId(byId: { has(id: string): boolean }): string {
@@ -524,16 +515,12 @@ function buildStateFromEntries(
   const byId = new Map<string, SessionEntry>()
   const messageIdByRef = new WeakMap<Message, string>()
   let leafId: string | null = null
-  let hasAssistant = false
 
   for (const entry of entries) {
     byId.set(entry.id, entry)
     leafId = entry.id
     if (entry.type === 'message') {
       messageIdByRef.set(entry.message, entry.id)
-      if (entry.message.role === 'assistant') {
-        hasAssistant = true
-      }
     }
   }
 
@@ -544,8 +531,7 @@ function buildStateFromEntries(
     byId,
     messageIdByRef,
     leafId,
-    flushed: true,
-    hasAssistant
+    flushed: true
   }
 }
 
@@ -561,7 +547,6 @@ function buildStateFromLegacy(filePath: string, messages: Message[]): SessionSta
   const byId = new Map<string, SessionEntry>()
   const messageIdByRef = new WeakMap<Message, string>()
   let leafId: string | null = null
-  let hasAssistant = false
 
   for (const message of messages) {
     const entry: MessageEntry = {
@@ -580,7 +565,7 @@ function buildStateFromLegacy(filePath: string, messages: Message[]): SessionSta
     messageIdByRef.set(entry.message, entry.id)
     leafId = entry.id
     if (entry.message.role === 'assistant') {
-      hasAssistant = true
+      // ignored
     }
   }
 
@@ -591,8 +576,7 @@ function buildStateFromLegacy(filePath: string, messages: Message[]): SessionSta
     byId,
     messageIdByRef,
     leafId,
-    flushed: false,
-    hasAssistant
+    flushed: false
   }
 }
 

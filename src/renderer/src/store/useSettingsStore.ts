@@ -56,7 +56,7 @@ export const useSettingsStore = create<SettingsState>()(
       },
       uiConfig: {
         sidebarCollapsed: false,
-        settingsPanelVisible: true
+        settingsPanelVisible: false
       },
 
       setAppSetting: (key, value) =>

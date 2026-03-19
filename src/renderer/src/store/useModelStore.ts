@@ -22,10 +22,11 @@ interface ModelState {
   error: string | null
 
   fetchModels: () => Promise<void>
-  addModel: (model: AIModelConfig) => Promise<boolean>
+  addModel: (model: Omit<AIModelConfig, 'id'>) => Promise<boolean>
   updateModel: (id: string, updates: Partial<AIModelConfig>) => Promise<boolean>
   deleteModel: (id: string) => Promise<boolean>
   testModel: (model: AIModelConfig) => Promise<ModelTestResult>
+  setDefaultModel: (id: string) => Promise<boolean>
 }
 
 export const useModelStore = create<ModelState>((set, get) => ({
@@ -50,12 +51,12 @@ export const useModelStore = create<ModelState>((set, get) => ({
 
   addModel: async (model) => {
     try {
-      await window.api.config.addModel(model)
+      const result = await window.api.config.addModel(model)
 
       // 如果没有默认模型，设置它
       const config = await window.api.config.get()
-      if (!config.defaultModelId) {
-        config.defaultModelId = model.id
+      if (!config.defaultModelId && result.model) {
+        config.defaultModelId = result.model.id
         await window.api.config.save(config)
       }
 
@@ -95,6 +96,16 @@ export const useModelStore = create<ModelState>((set, get) => ({
       return result
     } catch (err) {
       return { ok: false, error: (err as Error).message }
+    }
+  },
+  setDefaultModel: async (id) => {
+    try {
+      await window.api.config.save({ defaultModelId: id })
+      set({ defaultModelId: id })
+      return true
+    } catch (err) {
+      console.error('Failed to set default model:', err)
+      return false
     }
   }
 }))
