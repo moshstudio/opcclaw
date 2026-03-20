@@ -154,7 +154,14 @@
     "usage_cache_write": "Write",
     "usage_anomalies": "Anomalies",
     "usage_errors_recorded": "execution errors recorded",
-    "usage_refresh": "Refresh Stats"
+    "usage_refresh": "Refresh Stats",
+    "tokens": "Tokens",
+    "latency": "Latency",
+    "throughput": "Throughput",
+    "ms": "ms",
+    "subagent_summary": "Subagent Summary",
+    "subagent_error": "Subagent Error",
+    "subagent_running": "Subagent Running"
   },
   "onboarding": {
     "title": "Welcome to OpcClaw",

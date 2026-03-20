@@ -10,11 +10,11 @@ export function OnboardingOverlay() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const models = useModelStore((s) => s.models)
-  const isLoading = useModelStore((s) => s.isLoading)
+  const initialized = useModelStore((s) => s.initialized)
 
-  // 仅在非加载状态且模型为空时展示
+  // 仅在初始化完成（后端数据返回后）且模型依然为空时展示
   const [hasClosed, setHasClosed] = useState(false)
-  const show = !isLoading && models.length === 0 && !hasClosed
+  const show = initialized && models.length === 0 && !hasClosed
 
   if (!show) return null
 

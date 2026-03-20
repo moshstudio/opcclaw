@@ -12,10 +12,6 @@ export const handleSessionsCreate: Handler = async (params, _client, ctx) => {
     return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `agent not found: ${agentId}`) }
   }
   const sessionKey = await agent.createSession()
-
-  // 广播新会话创建事件给所有客户端
-  ctx.broadcaster.sessionEvent('session_created', agentId, sessionKey)
-
   return { ok: true, payload: { agentId, sessionKey, sessionId: sessionKey } }
 }
 
@@ -47,10 +43,6 @@ export const handleSessionsReset: Handler = async (params, _client, ctx) => {
 
   const sessionKey = p?.sessionKey || 'main'
   await agent.reset(sessionKey)
-
-  // 广播重置事件给所有客户端
-  ctx.broadcaster.sessionEvent('session_reset', agentId, sessionKey)
-
   return { ok: true, payload: { agentId, sessionKey } }
 }
 
@@ -67,9 +59,5 @@ export const handleSessionsDelete: Handler = async (params, _client, ctx) => {
 
   const sessionKey = p?.sessionKey || 'main'
   await agent.deleteSession(sessionKey)
-
-  // 广播删除事件给所有客户端
-  ctx.broadcaster.sessionEvent('session_deleted', agentId, sessionKey)
-
   return { ok: true, payload: { agentId, sessionKey } }
 }

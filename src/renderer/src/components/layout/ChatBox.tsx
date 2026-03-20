@@ -22,7 +22,6 @@ const ChatBox: React.FC<ChatBoxProps> = ({
 }) => {
   const { t } = useTranslation()
   const {
-    getVisibleMessages,
     sendMessage,
     chatStatuses,
     errorMessages,
@@ -34,7 +33,8 @@ const ChatBox: React.FC<ChatBoxProps> = ({
     switchSession,
     deleteSession,
     abortMessage,
-    sessionKeys
+    sessionKeys,
+    sessions
   } = useChatStore()
 
   const { agents, activeAgentId } = useAgentStore()
@@ -43,8 +43,8 @@ const ChatBox: React.FC<ChatBoxProps> = ({
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const activeAgent = agents.find((a) => a.id === activeAgentId)
-  const messages = getVisibleMessages()
   const currentSessionKey = activeAgentId ? sessionKeys[activeAgentId] || 'main' : 'main'
+  const messages = sessions[currentSessionKey] || []
 
   const chatStatus = (
     currentSessionKey ? chatStatuses[currentSessionKey] || 'idle' : 'idle'
@@ -52,7 +52,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({
 
   const currentError = currentSessionKey ? errorMessages[currentSessionKey] : null
   const isTyping = ['waiting', 'thinking', 'streaming', 'tool_executing'].includes(chatStatus)
-  const isLoading = activeAgentId ? isLoadingHistory[activeAgentId] : false
+  const isLoading = currentSessionKey ? isLoadingHistory[currentSessionKey] : false
   const activeAgentSessions = activeAgentId ? allSessions[activeAgentId] || [] : []
 
   // 状态显示逻辑映射
@@ -82,10 +82,10 @@ const ChatBox: React.FC<ChatBoxProps> = ({
       return
     }
 
-    if (!input.trim()) return
+    if (!input.trim() || !activeAgentId) return
     const text = input
     setInput('')
-    await sendMessage(text)
+    await sendMessage(text, activeAgentId)
   }
 
   return (

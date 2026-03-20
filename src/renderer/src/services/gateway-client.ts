@@ -89,45 +89,35 @@ export class RendererGatewayClient extends BaseGatewayClient {
    * 领域特定事件订阅 - 聊天 (对齐 chat 频道)
    */
   onChat(callback: (payload: ChatPayload) => void) {
-    return this.addEventListener((evt) => {
-      if (evt.event === 'chat') callback(evt.payload as ChatPayload)
-    })
+    return this.onChannel('chat', callback)
   }
 
   /**
    * 领域特定事件订阅 - 智能体状态 (对齐 agent 频道)
    */
   onAgent(callback: (payload: AgentEventPayload) => void) {
-    return this.addEventListener((evt) => {
-      if (evt.event === 'agent') callback(evt.payload as AgentEventPayload)
-    })
+    return this.onChannel('agent', callback)
   }
 
   /**
    * 领域特定事件订阅 - 模型列表 (对齐 models 频道)
    */
   onModels(callback: (payload: ModelsPayload) => void) {
-    return this.addEventListener((evt) => {
-      if (evt.event === 'models') callback(evt.payload as ModelsPayload)
-    })
+    return this.onChannel('models', callback)
   }
 
   /**
    * 领域特定事件订阅 - 系统心跳 (对齐 tick 频道)
    */
   onTick(callback: (payload: TickPayload) => void) {
-    return this.addEventListener((evt) => {
-      if (evt.event === 'tick') callback(evt.payload as TickPayload)
-    })
+    return this.onChannel('system:tick', callback)
   }
 
   /**
    * 领域特定事件订阅 - 停机预警 (对齐 shutdown 频道)
    */
   onShutdown(callback: (payload: ShutdownPayload) => void) {
-    return this.addEventListener((evt) => {
-      if (evt.event === 'shutdown') callback(evt.payload as ShutdownPayload)
-    })
+    return this.onChannel('system:shutdown', callback)
   }
 }
 

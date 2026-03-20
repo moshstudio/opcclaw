@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react'
-import { Boxes, Zap, Search, Info, RefreshCw, FileCode, CheckCircle2, MoreHorizontal } from 'lucide-react'
+import React, { useState, useMemo } from 'react'
+import { Boxes, Search, RefreshCw, FileCode, MoreHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@renderer/components/ui/switch'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
 import { CollapsibleSection } from '@renderer/components/ui/collapsible-section'
 import { SettingsSectionProps } from './types'
-import { getGatewayClient } from '@renderer/services/gateway-client'
+import { useGatewayList } from '@renderer/hooks/useGatewayList'
 import { cn } from '@renderer/lib/utils'
 
 interface SkillInfo {
@@ -18,34 +18,19 @@ interface SkillInfo {
 
 export const SkillSection: React.FC<SettingsSectionProps & { agentId: string }> = ({
   formData,
-  setFormData,
   isOpen,
   onToggle,
   agentId
 }) => {
   const { t } = useTranslation()
-  const [skills, setSkills] = useState<SkillInfo[]>([])
-  const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
 
-  const fetchSkills = async () => {
-    setLoading(true)
-    try {
-      const client = getGatewayClient()
-      const res = await client.request<{ skills: SkillInfo[] }>('skills.list', { agentId })
-      setSkills(res.skills)
-    } catch (err) {
-      console.error('Failed to fetch skills:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    if (isOpen) {
-      fetchSkills()
-    }
-  }, [isOpen, agentId])
+  const { data: skills, loading, refresh } = useGatewayList<SkillInfo>({
+    method: 'skills:list',
+    params: { agentId },
+    autoFetch: isOpen,
+    refreshDeps: [agentId, isOpen]
+  })
 
   const filteredSkills = useMemo(() => {
     return skills.filter(s => 
@@ -57,7 +42,6 @@ export const SkillSection: React.FC<SettingsSectionProps & { agentId: string }> 
   const builtinSkills = filteredSkills.filter(s => s.isBuiltin)
   const extraSkills = filteredSkills.filter(s => !s.isBuiltin)
 
-  // 目前模拟开关逻辑，后续需后端支持 skillPolicy
   const isEnabled = (_name: string) => formData.enableSkills
 
   return (
@@ -78,7 +62,7 @@ export const SkillSection: React.FC<SettingsSectionProps & { agentId: string }> 
                    {t('common.skills_desc', { status: `${skills.length}/${skills.length}` })}
                 </p>
              </div>
-             <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg group" onClick={() => fetchSkills()}>
+             <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg group" onClick={() => refresh()}>
                 <RefreshCw className={cn("w-3 h-3 text-muted-foreground/40 group-hover:text-primary transition-colors", loading && "animate-spin")} />
              </Button>
           </div>
@@ -103,7 +87,6 @@ export const SkillSection: React.FC<SettingsSectionProps & { agentId: string }> 
           </div>
         </div>
 
-        {/* 技能列表 */}
         <div className="space-y-6">
            {extraSkills.length > 0 && (
              <div className="space-y-3 px-1">

@@ -44,7 +44,7 @@ export const FileSection: React.FC<SettingsSectionProps & { agentId: string }> =
     setLoading(true)
     try {
       const client = getGatewayClient()
-      const res = await client.request<{ files: BootstrapFile[] }>('bootstrap.list', {
+      const res = await client.request<{ files: BootstrapFile[] }>('bootstrap:list', {
         workspaceDir: formData.workspaceDir
       })
       setFiles(res.files)
@@ -81,7 +81,7 @@ export const FileSection: React.FC<SettingsSectionProps & { agentId: string }> =
     setSaving(true)
     try {
       const client = getGatewayClient()
-      await client.request('bootstrap.save', {
+      await client.request('bootstrap:save', {
         path: file.path,
         content
       })

@@ -22,8 +22,8 @@ export const handleAgentCreate: Handler = async (params, _client, ctx) => {
   }
   const agentId = await ctx.registry.createAgent(config)
 
-  // 广播新智能体创建事件给所有客户端
-  ctx.broadcaster.agentLifecycle('agent_created', agentId)
+  // 统一分流：广播新智能体创建事件
+  ctx.broadcaster.dispatch({ type: 'agent:created', agentId })
 
   return { ok: true, payload: { agentId } }
 }
@@ -42,8 +42,8 @@ export const handleAgentUpdate: Handler = async (params, _client, ctx) => {
   const { agentId, ...updates } = p
   await ctx.registry.updateAgent(agentId, updates)
 
-  // 广播智能体配置更新事件给所有客户端
-  ctx.broadcaster.agentLifecycle('agent_updated', agentId)
+  // 统一分流：广播智能体配置更新事件
+  ctx.broadcaster.dispatch({ type: 'agent:updated', agentId })
 
   return { ok: true, payload: { agentId } }
 }
@@ -58,8 +58,8 @@ export const handleAgentDelete: Handler = async (params, _client, ctx) => {
   }
   await ctx.registry.deleteAgent(p.agentId)
 
-  // 广播智能体删除事件给所有客户端
-  ctx.broadcaster.agentLifecycle('agent_deleted', p.agentId)
+  // 统一分流：广播智能体删除事件
+  ctx.broadcaster.dispatch({ type: 'agent:deleted', agentId: p.agentId })
 
   return { ok: true, payload: { agentId: p.agentId } }
 }

@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Agent, type AgentConfig } from './agent.js'
 import { ConfigService } from '../config/config-service.js'
+import { MiniAgentEvent } from './agent-events.js'
 
 export interface RegisteredAgent {
   id: string
@@ -22,6 +23,20 @@ export class AgentRegistry {
       AgentRegistry.instance = new AgentRegistry()
     }
     return AgentRegistry.instance
+  }
+
+  private globalListeners = new Set<(agentId: string, event: any) => void>()
+
+  /**
+   * 订阅所有智能体事件
+   */
+  public subscribeAll(fn: (agentId: string, event: MiniAgentEvent) => void): () => void {
+    this.globalListeners.add(fn)
+    // 为现有智能体挂载
+    for (const [id, agent] of this.agents) {
+      agent.instance.subscribe((ev) => fn(id, ev))
+    }
+    return () => this.globalListeners.delete(fn)
   }
 
   /**
@@ -129,17 +144,13 @@ export class AgentRegistry {
     }
 
     const instance = new Agent(agentConfig)
-    this.agents.set(agentId, {
-      id: agentId,
-      instance,
-      config: {
-        ...agentJson,
-        systemPrompt,
-        // 传递解析后的关键路径和设置，方便前端显示完整路径
-        workspaceDir: agentConfig.workspaceDir,
-        sessionDir: agentConfig.sessionDir,
-        memoryDir: agentConfig.memoryDir
-      }
+    this.registerAgent(agentId, instance, {
+      ...agentJson,
+      systemPrompt,
+      // 传递解析后的关键路径和设置，方便前端显示完整路径
+      workspaceDir: agentConfig.workspaceDir,
+      sessionDir: agentConfig.sessionDir,
+      memoryDir: agentConfig.memoryDir
     })
 
     console.log(`[AgentRegistry] Loaded agent: ${agentId}`)

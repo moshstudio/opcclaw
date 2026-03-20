@@ -131,7 +131,7 @@ export async function startTelegramChannel(opts: TelegramChannelOptions) {
   bot.command('reset', async (ctx) => {
     const sessionKey = sessionKeyFor(ctx.chat.id)
     try {
-      await client.request('sessions.reset', { sessionKey })
+      await client.request('sessions:reset', { sessionKey })
       await ctx.reply('Session reset.')
     } catch (err) {
       await ctx.reply(`Reset failed: ${(err as Error).message}`)
@@ -164,7 +164,7 @@ export async function startTelegramChannel(opts: TelegramChannelOptions) {
     startTyping(chatId)
 
     try {
-      await client.request('chat.send', { sessionKey, message: ctx.message.text })
+      await client.request('chat:send', { sessionKey, message: ctx.message.text })
       // 回复由 onEvent 回调处理
     } catch (err) {
       stopTyping(chatId)

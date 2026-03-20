@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronDown, Wrench, CheckCircle2, Clock } from 'lucide-react'
+import { ChevronDown, Wrench, CheckCircle2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -35,54 +35,57 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
   } as React.CSSProperties
 
   return (
-    <div className="my-2 border rounded-xl overflow-hidden bg-muted/20 backdrop-blur-sm shadow-sm transition-all hover:border-primary/30 w-full min-w-0">
+    <div className="my-3 border rounded-xl overflow-hidden bg-white/50 dark:bg-zinc-900/30 backdrop-blur-md shadow-sm transition-all duration-300 hover:shadow-md hover:border-primary/40 w-full min-w-0 group/tool">
       {/* Header */}
       <div
-        className="flex items-center justify-between px-4 py-2.5 cursor-pointer select-none bg-muted/40 hover:bg-muted/60 transition-colors"
+        className="flex items-center justify-between px-4 py-3 cursor-pointer select-none bg-muted/30 hover:bg-muted/50 transition-colors"
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <div className="flex items-center gap-2.5 flex-1 min-w-0">
-          <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
-            <Wrench className="w-3.5 h-3.5" />
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0 shadow-sm group-hover/tool:scale-105 transition-transform duration-300">
+            <Wrench className="w-4 h-4" />
           </div>
           <div className="flex flex-col flex-1 min-w-0">
             <div className="flex items-center gap-2 overflow-hidden">
-              <span className="text-xs font-bold uppercase tracking-tight text-foreground/80 shrink-0">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-foreground/80 shrink-0">
                 {name}
               </span>
               {!isExpanded && status === 'success' && result && (
-                <span className="text-[10px] text-muted-foreground/50 font-mono truncate border-l border-muted-foreground/20 pl-2">
+                <span className="text-[10px] text-muted-foreground/50 font-mono truncate border-l border-muted-foreground/20 pl-2 leading-none mt-0.5">
                   {typeof result === 'string'
                     ? result.trim().replace(/\s+/g, ' ')
                     : JSON.stringify(result)}
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-1.5 mt-0.5">
+            <div className="flex items-center gap-1.5 mt-1">
               {status === 'loading' ? (
-                <>
-                  <Clock className="w-3 h-3 text-amber-500 animate-pulse" />
-                  <span className="text-[10px] text-amber-500/80 font-medium font-mono uppercase">
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                  </div>
+                  <span className="text-[9px] text-amber-600/80 dark:text-amber-500/80 font-bold uppercase tracking-tighter">
                     {t('common.executing')}
                   </span>
-                </>
+                </div>
               ) : (
-                <>
-                  <CheckCircle2 className="w-3 h-3 text-green-500" />
-                  <span className="text-[10px] text-green-500/80 font-medium font-mono uppercase">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                  <span className="text-[9px] text-emerald-600/80 dark:text-emerald-500/80 font-bold uppercase tracking-tighter">
                     {t('common.completed')}
                   </span>
-                </>
+                </div>
               )}
             </div>
           </div>
         </div>
         <motion.div
           animate={{ rotate: isExpanded ? 180 : 0 }}
-          transition={{ duration: 0.2 }}
-          className="ml-2 shrink-0"
+          transition={{ duration: 0.3, ease: 'backOut' }}
+          className="ml-2 w-6 h-6 rounded-full flex items-center justify-center hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50 transition-colors"
         >
-          <ChevronDown className="w-4 h-4 text-muted-foreground" />
+          <ChevronDown className="w-4 h-4 text-muted-foreground/70" />
         </motion.div>
       </div>
 
@@ -93,18 +96,21 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            transition={{ duration: 0.3, ease: 'circOut' }}
           >
-            <div className="px-4 pb-4 pt-2 space-y-3">
+            <div className="px-4 pb-5 pt-1 space-y-4">
               {/* Input Section */}
-              <div className="space-y-1.5">
-                <div className="text-[10px] font-bold text-foreground/70 dark:text-foreground/80 uppercase tracking-widest px-1">
-                  {t('common.parameters')}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 px-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary/40" />
+                  <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
+                    {t('common.parameters')}
+                  </span>
                 </div>
                 <div
                   className={cn(
-                    'rounded-lg overflow-x-auto border border-border/70 dark:border-border/50 w-full shadow-inner transition-colors',
-                    isDarkMode ? 'bg-zinc-950' : 'bg-zinc-50/50'
+                    'rounded-xl overflow-hidden border border-border/50 w-full shadow-inner transition-colors',
+                    isDarkMode ? 'bg-black/40' : 'bg-zinc-50'
                   )}
                 >
                   <SyntaxHighlighter
@@ -113,7 +119,8 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
                     PreTag="div"
                     customStyle={{
                       ...highlightStyle,
-                      backgroundColor: 'transparent'
+                      backgroundColor: 'transparent',
+                      padding: '16px'
                     }}
                     wrapLines={true}
                   >
@@ -124,14 +131,17 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
 
               {/* Result Section */}
               {result && (
-                <div className="space-y-1.5">
-                  <div className="text-[10px] font-bold text-foreground/70 dark:text-foreground/80 uppercase tracking-widest px-1">
-                    {t('common.output')}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 px-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/40" />
+                    <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
+                      {t('common.output')}
+                    </span>
                   </div>
                   <div
                     className={cn(
-                      'rounded-lg overflow-x-auto border border-border/70 dark:border-border/50 w-full shadow-inner transition-colors',
-                      isDarkMode ? 'bg-zinc-950' : 'bg-zinc-100/30'
+                      'rounded-xl overflow-hidden border border-border/50 w-full shadow-inner transition-colors',
+                      isDarkMode ? 'bg-black/40' : 'bg-zinc-100/30'
                     )}
                   >
                     <SyntaxHighlighter
@@ -140,7 +150,8 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
                       PreTag="div"
                       customStyle={{
                         ...highlightStyle,
-                        backgroundColor: 'transparent'
+                        backgroundColor: 'transparent',
+                        padding: '16px'
                       }}
                       wrapLines={true}
                     >

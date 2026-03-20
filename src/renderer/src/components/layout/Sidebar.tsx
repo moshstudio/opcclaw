@@ -1,18 +1,16 @@
 import React, { useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Settings as SettingsIcon, Search, PanelLeft } from 'lucide-react'
+import { Plus, Settings as SettingsIcon, PanelLeft } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
 import { Button } from '@renderer/components/ui/button'
-import { Input } from '@renderer/components/ui/input'
 import { useAgentStore } from '@renderer/store/useAgentStore'
 import { useChatStore } from '@renderer/store/useChatStore'
 
 import { useSystemStore } from '@renderer/store/useSystemStore'
 
 import NewAgentModal from '../modals/NewAgentModal'
-import { AgentInfo } from '@renderer/store/useAgentStore'
 
 interface SidebarProps {
   collapsed: boolean
@@ -21,16 +19,12 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
   const { t } = useTranslation()
-  const { agents, activeAgentId, setActiveAgent, fetchAgents } = useAgentStore()
+  const { agents, activeAgentId, setActiveAgent } = useAgentStore()
   const { fetchHistory, fetchSessions } = useChatStore()
   const [isNewAgentOpen, setIsNewAgentOpen] = React.useState(false)
   const navigate = useNavigate()
 
   const { status: connStatus } = useSystemStore()
-
-  useEffect(() => {
-    fetchAgents()
-  }, [fetchAgents])
 
   // 监听 activeAgentId 变化，自动触发历史载入和会话列表载入
   useEffect(() => {
@@ -125,63 +119,54 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
 
       <NewAgentModal open={isNewAgentOpen} onOpenChange={setIsNewAgentOpen} />
 
-      {/* Search */}
-      <div className="px-4 mb-6">
-        <div className="relative group">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
-          <Input
-            placeholder={t('common.search_agents')}
-            className="w-full bg-background/50 border-transparent focus-visible:border-primary/20 pl-10 h-10 rounded-xl font-medium"
-          />
-        </div>
-      </div>
-
       {/* Agent List */}
       <div className="flex-1 overflow-y-auto px-2 space-y-1 custom-scrollbar">
         {sortedAgents.map((agent) => {
-          const agentName = agent.id === 'main' && (!agent.config.name || agent.config.name === 'Default Assistant')
-            ? t('common.default_assistant')
-            : (agent.config.name || agent.id)
+          const agentName =
+            agent.id === 'main' && (!agent.config.name || agent.config.name === 'Default Assistant')
+              ? t('common.default_assistant')
+              : agent.config.name || agent.id
 
           return (
-          <button
-            key={agent.id}
-            onClick={() => handleAgentClick(agent.id)}
-            className={cn(
-              'w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group text-left relative',
-              activeAgentId === agent.id
-                ? 'bg-primary/10 border border-primary/20 shadow-sm'
-                : 'hover:bg-muted/50 border border-transparent'
-            )}
-          >
-            <div
+            <button
+              key={agent.id}
+              onClick={() => handleAgentClick(agent.id)}
               className={cn(
-                'w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 shadow-sm transition-all uppercase',
+                'w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group text-left relative',
                 activeAgentId === agent.id
-                  ? 'bg-primary text-primary-foreground scale-105'
-                  : 'bg-muted text-muted-foreground'
+                  ? 'bg-primary/10 border border-primary/20 shadow-sm'
+                  : 'hover:bg-muted/50 border border-transparent'
               )}
             >
-              {agentName[0]}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex justify-between items-center mb-0.5">
-                <p
-                  className={cn(
-                    'text-sm font-bold truncate',
-                    activeAgentId === agent.id
-                      ? 'text-foreground'
-                      : 'text-muted-foreground group-hover:text-foreground'
-                  )}
-                >
-                  {agentName}
-                </p>
+              <div
+                className={cn(
+                  'w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 shadow-sm transition-all uppercase',
+                  activeAgentId === agent.id
+                    ? 'bg-primary text-primary-foreground scale-105'
+                    : 'bg-muted text-muted-foreground'
+                )}
+              >
+                {agentName[0]}
               </div>
-            </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-center mb-0.5">
+                  <p
+                    className={cn(
+                      'text-sm font-bold truncate',
+                      activeAgentId === agent.id
+                        ? 'text-foreground'
+                        : 'text-muted-foreground group-hover:text-foreground'
+                    )}
+                  >
+                    {agentName}
+                  </p>
+                </div>
+              </div>
 
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
-        )})}
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+          )
+        })}
       </div>
 
       {/* Footer */}

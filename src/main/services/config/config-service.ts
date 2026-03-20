@@ -1,13 +1,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import crypto from 'node:crypto'
+import { newUUID } from '@shared/utils/id.js'
 import { completeSimple } from '@mariozechner/pi-ai'
 
 const OPCCLAW_ROOT = path.join(os.homedir(), '.opcclaw')
 
 import { type AIModelConfig } from '../../../shared/types/models.js'
-
 
 export interface GatewaySettings {
   port: number
@@ -99,7 +98,7 @@ export class ConfigService {
   }
 
   public addModel(model: Omit<AIModelConfig, 'id'>): AIModelConfig {
-    const newModel: AIModelConfig = { ...model, id: crypto.randomUUID() }
+    const newModel: AIModelConfig = { ...model, id: newUUID() }
     this.config.models.push(newModel)
     this.saveConfig({})
     return newModel

@@ -23,8 +23,8 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
         try {
           const client = getGatewayClient()
           const [toolsRes, skillsRes] = await Promise.all([
-            client.request<{ tools: any[] }>('tools.list'),
-            client.request<{ skills: any[] }>('skills.list', { agentId })
+            client.request<{ tools: any[] }>('tools:list'),
+            client.request<{ skills: any[] }>('skills:list', { agentId })
           ])
           setTools(toolsRes.tools)
           setSkills(skillsRes.skills)

@@ -3,52 +3,24 @@
  *
  * 对应 OpenClaw: pi-agent-core → agent-loop.ts — runLoop()
  *
- * 从 Agent 类中提取的纯函数: 接收所有依赖，不访问 Agent 实例状态。
- *
- * 架构对齐（EventStream 模式）:
- * - 同步返回 EventStream<MiniAgentEvent, MiniAgentResult>
- * - 内部 IIFE 异步执行循环，通过 stream.push() 推送类型化事件
- * - 消费方用 for-await 迭代 stream，或用 stream.result() 获取最终结果
- *
- * 双层循环结构 (对齐 openclaw):
- *
- * OUTER LOOP (follow-ups)
- * ├─ INNER LOOP (tools + steering)
- * │  ├─ 注入 pendingMessages（steering 或 follow-up）
- * │  ├─ LLM 流式调用
- * │  ├─ 执行工具（每执行一个后检查 steering）
- * │  ├─ 若 steering: 跳过剩余工具（每个被跳过的工具生成 skipToolCall 结果）
- * │  └─ 循环条件: hasMoreToolCalls || pendingMessages.length > 0
- * ├─ 检查 follow-up 消息
- * └─ 若有 follow-up: 继续外层循环
+ * 架构说明：
+ * - 采用 Orchestrator 模式，负责协调 Context、LLM、Tools 和 Metrics。
+ * - 采用双层循环结构：外层处理 Follow-ups，内层处理 Tools 和 Steering。
+ * - 纯函数设计，不持有 Agent 实例状态，通过 params 接收依赖。
  */
 
 import type { EventStream } from '@mariozechner/pi-ai'
 import type { Tool, ToolContext } from '@main/services/tools/types'
-import type { Message, ContentBlock } from '@main/services/session/session'
-import type {
-  Model,
-  StreamFunction,
-  SimpleStreamOptions,
-  Context as PiContext,
-  ThinkingLevel
-} from '@mariozechner/pi-ai'
-import {
-  retryAsync,
-  isContextOverflowError,
-  isRateLimitError,
-  describeError
-} from '@main/services/provider/errors.js'
-import { pruneContextMessages } from '@main/services/context/index.js'
-import {
-  createMiniAgentStream,
-  type MiniAgentEvent,
-  type MiniAgentResult,
-  type AgentPerformance
-} from './agent-events.js'
-import { abortable } from '@main/services/tools/abort'
-import { convertMessagesToPi } from './message-convert.js'
-import type { Usage } from '@mariozechner/pi-ai'
+import type { Message } from '@main/services/session/session'
+import type { Model, StreamFunction, ThinkingLevel } from '@mariozechner/pi-ai'
+import { describeError, isContextOverflowError } from '@main/services/provider/errors.js'
+import { createMiniAgentStream, type MiniAgentEvent, type MiniAgentResult } from './agent-events.js'
+
+// 导入解耦后的子模块
+import { MetricsTracker } from './loop/metrics'
+import { prepareContext } from './loop/context-handler'
+import { executeLlmCall } from './loop/llm-handler'
+import { executeToolCalls } from './loop/tool-handler'
 
 // ============== 类型定义 ==============
 
@@ -73,21 +45,15 @@ export interface AgentLoopParams {
   contextTokens: number
   /**
    * 获取 steering 消息
-   *
-   * 对应 OpenClaw: pi-agent-core → AgentLoopConfig.getSteeringMessages
-   * - 每执行完一个工具后调用
-   * - 返回非空数组时跳过剩余工具，注入到下一轮
+   * 每执行完一个工具后调用。返回非空数组时跳过剩余工具，注入到下一轮。
    */
   getSteeringMessages: () => Promise<Message[]>
   /**
    * 获取 follow-up 消息
-   *
-   * 对应 OpenClaw: pi-agent-core → AgentLoopConfig.getFollowUpMessages
-   * - 内层循环结束后（agent 本来要停下）调用
-   * - 返回非空数组时继续外层循环
+   * 内层循环结束后调用。返回非空数组时继续外层循环（Outer Loop）。
    */
   getFollowUpMessages?: () => Promise<Message[]>
-  /** 持久化 */
+  /** 消息持久化回调 */
   appendMessage: (sessionKey: string, msg: Message) => Promise<void>
   /** Compaction 触发器 */
   prepareCompaction: (params: {
@@ -98,47 +64,27 @@ export interface AgentLoopParams {
     summary?: string
     summaryMessage?: Message
   }>
-  /** 记录用量结果 */
+  /** 记录用量统计 */
   recordUsage?: (record: any) => Promise<void>
-  /** 外部 abort 信号 */
+  /** 外部中止信号 */
   abortSignal: AbortSignal
-}
-
-// ============== skipToolCall (对齐 openclaw) ==============
-
-/**
- * 为被跳过的工具生成占位结果
- *
- * 对应 OpenClaw: pi-agent-core → skipToolCall()
- * - isError: true，标记为错误结果
- * - 消息: "Skipped due to queued user message."
- * - 保持消息结构完整，便于 LLM 理解上下文
- */
-function skipToolCall(call: { id: string; name: string }): ContentBlock {
-  return {
-    type: 'tool_result',
-    tool_use_id: call.id,
-    name: call.name,
-    content: 'Skipped due to queued user message.'
-  }
 }
 
 // ============== 主循环 ==============
 
 /**
- * Agent 主循环
+ * Agent 主循环入口
  *
- * 对应 pi-agent-core/agent-loop.js → agentLoop()
- * - 同步返回 EventStream（IIFE 模式）
- * - 通过 stream.push() 推送类型化事件
- * - stream.end() 在终止时调用（agent_end / agent_error）
+ * @param params 循环参数
+ * @returns 返回一个异步可迭代的 EventStream
  */
 export function runAgentLoop(
   params: AgentLoopParams
 ): EventStream<MiniAgentEvent, MiniAgentResult> {
   const stream = createMiniAgentStream()
+  const metrics = new MetricsTracker()
 
-  // 对应 pi-agent-core: IIFE 异步执行循环，同步返回 stream
+  // IIFE 异步执行循环逻辑
   ;(async () => {
     const {
       runId,
@@ -166,41 +112,25 @@ export function runAgentLoop(
 
     let { compactionSummary } = params
     let turns = 0
-    let totalToolCalls = 0
     let finalText = ''
     let overflowCompactionAttempted = false
 
-    const startTime = Date.now()
-    let firstTokenTime: number | undefined
-    let lastTurnUsage: Usage | undefined
-    const accumulatedUsage: Usage = {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
-    }
-
     try {
-      // 对应 OpenClaw: 循环开始前检查 steering（用户可能在等待期间输入）
+      // 初始检查 steering (用户在 agent 启动间隙可能输入了消息)
       let pendingMessages = await getSteeringMessages()
 
-      // ========== 外层循环 (follow-ups) ==========
-      // 对应 OpenClaw: agent-loop.js outer while(true) loop
+      // ========== OUTER LOOP (Follow-ups) ==========
       outerLoop: while (true) {
         let hasMoreToolCalls = true
 
-        // ========== 内层循环 (tools + steering) ==========
-        // 对应 OpenClaw: inner while (hasMoreToolCalls || pendingMessages.length > 0)
+        // ========== INNER LOOP (LLM + Tools + Steering) ==========
         while (hasMoreToolCalls || pendingMessages.length > 0) {
-          if (turns >= maxTurns) break outerLoop
-          if (abortSignal.aborted) break outerLoop
+          if (turns >= maxTurns || abortSignal.aborted) break outerLoop
 
           turns++
-          stream.push({ type: 'turn_start', turn: turns })
+          stream.push({ type: 'agent:turn-start', runId, sessionKey, turn: turns })
 
-          // 注入 pending 消息（steering 或 follow-up）
+          // 处理待响应消息（Steering 或 Follow-up）
           if (pendingMessages.length > 0) {
             for (const msg of pendingMessages) {
               msg.runId = runId
@@ -210,159 +140,63 @@ export function runAgentLoop(
             pendingMessages = []
           }
 
-          // ===== Prune: 每轮都执行 =====
-          const pruneResult = pruneContextMessages({
-            messages: currentMessages,
-            contextWindowTokens: contextTokens
-          })
-          let messagesForModel = pruneResult.messages
-          if (compactionSummary) {
-            messagesForModel = [compactionSummary, ...messagesForModel]
-          }
-
-          // 构造 pi-ai Context
-          const piMessages = convertMessagesToPi(messagesForModel, modelDef)
-          const piContext: PiContext = {
+          // 1. 上下文准备
+          const { piContext, prunedCount } = prepareContext({
+            currentMessages,
+            compactionSummary,
             systemPrompt,
-            messages: piMessages,
-            tools: toolsForRun.map((t) => ({
-              name: t.name,
-              description: t.description,
-              parameters: t.inputSchema as any
-            }))
+            contextTokens,
+            toolsForRun,
+            modelDef
+          })
+
+          // 推送压缩/清理事件
+          if (prunedCount > 0) {
+            const firstBlock = compactionSummary?.content?.[0]
+            const summaryLen =
+              typeof firstBlock === 'string'
+                ? firstBlock.length
+                : (firstBlock as any)?.text?.length || 0
+            stream.push({
+              type: 'chat:notice',
+              runId,
+              sessionKey,
+              summaryChars: summaryLen,
+              droppedMessages: prunedCount,
+              firstKeptEntryId: (firstBlock as any)?.id
+            })
           }
 
-          // ===== 带重试的 LLM 调用 =====
-          const assistantContent: ContentBlock[] = []
-          const toolCalls: { id: string; name: string; input: Record<string, unknown> }[] = []
-          const turnTextParts: string[] = []
-
+          // 2. LLM 流式调用
+          let llmOutput
           try {
-            await retryAsync(
-              async () => {
-                assistantContent.length = 0
-                toolCalls.length = 0
-                turnTextParts.length = 0
-
-                const streamOpts: SimpleStreamOptions = {
-                  maxTokens: maxTokens ?? modelDef.maxTokens,
-                  signal: abortSignal,
-                  apiKey,
-                  ...(temperature !== undefined ? { temperature } : {}),
-                  ...(reasoning ? { reasoning } : {})
-                }
-                const eventStream = streamFn(modelDef, piContext, streamOpts)
-
-                let accumulatedThinking = ''
-                for await (const event of eventStream) {
-                  if (abortSignal.aborted) break
-
-                  switch (event.type) {
-                    case 'thinking_delta':
-                      accumulatedThinking += event.delta
-                      stream.push({ type: 'thinking_delta', delta: event.delta })
-                      break
-
-                    case 'thinking_end':
-                      if (accumulatedThinking) {
-                        const contentIdx = event.contentIndex
-                        const block = event.partial.content[contentIdx]
-                        const signature =
-                          block?.type === 'thinking' ? block.thinkingSignature : undefined
-                        assistantContent.push({
-                          type: 'thinking',
-                          text: accumulatedThinking,
-                          thinking_signature: signature
-                        })
-                      }
-                      break
-
-                    case 'text_delta':
-                      if (firstTokenTime === undefined) {
-                        firstTokenTime = Date.now()
-                      }
-                      stream.push({ type: 'message_delta', delta: event.delta })
-                      break
-
-                    case 'text_end':
-                      turnTextParts.push(event.content)
-                      assistantContent.push({ type: 'text', text: event.content })
-                      break
-
-                    case 'done':
-                      lastTurnUsage = event.message.usage
-                      if (lastTurnUsage) {
-                        accumulatedUsage.input += lastTurnUsage.input
-                        accumulatedUsage.output += lastTurnUsage.output
-                        accumulatedUsage.cacheRead += lastTurnUsage.cacheRead
-                        accumulatedUsage.cacheWrite += lastTurnUsage.cacheWrite
-                        accumulatedUsage.totalTokens += lastTurnUsage.totalTokens
-                        accumulatedUsage.cost.input += lastTurnUsage.cost.input
-                        accumulatedUsage.cost.output += lastTurnUsage.cost.output
-                        accumulatedUsage.cost.cacheRead += lastTurnUsage.cost.cacheRead
-                        accumulatedUsage.cost.cacheWrite += lastTurnUsage.cost.cacheWrite
-                        accumulatedUsage.cost.total += lastTurnUsage.cost.total
-                      }
-                      break
-
-                    case 'toolcall_start':
-                      break
-
-                    case 'toolcall_end': {
-                      const tc = event.toolCall
-                      const tcArgs = tc.arguments as Record<string, unknown>
-                      assistantContent.push({
-                        type: 'tool_use',
-                        id: tc.id,
-                        name: tc.name,
-                        input: tcArgs
-                      })
-                      toolCalls.push({
-                        id: tc.id,
-                        name: tc.name,
-                        input: tcArgs
-                      })
-                      break
-                    }
-
-                    // pi-ai 的 error 事件: API 错误、网络错误等
-                    // AssistantMessageEventStream 将 error 事件 resolve（非 reject），
-                    // 必须在这里显式抛出，否则错误被静默吞掉
-                    case 'error': {
-                      const errObj = (event as any).error
-                      const errMsg =
-                        errObj?.errorMessage ??
-                        (errObj instanceof Error ? errObj.message : null) ??
-                        'unknown stream error'
-                      throw new Error(`LLM stream error: ${errMsg}`)
-                    }
-                  }
-                }
-
-                const result = eventStream.result()
-                await abortable(result, abortSignal)
-              },
+            llmOutput = await executeLlmCall(
               {
-                attempts: 3,
-                minDelayMs: 300,
-                maxDelayMs: 30_000,
-                jitter: 0.1,
-                label: 'llm-call',
-                shouldRetry: (err) => {
-                  if (abortSignal.aborted) return false
-                  return isRateLimitError(describeError(err))
-                },
-                onRetry: ({ attempt, delay, error }) => {
-                  stream.push({ type: 'retry', attempt, delay, error: describeError(error) })
-                }
-              }
+                runId,
+                sessionKey,
+                modelDef,
+                streamFn,
+                apiKey,
+                temperature,
+                maxTokens,
+                reasoning,
+                abortSignal
+              },
+              piContext,
+              stream,
+              metrics
             )
           } catch (llmError) {
-            // Context overflow → auto-compact → 重试一次
+            // 上下文溢出自动压缩逻辑
             const errorText = describeError(llmError)
             if (isContextOverflowError(errorText) && !overflowCompactionAttempted) {
               overflowCompactionAttempted = true
-              stream.push({ type: 'context_overflow_compact', error: errorText })
+              stream.push({
+                type: 'agent:context-overflow',
+                runId,
+                sessionKey,
+                error: llmError instanceof Error ? llmError.message : String(llmError)
+              })
               const overflowPrep = await prepareCompaction({
                 messages: currentMessages,
                 sessionKey,
@@ -370,108 +204,57 @@ export function runAgentLoop(
               })
               if (overflowPrep.summary && overflowPrep.summaryMessage) {
                 compactionSummary = overflowPrep.summaryMessage
-                turns--
+                turns-- // 回退 turn 计数，重新尝试
                 continue
               }
             }
             throw llmError
           }
 
-          // 保存 assistant 消息
+          // 3. 保存 Assistant 消息
           const assistantMsg: Message = {
             role: 'assistant',
-            content: assistantContent,
+            content: llmOutput.assistantContent,
             timestamp: Date.now(),
             runId,
-            usage: lastTurnUsage
+            usage: llmOutput.usage
           }
           await appendMessage(sessionKey, assistantMsg)
           currentMessages.push(assistantMsg)
 
-          const turnText = turnTextParts.join('')
-          if (turnText) {
+          if (llmOutput.turnText) {
             stream.push({
-              type: 'message_end',
+              type: 'chat:final',
+              runId,
+              sessionKey,
               message: assistantMsg,
-              text: turnText,
-              usage: lastTurnUsage
+              text: llmOutput.turnText,
+              usage: llmOutput.usage
             })
           }
 
-          hasMoreToolCalls = toolCalls.length > 0
+          hasMoreToolCalls = llmOutput.toolCalls.length > 0
 
-          // 没有工具调用 → 内层循环结束条件之一
+          // 核心内层循环结束条件
           if (!hasMoreToolCalls) {
-            finalText = turnText
-            stream.push({ type: 'turn_end', turn: turns })
-            // 检查是否有 steering 消息待处理
+            finalText = llmOutput.turnText
+            stream.push({ type: 'agent:turn-end', runId, sessionKey, turn: turns })
             pendingMessages = await getSteeringMessages()
             continue
           }
 
-          // ===== 执行工具（串行 + steering 中断检测） =====
-          // 对应 OpenClaw: executeToolCalls() + getSteeringMessages 检查
-          const toolResults: ContentBlock[] = []
-          let steeringMessages: Message[] | null = null
+          // 4. 执行工具调用
+          const toolResults = await executeToolCalls(
+            llmOutput.toolCalls,
+            toolsForRun,
+            toolCtx,
+            runId,
+            sessionKey,
+            stream,
+            metrics
+          )
 
-          for (let i = 0; i < toolCalls.length; i++) {
-            const call = toolCalls[i]
-            const tool = toolsForRun.find((t) => t.name === call.name)
-            let result: string
-
-            stream.push({
-              type: 'tool_execution_start',
-              toolCallId: call.id,
-              toolName: call.name,
-              args: call.input
-            })
-
-            if (tool) {
-              try {
-                result = await tool.execute(call.input, toolCtx)
-              } catch (err) {
-                result = `执行错误: ${(err as Error).message}`
-              }
-            } else {
-              result = `未知工具: ${call.name}`
-            }
-
-            totalToolCalls++
-            const isError = !tool
-            stream.push({
-              type: 'tool_execution_end',
-              toolCallId: call.id,
-              toolName: call.name,
-              result: result.length > 500 ? `${result.slice(0, 500)}...` : result,
-              isError
-            })
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: call.id,
-              name: call.name,
-              content: result
-            })
-
-            // 对应 OpenClaw: 每执行完一个工具检查 steering
-            const steering = await getSteeringMessages()
-            if (steering.length > 0) {
-              steeringMessages = steering
-              // 对应 OpenClaw: skipToolCall() — 跳过剩余工具
-              const remaining = toolCalls.slice(i + 1)
-              for (const skipped of remaining) {
-                stream.push({
-                  type: 'tool_skipped',
-                  toolCallId: skipped.id,
-                  toolName: skipped.name
-                })
-                toolResults.push(skipToolCall(skipped))
-              }
-              stream.push({ type: 'steering', pendingCount: steering.length })
-              break
-            }
-          }
-
-          // 添加工具结果（含 skip 结果）
+          // 5. 保存工具执行结果
           const resultMsg: Message = {
             role: 'user',
             content: toolResults,
@@ -481,18 +264,21 @@ export function runAgentLoop(
           await appendMessage(sessionKey, resultMsg)
           currentMessages.push(resultMsg)
 
-          stream.push({ type: 'turn_end', turn: turns })
+          stream.push({ type: 'agent:turn-end', runId, sessionKey, turn: turns })
 
-          // 对应 OpenClaw: steering 消息设为 pendingMessages，下一轮注入
-          if (steeringMessages && steeringMessages.length > 0) {
-            pendingMessages = steeringMessages
-          } else {
-            pendingMessages = await getSteeringMessages()
+          // 检查 Steering（如工具执行过程中产生的反馈或干预）
+          pendingMessages = await getSteeringMessages()
+          if (pendingMessages.length > 0) {
+            stream.push({
+              type: 'chat:planning',
+              runId,
+              sessionKey,
+              pendingCount: pendingMessages.length
+            })
           }
-        }
-        // ========== 内层循环结束 ==========
+        } // end inner while
 
-        // 对应 OpenClaw: 检查 follow-up 消息
+        // 检查 Follow-up
         if (getFollowUpMessages) {
           const followUp = await getFollowUpMessages()
           if (followUp.length > 0) {
@@ -501,19 +287,12 @@ export function runAgentLoop(
           }
         }
         break
-      }
-      // ========== 外层循环结束 ==========
-      const totalDurationMs = Date.now() - startTime
-      const performance: AgentPerformance = {
-        totalDurationMs,
-        firstTokenLatencyMs: firstTokenTime ? firstTokenTime - startTime : undefined,
-        throughput:
-          accumulatedUsage.output > 0
-            ? (accumulatedUsage.output / totalDurationMs) * 1000
-            : undefined
-      }
+      } // end outer while
 
-      // 后端持久化统计
+      // ========== 结束前记录性能与用量 ==========
+      const performance = metrics.getPerformance()
+      const finalUsage = metrics.accumulatedUsage
+
       if (recordUsage) {
         await recordUsage({
           runId,
@@ -521,34 +300,36 @@ export function runAgentLoop(
           agentId,
           model: modelDef.id,
           timestamp: Date.now(),
-          usage: accumulatedUsage,
+          usage: finalUsage,
           performance
         })
       }
 
       stream.push({
-        type: 'agent_end',
+        type: 'agent:run-end',
         runId,
+        sessionKey,
         messages: currentMessages,
-        usage: accumulatedUsage,
+        usage: finalUsage,
         performance
       })
+
       stream.end({
         finalText,
         turns,
-        totalToolCalls,
+        totalToolCalls: metrics.totalToolCalls,
         messages: currentMessages,
-        usage: accumulatedUsage,
+        usage: finalUsage,
         performance
       })
     } catch (err) {
-      stream.push({ type: 'agent_error', runId, error: describeError(err) })
+      stream.push({ type: 'agent:run-error', runId, sessionKey, error: describeError(err) })
       stream.end({
         finalText,
         turns,
-        totalToolCalls,
+        totalToolCalls: metrics.totalToolCalls,
         messages: currentMessages,
-        usage: accumulatedUsage
+        usage: metrics.accumulatedUsage
       })
     }
   })()

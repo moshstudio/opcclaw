@@ -28,7 +28,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
   const { t } = useTranslation()
   const { agents, activeAgentId, updateAgent, deleteAgent } = useAgentStore()
   const confirm = useConfirm()
-  const { models, fetchModels } = useModelStore()
+  const { models } = useModelStore()
   const [loading, setLoading] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
   const [activeTab, setActiveTab] = useState<'settings' | 'usage'>('settings')
@@ -69,40 +69,37 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
   })
 
   useEffect(() => {
-    if (visible) {
-      fetchModels()
-      if (editingAgent) {
-        const config = editingAgent.config || {}
-        setFormData({
-          name: config.name || '',
-          systemPrompt: config.systemPrompt || '',
-          modelSelectId: 'default',
-          temperature: config.temperature ?? 0.7,
-          reasoning: config.reasoning || 'medium',
-          contextTokens: config.contextTokens ?? 128000,
-          maxTokens: config.maxTokens ?? 4096,
-          enableMemory: config.enableMemory ?? true,
-          enableSkills: config.enableSkills ?? true,
-          enableContext: config.enableContext ?? true,
-          enableHeartbeat: config.enableHeartbeat ?? false,
-          workspaceDir: config.workspaceDir || '',
-          maxTurns: config.maxTurns ?? 20,
-          maxConcurrentRuns: config.maxConcurrentRuns ?? 4,
-          sandboxEnabled: config.sandbox?.enabled ?? false,
-          sandboxAllowExec: config.sandbox?.allowExec ?? false,
-          sandboxAllowWrite: config.sandbox?.allowWrite ?? true,
-          isPinned: config.isPinned ?? editingAgent.id === 'main',
-          toolPolicy: config.toolPolicy || { allow: [], deny: [] }
-        })
-      }
+    if (visible && editingAgent) {
+      const config = editingAgent.config || {}
+      setFormData({
+        name: config.name || '',
+        systemPrompt: config.systemPrompt || '',
+        modelSelectId: 'default',
+        temperature: config.temperature ?? 0.7,
+        reasoning: config.reasoning || 'medium',
+        contextTokens: config.contextTokens ?? 128000,
+        maxTokens: config.maxTokens ?? 4096,
+        enableMemory: config.enableMemory ?? true,
+        enableSkills: config.enableSkills ?? true,
+        enableContext: config.enableContext ?? true,
+        enableHeartbeat: config.enableHeartbeat ?? false,
+        workspaceDir: config.workspaceDir || '',
+        maxTurns: config.maxTurns ?? 20,
+        maxConcurrentRuns: config.maxConcurrentRuns ?? 4,
+        sandboxEnabled: config.sandbox?.enabled ?? false,
+        sandboxAllowExec: config.sandbox?.allowExec ?? false,
+        sandboxAllowWrite: config.sandbox?.allowWrite ?? true,
+        isPinned: config.isPinned ?? editingAgent.id === 'main',
+        toolPolicy: config.toolPolicy || { allow: [], deny: [] }
+      })
     }
-  }, [visible, editingAgent, fetchModels])
+  }, [visible, editingAgent])
 
   const fetchUsageStats = useCallback(async () => {
     if (!activeAgentId) return
     setLoadingUsage(true)
     try {
-      const res = (await getGatewayClient().request('usage.stats', {
+      const res = (await getGatewayClient().request('usage:stats', {
         agentId: activeAgentId
       })) as any
       if (res.ok) {

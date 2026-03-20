@@ -2,9 +2,28 @@
  * Agent 相关通用类型定义 (Shared)
  */
 
+export interface SubagentInfo {
+  /** 任务详情 */
+  task: string
+  /** 运行状态 */
+  status: 'running' | 'success' | 'error'
+  /** 摘要 (成功时) */
+  summary?: string
+  /** 错误信息 (失败时) */
+  error?: string
+  /** 自定义标签 */
+  label?: string
+  /** 子代理 Agent ID */
+  agentId?: string
+  /** 子代理运行 ID */
+  runId?: string
+  /** 子代理会话 Key */
+  childSessionKey?: string
+}
+
 export interface ContentBlock {
   /** 类型 */
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking'
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'subagent'
   /** 文本内容 (type=text 或 type=thinking 时) */
   text?: string
   /** 思考签名 (type=thinking 时用于记录原始字段名，如 reasoning_content) */
@@ -19,6 +38,8 @@ export interface ContentBlock {
   tool_use_id?: string
   /** 工具执行结果 (type=tool_result 时) */
   content?: string
+  /** 子代理信息 (type=subagent 时) */
+  subagent?: SubagentInfo
 }
 
 /**
@@ -66,6 +87,8 @@ export interface Message {
   runId?: string
   /** Token 消耗和成本统计 (仅 assistant 角色) */
   usage?: Usage
+  /** 整个会话过程的总消耗 (在 agent_end 时由后端累计返回) */
+  totalUsage?: Usage
   /** 性能指标 (仅 agent_end 时) */
   performance?: AgentPerformance
   /** 最后一个处理过的 Chunk ID (用于去重) */
@@ -79,9 +102,11 @@ export type ChatStatus =
   | 'idle'
   | 'waiting' // 请求已发送，尚无任何回应
   | 'thinking' // 大脑思考中 (Thought/Reasoning)
+  | 'planning' // 正在规划下一步或多步任务
   | 'streaming' // 正在输出正文或工具参数
   | 'tool_calling' // 正在生成工具调用
   | 'tool_executing' // 正在执行工具
+  | 'retrying' // 发生重试
   | 'completed' // 已完成（本次运行结束）
   | 'error' // 发生错误
   | 'aborted' // 用户手动中止

@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { getGatewayClient } from '../services/gateway-client'
 import { toast } from 'sonner'
 
 interface SystemState {
@@ -10,11 +9,17 @@ interface SystemState {
   restartExpectedMs: number | null
   
   initialized: boolean
-  init: () => void
 
+  handleConnect: () => void
+  handleDisconnect: () => void
+  handleTick: (payload: any) => void
+  handleShutdown: (payload: any) => void
+  handleError: (err: Error) => void
+
+  init: () => void
 }
 
-export const useSystemStore = create<SystemState>((set, get) => ({
+export const useSystemStore = create<SystemState>((set) => ({
   lastTick: Date.now(),
   status: 'disconnected',
   isShuttingDown: false,
@@ -22,48 +27,40 @@ export const useSystemStore = create<SystemState>((set, get) => ({
   restartExpectedMs: null,
   initialized: false,
 
+  // --- External Handlers (Called by GatewaySync) ---
+  handleConnect: () => {
+    set({ status: 'connected', isShuttingDown: false })
+  },
+
+  handleDisconnect: () => {
+    set({ status: 'reconnecting' })
+  },
+
+  handleTick: (payload: any) => {
+    set({ 
+      lastTick: payload?.ts || Date.now(),
+      status: 'connected'
+    })
+  },
+
+  handleShutdown: (payload: any) => {
+    set({
+      isShuttingDown: true,
+      shutdownReason: payload.reason || 'Server is shutting down',
+      restartExpectedMs: payload.restartExpectedMs
+    })
+    
+    toast.error('System Shutdown Warning', {
+      description: payload.reason || 'The server is shutting down. Please save your work.',
+      duration: 10000
+    })
+  },
+
+  handleError: () => {
+    set({ status: 'error' })
+  },
 
   init: () => {
-    if (get().initialized) return
-    set({ initialized: true })
-
-    const client = getGatewayClient()
-
-    // 监听连接成功
-    client.onConnect(() => {
-      set({ status: 'connected', isShuttingDown: false })
-    })
-
-    // 监听关闭/断开
-    client.onClose(() => {
-      set({ status: 'reconnecting' })
-    })
-
-    // 监听心跳
-    client.onTick((payload) => {
-      set({ 
-        lastTick: payload.ts || Date.now(),
-        status: 'connected' // 收到心跳肯定连着
-      })
-    })
-
-    // 监听关机预警
-    client.onShutdown((payload) => {
-      set({
-        isShuttingDown: true,
-        shutdownReason: payload.reason || 'Server is shutting down',
-        restartExpectedMs: payload.restartExpectedMs
-      })
-      
-      toast.error('System Shutdown Warning', {
-        description: payload.reason || 'The server is shutting down. Please save your work.',
-        duration: 10000,
-      })
-    })
-
-    // 初始连接尝试
-    client.ensureConnected().catch(() => {
-      set({ status: 'error' })
-    })
+    // 基础配置初始化 (如有逻辑)
   }
 }))

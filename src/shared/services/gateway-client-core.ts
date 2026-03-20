@@ -7,6 +7,7 @@ import {
   type IGatewayClient,
   type GatewayMethod,
   type GatewayEvent,
+  type GatewayAction,
   isResponseFrame,
   isEventFrame,
   REQUEST_TIMEOUT_MS,
@@ -25,7 +26,9 @@ type Pending = {
 /**
  * 通用网关客户端抽象逻辑
  *
- * 不依赖特定的 WebSocket 实现，需要子类提供。
+ * 采用双层事件分发模型：
+ * 1. 频道分流 (Channel): 对应基础通信信道，如 'chat', 'agent', 'models'。
+ * 2. 动作分流 (Action): 为 BEM 模型提供业务二次分发，如 'agent:created', 'session:reset'。
  */
 export abstract class BaseGatewayClient implements IGatewayClient {
   protected ws: any = null
@@ -34,6 +37,12 @@ export abstract class BaseGatewayClient implements IGatewayClient {
   protected opts: GatewayClientOptions
   private closed = false
   private onCloseListeners = new Set<(code: number, reason: string) => void>()
+
+  /** 频道监听器：按 GatewayEvent 顶层路由，各频道负载类型互异 */
+  private channelListeners = new Map<string, Set<(payload: any) => void>>()
+
+  /** 动作监听器：按 Action 名业务二次分流，通常归属于 'agent' 或 'models' 频道 */
+  private actionListeners = new Map<string, Set<(payload: any) => void>>()
 
   // 指数退避
   private backoffMs = 1000
@@ -51,12 +60,45 @@ export abstract class BaseGatewayClient implements IGatewayClient {
   private eventListeners = new Set<(evt: EventFrame) => void>()
   private onConnectListeners = new Set<(hello: HelloOk) => void>()
 
-  /**
-   * 添加事件监听
-   */
   public addEventListener(listener: (evt: EventFrame) => void) {
     this.eventListeners.add(listener)
     return () => this.removeEventListener(listener)
+  }
+
+  /**
+   * 监听指定频道的事件 (Channel level, e.g. 'chat', 'agent')
+   *
+   * @param event 频道名称 (如 'chat')
+   * @param listener 负载处理器，点击 payload 自动推断类型
+   * @returns 取消监听函数
+   */
+  public onChannel<K extends GatewayEvent>(
+    event: K,
+    listener: (payload: Extract<EventFrame, { event: K }>['payload']) => void
+  ) {
+    if (!this.channelListeners.has(event)) {
+      this.channelListeners.set(event, new Set())
+    }
+    const listeners = this.channelListeners.get(event)!
+    listeners.add(listener)
+    return () => listeners.delete(listener)
+  }
+
+  /**
+   * 监听指定业务动作的事件 (Action level, e.g. 'agent:created')
+   * 自动从对应的频道负载推断业务逻辑。
+   *
+   * @param action 动作标识 (namespace:action 风格)
+   * @param listener 负载处理器 (如果是自定义动作，可通过泛型扩展类型)
+   * @returns 取消监听函数
+   */
+  public onAction<T = any>(action: GatewayAction | (string & {}), listener: (payload: T) => void) {
+    if (!this.actionListeners.has(action)) {
+      this.actionListeners.set(action, new Set())
+    }
+    const listeners = this.actionListeners.get(action)!
+    listeners.add(listener)
+    return () => listeners.delete(listener)
   }
 
   /**
@@ -112,6 +154,7 @@ export abstract class BaseGatewayClient implements IGatewayClient {
         } catch {
           return
         }
+        console.log('gateway-client-core onMessage:', parsed)
 
         if (isResponseFrame(parsed)) {
           const res = parsed as ResponseFrame
@@ -136,11 +179,11 @@ export abstract class BaseGatewayClient implements IGatewayClient {
             this.lastSeq = evt.seq
           }
 
-          if (evt.event === 'tick') {
+          if (evt.event === 'system:tick') {
             this.lastTick = Date.now()
           }
 
-          if (evt.event === 'connect.challenge') {
+          if (evt.event === 'connect:challenge') {
             const nonce = (evt.payload as { nonce: string; ts: number }).nonce
             this.request<HelloOk>('connect' as GatewayMethod, { token: this.opts.token, nonce })
 
@@ -166,6 +209,16 @@ export abstract class BaseGatewayClient implements IGatewayClient {
           }
 
           this.eventListeners.forEach((l) => l(evt))
+
+          // --- 优化：统一分发逻辑 ---
+          // 1. 频道分发
+          this.channelListeners.get(evt.event)?.forEach((l) => l(evt.payload))
+
+          // 2. 动作分发 (针对 payload 中带有 type 的事件)
+          const payload = evt.payload as any
+          if (payload && typeof payload.type === 'string') {
+            this.actionListeners.get(payload.type)?.forEach((l) => l(payload))
+          }
         }
       }
 

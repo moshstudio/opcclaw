@@ -158,7 +158,14 @@
     "usage_cache_write": "写入 (Write)",
     "usage_anomalies": "运行异常",
     "usage_errors_recorded": "条记录发生执行错误",
-    "usage_refresh": "刷新统计数据"
+    "usage_refresh": "刷新统计数据",
+    "tokens": "Tokens",
+    "latency": "耗时",
+    "throughput": "速率",
+    "ms": "ms",
+    "subagent_summary": "子代理摘要",
+    "subagent_error": "子代理错误",
+    "subagent_running": "子代理运行中"
   },
   "onboarding": {
     "title": "欢迎启用 OpcClaw",

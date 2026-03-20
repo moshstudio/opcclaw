@@ -1,216 +1,255 @@
 import { Message, ChatStatus } from '@shared/types/agent'
+import { ChatPayload, AgentEventPayload } from '@shared/types/gateway'
 
-/**
- * 局部会话状态片段用于状态提取
- */
+// ============================================================================
+// 1. Types & Constants
+// ============================================================================
+
+/** 状态自动重置延迟时间 */
+export const RESET_TIMEOUT = {
+  SUCCESS: 800,
+  ERROR: 1500,
+  ABORT: 500,
+  SEND_ERROR: 3000
+} as const
+
 export interface SessionPatch {
   messages: Message[]
   status: ChatStatus
   errorMessage?: string | null
 }
 
-/**
- * 确保给定 runId 的 Assistant 消息存在。如果不存在，则创建一个并将其推送到数组中。
- */
-export const ensureAssistantMessage = (
-  messages: Message[],
-  runId: string | undefined
-): { msg: Message; index: number } => {
-  const lastIdx = messages.length - 1
-  const lastMsg = messages[lastIdx]
+const STATUS_MAP: Record<string, ChatStatus> = {
+  start: 'waiting',
+  user_message: 'idle',
+  thinking: 'thinking',
+  planning: 'planning',
+  retrying: 'retrying',
+  delta: 'streaming',
+  tool_call: 'tool_executing',
+  tool_result: 'streaming',
+  notice: 'streaming',
+  subagent_feedback: 'streaming',
+  final: 'completed',
+  error: 'error'
+}
 
-  let idx = -1
-  if (lastMsg && lastMsg.role === 'assistant') {
-    if (runId) {
-      if (lastMsg.runId === runId || lastMsg.id === runId) {
-        idx = lastIdx
-      }
-    } else {
-      idx = lastIdx
-    }
+// ============================================================================
+// 2. Atomic Utilities
+// ============================================================================
+
+/** 确定 Assistant 消息槽位 (若不存在则创建) */
+export const ensureAssistantSlot = (messages: Message[], runId?: string): Message => {
+  const lastMsg = messages[messages.length - 1]
+  const isMatch =
+    lastMsg?.role === 'assistant' && (!runId || lastMsg.runId === runId || lastMsg.id === runId)
+
+  if (isMatch) return lastMsg
+
+  const newMsg: Message = {
+    id: runId && !messages.some((m) => m.id === runId) ? runId : `asst_${Date.now()}`,
+    role: 'assistant',
+    runId,
+    content: [],
+    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
+  messages.push(newMsg)
+  return newMsg
+}
 
-  if (idx === -1) {
-    const newMsg: Message = {
-      id: runId && !messages.some((m) => m.id === runId) ? runId : `temp_asst_${Date.now()}`,
-      role: 'assistant',
-      runId,
-      content: [],
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit'
+const appendDelta = (msg: Message, type: 'text' | 'thinking', text?: string) => {
+  if (!text) return
+  if (!Array.isArray(msg.content)) msg.content = []
+
+  const last = msg.content[msg.content.length - 1]
+  if (last?.type === type) {
+    last.text = (last.text || '') + text
+  } else {
+    msg.content.push({ type, text })
+  }
+}
+
+export const mapHistoryMessage = (m: any): Message => ({
+  id: m.id || `hist_${Math.random().toString(36).slice(2, 9)}`,
+  role: (m.role || 'user') as Message['role'],
+  content: m.content || m.text || '',
+  runId: m.runId,
+  timestamp: m.timestamp
+    ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : ''
+})
+
+// ============================================================================
+// 3. Sub-Handlers (Logic per State)
+// ============================================================================
+
+const ChatSubHandlers: Record<string, (payload: ChatPayload, messages: Message[]) => void> = {
+  user_message: (p, msgs) => {
+    if (p.message && !msgs.some((m) => m.id === p.message?.id)) msgs.push(p.message)
+  },
+
+  start: (p, msgs) => {
+    if (p.delta || p.message || p.toolCall) {
+      const msg = ensureAssistantSlot(msgs, p.runId)
+      if (p.message) msg.content = p.message.content
+    }
+  },
+
+  thinking: (p, msgs) => appendDelta(ensureAssistantSlot(msgs, p.runId), 'thinking', p.delta),
+  delta: (p, msgs) => appendDelta(ensureAssistantSlot(msgs, p.runId), 'text', p.delta),
+
+  tool_call: (p, msgs) => {
+    if (!p.toolCall) return
+    const msg = ensureAssistantSlot(msgs, p.runId)
+    if (!Array.isArray(msg.content)) msg.content = []
+    if (!msg.content.some((c) => c.type === 'tool_use' && c.id === p.toolCall!.id)) {
+      msg.content.push({
+        type: 'tool_use',
+        id: p.toolCall.id,
+        name: p.toolCall.name,
+        input: p.toolCall.args
       })
     }
-    messages.push(newMsg)
-    idx = messages.length - 1
-  }
+  },
 
-  return { msg: messages[idx], index: idx }
-}
+  tool_result: (p, msgs) => {
+    if (!p.toolResult) return
+    msgs.push({
+      id: `tr_${p.toolResult.id}_${Date.now()}`,
+      role: 'user',
+      runId: p.runId,
+      content: [
+        { type: 'tool_result', tool_use_id: p.toolResult.id, content: p.toolResult.result }
+      ],
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    })
+  },
 
-/**
- * 原子化：将文本增量追加到消息内容中
- */
-export const appendTextDelta = (msg: Message, text: string | undefined) => {
-  if (text === undefined) return
-  if (typeof msg.content === 'string') {
-    msg.content = [{ type: 'text', text: msg.content + text }]
-    return
-  }
+  final: (p, msgs) => {
+    if (p.delta || p.usage || p.performance || p.message) {
+      const msg = ensureAssistantSlot(msgs, p.runId)
+      if (p.delta) appendDelta(msg, 'text', p.delta)
+      if (p.message) msg.content = p.message.content
+      if (p.usage) p.performance ? (msg.totalUsage = p.usage) : (msg.usage = p.usage)
+      if (p.performance) msg.performance = p.performance
+    }
+  },
 
-  const lastBlock = msg.content[msg.content.length - 1]
-  if (lastBlock?.type === 'text') {
-    lastBlock.text = (lastBlock.text || '') + text
-  } else {
-    msg.content.push({ type: 'text', text })
-  }
-}
-
-/**
- * 原子化：将思考增量投向消息内容
- */
-export const appendThinkingDelta = (msg: Message, delta: string | undefined) => {
-  if (delta === undefined || !Array.isArray(msg.content)) return
-
-  const lastBlock = msg.content[msg.content.length - 1]
-  if (lastBlock?.type !== 'thinking') {
-    msg.content.push({ type: 'thinking', text: delta })
-  } else {
-    lastBlock.text = (lastBlock.text || '') + delta
+  notice: (p, msgs) => {
+    if (p.firstKeptEntryId) {
+      const idx = msgs.findIndex((m) => m.id === p.firstKeptEntryId)
+      if (idx !== -1) msgs.splice(0, idx)
+    }
   }
 }
 
-/**
- * 统一网关事件驱动逻辑 (商用解耦优化)
- *
- * @param eventType 'chat' 或 'agent' 频道
- * @param payload 事件载荷
- * @param currentPatch 当前受影响 session 的状态快照
- * @returns 差异化的 Partial State
- */
+// ============================================================================
+// 4. Main Event Processing
+// ============================================================================
+
 export const applyChatEvent = (
   eventType: 'chat' | 'agent',
-  payload: any,
-  currentPatch: SessionPatch
+  payload: ChatPayload | AgentEventPayload,
+  patch: SessionPatch
 ): SessionPatch => {
-  const { messages, status: currentStatus } = currentPatch
-  let nextStatus: ChatStatus = currentStatus
-  let nextError: string | null = currentPatch.errorMessage || null
-  const runId = payload.runId
+  const { messages, status: currentStatus } = patch
+  let nextStatus = currentStatus
+  let nextError = patch.errorMessage ?? null
 
-  // --- 处理 1: 'chat' 核心频道 (主链路增量数据) ---
+  // 1. Agent 核心状态路由
+  if (eventType === 'agent') {
+    const p = payload as AgentEventPayload
+    if (p.type === 'agent:run-start') nextStatus = 'waiting'
+    if (p.type === 'session:reset') return { messages: [], status: 'idle', errorMessage: null }
+  }
+
+  // 2. Chat 交互流处理
   if (eventType === 'chat') {
-    const { state, text, error, chunkId, parentId } = payload
-    if (state === 'start' || state === 'delta' || state === 'final') {
-      const { msg } = ensureAssistantMessage(messages, runId)
+    const p = payload as ChatPayload
 
-      // ⚠️ 关键性能优化：去重逻辑 (重复分片直接跳过)
-      if (chunkId && msg.lastChunkId === chunkId) {
-        console.warn(`[Chat] Duplicate chunk received: ${chunkId}, skipping.`)
-        return currentPatch
+    // 状态更新映射
+    if (STATUS_MAP[p.state]) {
+      const isUserMsgInterrupt =
+        p.state === 'user_message' &&
+        !['idle', 'completed', 'error', 'aborted'].includes(currentStatus)
+      if (!isUserMsgInterrupt) nextStatus = STATUS_MAP[p.state]
+    }
+
+    // 幂等性检查 (避免重复 Chunk)
+    const runId = p.runId
+    if (p.chunkId && runId) {
+      const lastAsst = messages[messages.length - 1]
+      if (lastAsst?.runId === runId && lastAsst.lastChunkId === p.chunkId) return patch
+    }
+
+    // 执行子状态处理器
+    ChatSubHandlers[p.state]?.(p, messages)
+
+    // 更新最后一次处理的 ID 用于幂等
+    if (p.chunkId && runId) {
+      const msg = ensureAssistantSlot(messages, runId)
+      msg.lastChunkId = p.chunkId
+    }
+
+    // 错误处理
+    if (p.state === 'error') {
+      const isAbort = String(p.error).toLowerCase().includes('abort')
+      nextStatus = isAbort ? 'aborted' : 'error'
+      nextError = isAbort
+        ? null
+        : String(p.error).startsWith('Error:')
+          ? String(p.error)
+          : `Error: ${p.error}`
+    }
+
+    if (['idle', 'streaming', 'thinking', 'tool_executing'].includes(nextStatus)) {
+      nextError = null
+    }
+  }
+
+  return { messages: [...messages], status: nextStatus, errorMessage: nextError }
+}
+
+// ============================================================================
+// 5. Integration Factory (for Zustand)
+// ============================================================================
+
+export const createChatEventHandler = (set: any, get: any, updateState: any) => {
+  return (payload: any, eventType: 'chat' | 'agent') => {
+    const { sessionKey: sk } = payload
+    if (!sk) return
+
+    set((s: any) => {
+      const currentPatch: SessionPatch = {
+        messages: [...(s.sessions[sk] || [])],
+        status: s.chatStatuses[sk] || 'idle',
+        errorMessage: s.errorMessages[sk]
       }
 
-      // ⚠️ 连贯性逻辑
-      if (parentId && msg.lastChunkId && msg.lastChunkId !== parentId) {
-        console.error(
-          `[Chat] Lineage break! Expected parent: ${parentId}, but current was ${msg.lastChunkId}.`
+      const next = applyChatEvent(eventType, payload, currentPatch)
+
+      return {
+        sessions: { ...s.sessions, [sk]: next.messages },
+        chatStatuses: { ...s.chatStatuses, [sk]: next.status },
+        errorMessages: { ...s.errorMessages, [sk]: next.errorMessage }
+      }
+    })
+
+    // 副作用处理 (状态机延迟重置)
+    if (eventType === 'chat') {
+      const p = payload as ChatPayload
+      if (p.state === 'final' && p.performance) {
+        setTimeout(
+          () =>
+            get().chatStatuses[sk] === 'completed' && updateState(set, 'chatStatuses', sk, 'idle'),
+          RESET_TIMEOUT.SUCCESS
+        )
+      } else if (p.state === 'error') {
+        setTimeout(
+          () => get().chatStatuses[sk] === 'error' && updateState(set, 'chatStatuses', sk, 'idle'),
+          RESET_TIMEOUT.ERROR
         )
       }
-
-      // 正常追加增量数据
-      appendTextDelta(msg, text)
-      if (payload.usage) msg.usage = payload.usage
-      if (payload.performance) msg.performance = payload.performance
-
-      // 更新分片追踪 ID
-      if (chunkId) msg.lastChunkId = chunkId
-
-      nextStatus = state === 'final' ? 'completed' : 'streaming'
-    } else if (state === 'error') {
-      const isAbort =
-        error === '操作已中止' || (error && String(error).toLowerCase().includes('aborted'))
-      nextStatus = isAbort ? 'aborted' : 'error'
-      if (!isAbort) {
-        nextError = String(error).startsWith('Error:') ? String(error) : `Error: ${error}`
-      }
     }
   }
-
-  // --- 处理 2: 'agent' 通道 (元数据与智能体行为) ---
-  if (eventType === 'agent') {
-    switch (payload.type) {
-      case 'agent_start':
-        if (
-          currentStatus === 'idle' ||
-          currentStatus === 'error' ||
-          currentStatus === 'completed'
-        ) {
-          nextStatus = 'waiting'
-        }
-        break
-      case 'user_message': {
-        const exists = messages.some((m) => m.id === payload.message.id)
-        if (!exists) messages.push(payload.message)
-        break
-      }
-      case 'thinking_delta': {
-        nextStatus = 'thinking'
-        const { msg: tMsg } = ensureAssistantMessage(messages, runId)
-        appendThinkingDelta(tMsg, payload.delta)
-        break
-      }
-      case 'message_delta':
-        nextStatus = 'streaming'
-        break
-      case 'tool_execution_start': {
-        nextStatus = 'tool_executing'
-        const { msg: teMsg } = ensureAssistantMessage(messages, runId)
-        if (Array.isArray(teMsg.content)) {
-          teMsg.content.push({
-            type: 'tool_use',
-            id: payload.toolCallId,
-            name: payload.toolName,
-            input: payload.args
-          })
-        }
-        break
-      }
-      case 'tool_execution_end': {
-        nextStatus = 'streaming'
-        messages.push({
-          id: `temp_res_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
-          role: 'user',
-          runId,
-          content: [
-            {
-              type: 'tool_result',
-              tool_use_id: payload.toolCallId,
-              content: payload.result
-            }
-          ],
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        })
-        break
-      }
-      case 'message_end':
-      case 'agent_end': {
-        nextStatus = 'completed'
-        const { msg: endMsg } = ensureAssistantMessage(messages, runId)
-        if (payload.usage) endMsg.usage = payload.usage
-        if (payload.performance) endMsg.performance = payload.performance
-        break
-      }
-      case 'agent_error':
-        nextStatus = 'error'
-        nextError = payload.error || 'Agent execution failed'
-        break
-    }
-  }
-
-  // 错误恢复预检
-  if (['idle', 'streaming', 'thinking', 'tool_executing'].includes(nextStatus)) {
-    nextError = null
-  }
-
-  return { messages, status: nextStatus, errorMessage: nextError }
 }

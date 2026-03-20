@@ -43,14 +43,21 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, isTyping
     const grouped: Message[] = []
     messages.forEach((msg) => {
       const last = grouped[grouped.length - 1]
+
+      // 判定逻辑：
+      // 1. 必须是同一个 runId
+      // 2. 只有当 msg 是工具结果或辅助信息时，才合并到上一个 assistant 消息中
+      const isSystemGeneratedUserMessage =
+        msg.role === 'user' &&
+        Array.isArray(msg.content) &&
+        msg.content.every((block) => block.type === 'tool_result' || block.type === 'subagent')
+
       if (
         last &&
         msg.runId &&
         last.runId === msg.runId &&
-        (msg.role === 'assistant' || msg.role === 'user') &&
-        // 如果前一条是 Human User (role: user)，后一条是 AI (role: assistant)，不合并
-        // 确保提问和回答分成两个独立气泡
-        !(last.role === 'user' && msg.role === 'assistant')
+        last.role === 'assistant' &&
+        (msg.role === 'assistant' || isSystemGeneratedUserMessage)
       ) {
         // 合并内容
         const currentBlocks: ContentBlock[] = Array.isArray(last.content)
@@ -63,11 +70,18 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, isTyping
           currentBlocks.push({ type: 'text', text: msg.content as string })
         }
         last.content = currentBlocks
+        // 保留最新的统计数据
+        if (msg.usage) last.usage = msg.usage
+        if (msg.performance) last.performance = msg.performance
       } else {
-        // 深拷贝以防修改原数据
+        // 深拷贝以防修改原数据，并作为新气泡
         grouped.push({
           ...msg,
-          content: Array.isArray(msg.content) ? [...msg.content] : msg.content
+          content: Array.isArray(msg.content)
+            ? [...msg.content]
+            : msg.content
+              ? [{ type: 'text', text: msg.content as string }]
+              : []
         })
       }
     })
@@ -120,7 +134,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, isTyping
                   message={{
                     id: 'typing-placeholder',
                     role: 'assistant',
-                    content: '',
+                    content: [], // 新版逻辑使用空数组作为初始状态
                     timestamp: new Date().toLocaleTimeString([], {
                       hour: '2-digit',
                       minute: '2-digit'

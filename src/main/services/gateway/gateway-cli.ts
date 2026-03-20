@@ -128,9 +128,9 @@ async function connect() {
         if (p.type === 'tool_execution_end') {
           console.log(`\x1b[2m  \u25cf ${p.toolName}\x1b[0m`)
         }
-      } else if (evt.event === 'tick') {
+      } else if (evt.event === 'system:tick') {
         // 心跳，静默
-      } else if (evt.event === 'shutdown') {
+      } else if (evt.event === 'system:shutdown') {
         const p = evt.payload as { reason?: string; restartExpectedMs?: number | null }
         const hint = p.restartExpectedMs
           ? ` (restart in ~${Math.round(p.restartExpectedMs / 1000)}s)`
@@ -175,14 +175,14 @@ async function connect() {
         return
       }
       if (trimmed === '/sessions') {
-        const s = await client.request('sessions.list')
+        const s = await client.request('sessions:list')
         console.log(s)
         prompt()
         return
       }
 
       try {
-        await client.request('chat.send', { sessionKey, message: trimmed })
+        await client.request('chat:send', { sessionKey, message: trimmed })
       } catch (err) {
         console.error(`\x1b[33m  ${(err as Error).message}\x1b[0m`)
         prompt()

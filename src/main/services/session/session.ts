@@ -22,9 +22,9 @@
  *    - 必须清理为安全的文件名
  */
 
-import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { newUUID, newShortId } from '@shared/utils/id.js'
 import { acquireSessionWriteLock } from './session-write-lock.js'
 
 import { Message, ContentBlock } from '@shared/types/agent'
@@ -119,7 +119,7 @@ export class SessionManager {
     return {
       type: 'session',
       version: CURRENT_SESSION_VERSION,
-      id: crypto.randomUUID(),
+      id: newUUID(),
       timestamp: new Date().toISOString(),
       cwd: process.cwd()
     }
@@ -150,9 +150,14 @@ export class SessionManager {
   async append(sessionKey: string, message: Message): Promise<void> {
     const state = await this.ensureState(sessionKey)
 
+    // 确保消息具有唯一 ID (对齐商用版本：Entry ID 与 Message ID 保持一致)
+    if (!message.id) {
+      message.id = generateId(state.byId)
+    }
+
     const entry: MessageEntry = {
       type: 'message',
-      id: generateId(state.byId),
+      id: message.id,
       parentId: state.leafId,
       timestamp: new Date().toISOString(),
       message
@@ -368,10 +373,10 @@ type SessionState = {
 
 function generateId(byId: { has(id: string): boolean }): string {
   for (let i = 0; i < 100; i++) {
-    const id = crypto.randomUUID().slice(0, 8)
+    const id = newShortId(8)
     if (!byId.has(id)) return id
   }
-  return crypto.randomUUID()
+  return newShortId(8)
 }
 
 function isSessionHeader(value: unknown): value is SessionHeaderEntry {
@@ -539,7 +544,7 @@ function buildStateFromLegacy(filePath: string, messages: Message[]): SessionSta
   const header = {
     type: 'session',
     version: CURRENT_SESSION_VERSION,
-    id: crypto.randomUUID(),
+    id: newUUID(),
     timestamp: new Date().toISOString(),
     cwd: process.cwd()
   } satisfies SessionHeaderEntry

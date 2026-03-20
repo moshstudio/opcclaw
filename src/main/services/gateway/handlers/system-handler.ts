@@ -14,6 +14,14 @@ import { builtinTools } from '../../tools/builtin.js'
 import { loadWorkspaceBootstrapFiles } from '../../context/bootstrap.js'
 import { ConfigService } from '../../config/config-service.js'
 import { type Handler, safeEqual } from './types.js'
+import { GATEWAY_EVENTS_DOC } from '@shared/metadata/events.js'
+
+/**
+ * system:events-doc
+ */
+export const handleEventsDoc: Handler = async (_params, _client, _ctx) => {
+  return { ok: true, payload: { events: GATEWAY_EVENTS_DOC } }
+}
 
 /**
  * connect
@@ -100,7 +108,7 @@ export const handleSkillsList: Handler = async (params, _client, _ctx) => {
 }
 
 /**
- * bootstrap.list
+ * bootstrap:list
  */
 export const handleBootstrapList: Handler = async (params, _client, _ctx) => {
   const p = params as { workspaceDir?: string } | undefined
@@ -117,7 +125,7 @@ export const handleBootstrapList: Handler = async (params, _client, _ctx) => {
 }
 
 /**
- * bootstrap.save
+ * bootstrap:save
  */
 export const handleBootstrapSave: Handler = async (params, _client, ctx) => {
   const p = params as { path?: string; content?: string } | undefined
@@ -130,7 +138,7 @@ export const handleBootstrapSave: Handler = async (params, _client, ctx) => {
 
   try {
     await fs.writeFile(p.path, p.content, 'utf-8')
-    ctx.broadcaster.bootstrapSaved(p.path)
+    ctx.broadcaster.dispatch({ type: 'config:saved', path: p.path })
     return { ok: true, payload: { path: p.path } }
   } catch (err) {
     return { ok: false, error: errorShape(ErrorCodes.UNAVAILABLE, String(err)) }
@@ -138,7 +146,7 @@ export const handleBootstrapSave: Handler = async (params, _client, ctx) => {
 }
 
 /**
- * usage.stats
+ * usage:stats
  */
 export const handleUsageStats: Handler = async (params, _client, ctx) => {
   const p = params as { agentId?: string; sessionKey?: string } | undefined
@@ -153,14 +161,14 @@ export const handleUsageStats: Handler = async (params, _client, ctx) => {
 }
 
 /**
- * config.get
+ * config:get
  */
 export const handleConfigGet: Handler = async (_params, _client, _ctx) => {
   return { ok: true, payload: ConfigService.getInstance().getConfig() }
 }
 
 /**
- * config.save
+ * config:save
  */
 export const handleConfigSave: Handler = async (params, _client, ctx) => {
   const config = params as any
@@ -191,7 +199,11 @@ export const handleConfigSave: Handler = async (params, _client, ctx) => {
     await AgentRegistry.getInstance().loadAllAgents()
 
     const newConfig = configService.getConfig()
-    ctx.broadcaster.modelsList(newConfig.models, newConfig.defaultModelId || null)
+    ctx.broadcaster.dispatch({
+      type: 'models:list',
+      models: newConfig.models,
+      defaultModelId: newConfig.defaultModelId || null
+    })
   }
 
   return { ok: true }

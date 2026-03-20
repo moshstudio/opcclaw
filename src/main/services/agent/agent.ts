@@ -1,40 +1,16 @@
-/**
- * Mini Agent 核心
- *
- * 5 大核心子系统:
- * 1. Session Manager - 会话管理 (JSONL 持久化)
- * 2. Memory Manager - 长期记忆 (关键词搜索)
- * 3. Context Loader - 按需上下文加载 (AGENTS/SOUL/TOOLS/IDENTITY/USER/HEARTBEAT/BOOTSTRAP/MEMORY)
- * 4. Skill Manager - 可扩展技能系统
- * 5. Heartbeat Manager - 主动唤醒机制
- *
- * 核心循环 (agent-loop.ts):
- *   OUTER LOOP (follow-ups)
- *   ├─ INNER LOOP (tools + steering)
- *   │  ├─ 注入 pendingMessages（steering 或 follow-up）
- *   │  ├─ LLM 流式调用
- *   │  ├─ 执行工具（每执行一个后检查 steering）
- *   │  ├─ 若 steering: 跳过剩余工具
- *   │  └─ 循环条件: hasMoreToolCalls || pendingMessages.length > 0
- *   ├─ 检查 follow-up 消息
- *   └─ 若有 follow-up: 继续外层循环
- */
-
-import crypto from 'node:crypto'
 import path from 'node:path'
+import { newShortId } from '@shared/utils/id.js'
 import type { Tool, ToolContext } from '@main/services/tools/types.js'
 import { builtinTools } from '@main/services/tools/builtin'
 import { wrapToolWithAbortSignal } from '@main/services/tools/abort'
-import { SessionManager, type Message } from '@main/services/session/session'
-import { MemoryManager } from '@main/services/memory/memory'
 import {
-  ContextLoader,
-  DEFAULT_CONTEXT_WINDOW_TOKENS,
-  compactHistoryIfNeeded,
-  estimateMessagesTokens,
-  type PruneResult,
-  type SummarizeFn
-} from '@main/services/context/index.js'
+  SessionManager,
+  type Message,
+  type ContentBlock,
+  COMPACTION_SUMMARY_PREFIX
+} from '@main/services/session/session'
+import { MemoryManager } from '@main/services/memory/memory'
+import { ContextLoader, DEFAULT_CONTEXT_WINDOW_TOKENS } from '@main/services/context/index.js'
 import {
   CONTEXT_WINDOW_HARD_MIN_TOKENS,
   CONTEXT_WINDOW_WARN_BELOW_TOKENS,
@@ -43,13 +19,7 @@ import {
 } from './context-window-guard.js'
 import { SkillManager } from '@main/services/skills/skills'
 import { HeartbeatManager, type HeartbeatResult } from '@main/services/heartbeat/heartbeat'
-import {
-  normalizeAgentId,
-  resolveAgentIdFromSessionKey,
-  resolveSessionKey,
-  isSubagentSessionKey,
-  parseAgentSessionKey
-} from '@main/services/session/session-key'
+import { normalizeAgentId, resolveSessionKey } from '@main/services/session/session-key'
 import {
   enqueueInLane,
   resolveGlobalLane,
@@ -59,115 +29,63 @@ import {
 import { filterToolsByPolicy, type ToolPolicy } from './tool-policy.js'
 import type { MiniAgentEvent } from './agent-events.js'
 import { runAgentLoop } from './agent-loop.js'
-import { installSessionToolResultGuard } from '@main/services/session/session-tool-result-guard'
 import { UsageManager } from '@main/services/usage/usage-manager.js'
 import type { Model, StreamFunction, ThinkingLevel } from '@mariozechner/pi-ai'
-import { streamSimple, completeSimple, getModel, getEnvApiKey } from '@mariozechner/pi-ai'
+import { streamSimple, getModel, getEnvApiKey } from '@mariozechner/pi-ai'
 import { ConfigService } from '@main/services/config/config-service.js'
+
+// 导入核心服务
+import { AgentStateManager } from './core/state-manager.js'
+import { AgentPromptBuilder } from './core/prompt-builder.js'
+import { SubagentService } from './core/subagent-service.js'
+import { AgentContextManager } from './core/context-manager.js'
+import { AgentSessionService } from './core/session-service.js'
 
 // ============== 类型定义 ==============
 
 export interface AgentConfig {
-  /** API Key（不指定则通过 pi-ai getEnvApiKey 从环境变量自动获取） */
   apiKey?: string
-  /**
-   * Provider 名称
-   *
-   * 对应 pi-ai KnownProvider，如 "anthropic" | "openai" | "google" | "groq" 等
-   * 默认 "anthropic"
-   */
   provider?: string
-  /** 模型 ID（需与 provider 匹配，如 "claude-sonnet-4-20250514" / "gpt-4.1" / "gemini-2.5-pro"） */
   model?: string
-  /** API Base URL（用于代理、自部署端点、Azure OpenAI 等） */
   baseUrl?: string
-  /** 自定义 HTTP headers（覆盖 pi-ai 默认的 beta headers 等，值为 null 表示移除） */
   headers?: Record<string, string | null>
-  /**
-   * Provider 流式调用函数
-   *
-   * 对应 OpenClaw: pi-agent-core → Agent.streamFn
-   * - 不指定则默认使用 pi-ai 的 streamSimple（自动路由到对应 provider）
-   * - 可替换为任意自定义 StreamFunction
-   */
   streamFn?: StreamFunction
-  /**
-   * 模型定义
-   *
-   * 对应 OpenClaw: pi-ai → Model<TApi>
-   * - 不指定则通过 getModel(provider, modelId) 获取
-   */
   modelDef?: Model<any>
-  /** Agent ID（默认 main） */
   agentId?: string
-  /** 系统提示 */
   systemPrompt?: string
-  /** 工具列表 */
   tools?: Tool[]
-  /** 工具策略（allow/deny） */
   toolPolicy?: ToolPolicy
-  /** 沙箱设置（示意版，仅控制工具可用性） */
   sandbox?: {
     enabled?: boolean
     allowExec?: boolean
     allowWrite?: boolean
   }
-  /** 温度参数（0-1，对应 OpenClaw: agents.defaults.models[provider/model].params.temperature） */
   temperature?: number
-  /** 思考级别: minimal / low / medium / high / xhigh */
   reasoning?: ThinkingLevel
-  /** 最大循环次数 */
   maxTurns?: number
-  /** 会话存储目录 */
   sessionDir?: string
-  /** 工作目录 */
   workspaceDir?: string
-  /** 记忆存储目录 */
   memoryDir?: string
-  /** 用量统计存储目录 */
   usageDir?: string
-  /** 是否启用记忆 */
   enableMemory?: boolean
-  /** 是否启用上下文加载 */
   enableContext?: boolean
-  /** 是否启用技能 */
   enableSkills?: boolean
-  /** 是否启用主动唤醒 */
   enableHeartbeat?: boolean
-  /** Heartbeat 检查间隔 (毫秒) */
   heartbeatInterval?: number
-  /** 上下文窗口大小（token 估算） */
   contextTokens?: number
-  /** 最大输出 Token 数 */
   maxTokens?: number
-  /**
-   * Global lane 最大并发数（跨 session 的总并行度）
-   *
-   * 对应 OpenClaw: gateway/server-lanes.ts → resolveAgentMaxConcurrent()
-   * - session lane 固定 maxConcurrent=1（同一 session 内串行）
-   * - global lane 控制不同 session 间可同时跑几个（默认 2）
-   */
   maxConcurrentRuns?: number
-  /** 是否支持视觉解析 */
   supportsVision?: boolean
 }
 
 export interface RunResult {
-  /** 本次运行 ID */
   runId?: string
-  /** 最终文本 */
   text: string
-  /** 总轮次 */
   turns: number
-  /** 工具调用次数 */
   toolCalls: number
-  /** 是否触发了技能 */
   skillTriggered?: string
-  /** 记忆检索结果数（memory_search 返回的条数） */
   memoriesUsed?: number
 }
-
-// ============== 默认系统提示 ==============
 
 const DEFAULT_SYSTEM_PROMPT = `你是一个编程助手 Agent。
 
@@ -181,7 +99,7 @@ const DEFAULT_SYSTEM_PROMPT = `你是一个编程助手 Agent。
 
 ## 原则
 1. 修改代码前必须先读取文件
-2. 使用 edit 进行小范围修改
+2. 使用 edit 进行 small 范围修改
 3. 保持简洁，不要过度解释
 4. 遇到错误时分析原因并重试
 
@@ -191,20 +109,24 @@ const DEFAULT_SYSTEM_PROMPT = `你是一个编程助手 Agent。
 
 // ============== Agent 核心类 ==============
 
+/**
+ * Agent 核心类
+ *
+ * 采用 Orchestrator 模式，集成并调度多个核心子服务：
+ * - StateManager: 任务状态与中断管理
+ * - SessionService: 会话业务逻辑
+ * - PromptBuilder: 提示词工程
+ * - ContextManager: 上下文裁剪与窗口保护
+ * - SubagentService: 子智能体生命周期
+ */
 export class Agent {
-  /**
-   * Provider 流式调用函数
-   *
-   * 对应 OpenClaw: pi-agent-core/agent.d.ts → Agent.streamFn
-   * - 可在运行时替换（如 failover 切换 provider）
-   */
-  streamFn: StreamFunction
+  public streamFn: StreamFunction
+  public usage: UsageManager
   private modelDef?: Model<any>
   private apiKey?: string
   private temperature?: number
   private reasoning?: ThinkingLevel
   private agentId: string
-  private baseSystemPrompt: string
   private tools: Tool[]
   private maxTurns: number
   private workspaceDir: string
@@ -217,122 +139,34 @@ export class Agent {
     allowWrite: boolean
   }
 
-  // 5 大子系统
+  // 组件及服务
   private sessions: SessionManager
   private memory: MemoryManager
   private context: ContextLoader
   private skills: SkillManager
   private heartbeat: HeartbeatManager
-  public usage: UsageManager
+
+  private stateManager: AgentStateManager
+  private promptBuilder: AgentPromptBuilder
+  private subagentService: SubagentService
+  private contextManager: AgentContextManager
+  private sessionService: AgentSessionService
 
   private enableMemory: boolean
   private enableContext: boolean
   private enableSkills: boolean
 
-  /**
-   * 运行中的 AbortController 映射 (runId → controller)
-   */
-  private runAbortControllers = new Map<string, AbortController>()
-
-  /**
-   * Session 与 RunId 的映射关系 (sessionKey → Set<runId>)
-   */
-  private sessionRunIds = new Map<string, Set<string>>()
-
-  /**
-   * Steering 消息队列 (sessionKey → messages[])
-   *
-   * 对应 OpenClaw: pi-agent-core → Agent.steeringQueue
-   * - 用户在工具执行期间发送新消息时入队
-   * - 每次工具执行完毕后检查，若非空则跳过剩余工具
-   * - 队列中的消息作为下一个 user turn 处理
-   */
-  private steeringQueues = new Map<string, string[]>()
-
-  /**
-   * Tool Result Guard
-   *
-   * 对应 OpenClaw: session-tool-result-guard-wrapper.ts → guardSessionManager()
-   * - 追踪 pending tool_use，自动合成缺失的 tool_result
-   * - 防止 LLM API 因 tool_use/tool_result 不配对而拒绝
-   */
-  private toolResultGuard: ReturnType<typeof installSessionToolResultGuard>
-
-  /**
-   * 事件订阅者
-   *
-   * 对应 pi-agent-core/agent.js → Agent.listeners: Set<fn>
-   * - subscribe() 添加监听器，返回 unsubscribe 函数
-   * - emit() 遍历 listeners 同步调用
-   */
   private listeners = new Set<(event: MiniAgentEvent) => void>()
 
   constructor(config: AgentConfig) {
-    // Provider 初始化（对应 OpenClaw: attempt.ts → activeSession.agent.streamFn）
     const provider = config.provider ?? 'anthropic'
     const modelId =
       config.model ?? (provider === 'anthropic' ? 'claude-sonnet-4-20250514' : undefined)
 
-    // 解析 Model 定义
-    // 代理场景下 model ID 可能不在 pi-ai 注册表中（如 "anthropic/claude-sonnet-4.5"）
-    // 此时根据 provider 构造兼容的 Model 定义
-    const API_FOR_PROVIDER: Record<string, string> = {
-      anthropic: 'anthropic-messages',
-      openai: 'openai-completions',
-      google: 'google-generative-ai'
-    }
-    let modelDef: Model<any> | undefined =
-      config.modelDef ?? getModel(provider as any, modelId as any)
+    this.resolveModelDefinition(config, provider, modelId)
 
-    if (!modelDef && modelId) {
-      const api = API_FOR_PROVIDER[provider]
-      if (api) {
-        modelDef = {
-          id: modelId,
-          name: modelId,
-          api,
-          provider,
-          baseUrl: config.baseUrl ?? '',
-          reasoning: true,
-          input: config.supportsVision ? ['text', 'image'] : ['text'],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 200_000,
-          maxTokens: 8192
-        }
-      }
-    }
-
-    // 保留原始逻辑，直接进行后续处理
-
-    // 使用代理时剥离 Anthropic SDK 和 pi-ai 添加的非标准 headers
-    // 代理通常会拒绝 SDK 的 User-Agent / X-Stainless-* tracking headers
-    // Anthropic SDK applyHeadersMut: null → 删除, undefined → 跳过
-    if (config.baseUrl && modelDef) {
-      this.modelDef = {
-        ...modelDef,
-        baseUrl: config.baseUrl,
-        headers: {
-          'User-Agent': null,
-          'X-Stainless-Lang': null,
-          'X-Stainless-Package-Version': null,
-          'X-Stainless-OS': null,
-          'X-Stainless-Arch': null,
-          'X-Stainless-Runtime': null,
-          'X-Stainless-Runtime-Version': null,
-          'anthropic-dangerous-direct-browser-access': null,
-          'anthropic-beta': null,
-          ...config.headers
-        } as any
-      }
-    } else {
-      this.modelDef =
-        config.headers && modelDef
-          ? { ...modelDef, headers: { ...modelDef.headers, ...config.headers } as any }
-          : modelDef
-    }
     this.streamFn = config.streamFn ?? streamSimple
     this.agentId = normalizeAgentId(config.agentId ?? 'main')
-    this.baseSystemPrompt = config.systemPrompt ?? DEFAULT_SYSTEM_PROMPT
     this.tools = config.tools ?? builtinTools
     this.maxTurns = config.maxTurns ?? 20
     this.maxTokens = config.maxTokens
@@ -351,9 +185,8 @@ export class Agent {
       allowWrite: config.sandbox?.allowWrite ?? true
     }
 
-    // 初始化子系统
+    // 初始化基础组件
     const agentDataDir = ConfigService.getInstance().getAgentDir(this.agentId)
-
     this.sessions = new SessionManager(config.sessionDir ?? path.join(agentDataDir, 'sessions'))
     this.memory = new MemoryManager(config.memoryDir ?? path.join(agentDataDir, 'memory'))
     this.context = new ContextLoader(this.workspaceDir)
@@ -368,272 +201,90 @@ export class Agent {
     this.enableContext = config.enableContext ?? true
     this.enableSkills = config.enableSkills ?? true
 
-    // Global lane 并发数（对应 OpenClaw: DEFAULT_AGENT_MAX_CONCURRENT = 4）
-    const globalLane = resolveGlobalLane()
-    setLaneConcurrency(globalLane, config.maxConcurrentRuns ?? 4)
+    // 初始化解耦的核心服务
+    const emit = (e: MiniAgentEvent) => this.emit(e)
 
-    // Tool Result Guard（对应 OpenClaw: attempt.ts → guardSessionManager()）
-    this.toolResultGuard = installSessionToolResultGuard(this.sessions)
+    this.stateManager = new AgentStateManager(this.sessions)
+    this.sessionService = new AgentSessionService({
+      agentId: this.agentId,
+      sessionManager: this.sessions,
+      emit
+    })
+    this.promptBuilder = new AgentPromptBuilder({
+      baseSystemPrompt: config.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
+      context: this.enableContext ? this.context : undefined,
+      skills: this.enableSkills ? this.skills : undefined,
+      enableMemory: this.enableMemory,
+      sandbox: this.sandbox
+    })
+    this.contextManager = new AgentContextManager({
+      sessionManager: this.sessions,
+      contextTokens: this.contextTokens,
+      modelDef: this.modelDef,
+      apiKey: this.apiKey,
+      emit
+    })
+    this.subagentService = new SubagentService(
+      this.agentId,
+      this.sessions,
+      (sk, msg) => this.run(sk, msg),
+      emit,
+      (sk, txt) => this.stateManager.steer(sk, txt),
+      (parentSk) => {
+        if (!this.stateManager.isSessionActive(parentSk)) {
+          this.run(parentSk).catch((err) => console.error(`[Agent] Subagent auto-run fail:`, err))
+        }
+      }
+    )
+
+    setLaneConcurrency(resolveGlobalLane(), config.maxConcurrentRuns ?? 4)
   }
 
-  // ============== 事件订阅（对齐 pi-agent-core Agent） ==============
+  // ============== 公共 API (委托模式) ==============
 
-  /**
-   * 订阅 Agent 事件
-   *
-   * 对应 pi-agent-core/agent.js → Agent.subscribe(fn)
-   * - 返回 unsubscribe 函数
-   * - 事件在 run() 中同步 emit
-   */
-  subscribe(fn: (event: MiniAgentEvent) => void): () => void {
+  public subscribe(fn: (event: MiniAgentEvent) => void) {
     this.listeners.add(fn)
     return () => this.listeners.delete(fn)
   }
 
-  /**
-   * 向所有订阅者发送事件（异步，避免阻塞主流程）
-   *
-   * 对应 pi-agent-core/agent.js → Agent.emit(e)
-   */
-  private emit(event: MiniAgentEvent): void {
-    setImmediate(() => {
-      for (const listener of this.listeners) {
-        try {
-          listener(event)
-        } catch (err) {
-          console.error(`[Agent:${this.agentId}] Listener Error:`, err)
-        }
-      }
-    })
+  public async createSession() {
+    return this.sessionService.create()
+  }
+  public async reset(sessionKey: string) {
+    await this.sessions.reset(sessionKey)
+    this.emit({ type: 'session:reset', sessionKey })
   }
 
-  /**
-   * 分发智能体/会话生命周期事件
-   *
-   * 相比于普通 emit，更有语义化，且未来可根据需要扩展特殊的生命周期处理逻辑
-   */
-  private emitLifecycle(event: MiniAgentEvent): void {
-    this.emit(event)
+  public async deleteSession(sessionKey: string) {
+    await this.sessions.delete(sessionKey)
+    this.emit({ type: 'session:deleted', sessionKey })
+  }
+  public async getHistory(id: string) {
+    return this.sessionService.getHistory(id)
+  }
+  public async listSessions() {
+    return this.sessionService.list()
   }
 
-  /**
-   * 创建 SummarizeFn（用于 compaction）
-   *
-   * 通过 pi-ai 的 completeSimple 实现，与 Agent 当前的 model/apiKey 绑定
-   */
-  private createSummarizeFn(): SummarizeFn {
-    const model = this.modelDef
-    const apiKey = this.apiKey
-    if (!model || !apiKey) {
-      return async () => '无法进行总结（未配置模型）'
-    }
-    return async (params) => {
-      const result = await completeSimple(
-        model,
-        {
-          systemPrompt: params.system,
-          messages: [{ role: 'user', content: params.userPrompt, timestamp: Date.now() }]
-        },
-        { maxTokens: params.maxTokens, apiKey }
-      )
-      const text = result.content
-        .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
-        .map((c) => c.text)
-        .join('')
-      return text.trim()
-    }
+  public abort(runId?: string) {
+    this.stateManager.abort(runId)
+  }
+  public abortSession(sessionKey: string) {
+    this.stateManager.abortSession(sessionKey)
+  }
+  public steer(sessionKey: string, text: string) {
+    this.stateManager.steer(sessionKey, text)
+  }
+  public isSessionActive(sessionKey: string) {
+    return this.stateManager.isSessionActive(sessionKey)
   }
 
-  /**
-   * 上下文压缩：裁剪 + 可选摘要
-   */
-  private async prepareMessagesForRun(params: {
-    messages: Message[]
-    sessionKey: string
-    runId: string
-  }): Promise<{
-    pruned: PruneResult
-    summary?: string
-    summaryMessage?: Message
-  }> {
-    const compacted = await compactHistoryIfNeeded({
-      summarize: this.createSummarizeFn(),
-      messages: params.messages,
-      contextWindowTokens: this.contextTokens
-    })
-
-    if (compacted.summary && compacted.summaryMessage) {
-      this.emit({
-        type: 'compaction',
-        summaryChars: compacted.summary.length,
-        droppedMessages: compacted.pruneResult.droppedMessages.length
-      })
-    }
-
-    return {
-      pruned: compacted.pruneResult,
-      summary: compacted.summary,
-      summaryMessage: compacted.summaryMessage
-    }
-  }
-
-  /**
-   * 根据策略/沙箱生成最终可用工具集
-   */
-  private resolveToolsForRun(): Tool[] {
-    let tools = [...this.tools]
-
-    if (!this.enableMemory) {
-      tools = tools.filter(
-        (tool) =>
-          tool.name !== 'memory_search' && tool.name !== 'memory_get' && tool.name !== 'memory_save'
-      )
-    }
-
-    // 对应 OpenClaw: isToolAllowedByPolicies() — 多策略交集（all must allow）
-    const sandboxPolicy = this.buildSandboxToolPolicy()
-    let filtered = filterToolsByPolicy(tools, this.toolPolicy)
-    filtered = filterToolsByPolicy(filtered, sandboxPolicy)
-    return filtered
-  }
-
-  /**
-   * 沙箱策略（示意版）
-   */
-  private buildSandboxToolPolicy(): ToolPolicy | undefined {
-    if (!this.sandbox?.enabled) {
-      return undefined
-    }
-    const deny: string[] = []
-    if (!this.sandbox.allowExec) {
-      deny.push('exec')
-    }
-    if (!this.sandbox.allowWrite) {
-      deny.push('write', 'edit')
-    }
-    return deny.length > 0 ? { deny } : undefined
-  }
-
-  /**
-   * 生成子代理 sessionKey
-   */
-  private buildSubagentSessionKey(agentId: string): string {
-    const id = crypto.randomUUID()
-    return `agent:${normalizeAgentId(agentId)}:subagent:${id}`
-  }
-
-  /**
-   * 启动子代理（最小版）
-   */
-  private async spawnSubagent(params: {
-    parentSessionKey: string
-    task: string
-    label?: string
-    cleanup?: 'keep' | 'delete'
-  }): Promise<{ runId: string; sessionKey: string }> {
-    if (isSubagentSessionKey(params.parentSessionKey)) {
-      throw new Error('子代理会话不能再触发子代理')
-    }
-    const childSessionKey = this.buildSubagentSessionKey(this.agentId)
-    const runPromise = this.run(childSessionKey, params.task)
-    runPromise
-      .then(async (result) => {
-        const summary = result.text.slice(0, 600)
-        this.emit({
-          type: 'subagent_summary',
-          childSessionKey,
-          label: params.label,
-          task: params.task,
-          summary
-        })
-        const summaryMsg: Message = {
-          role: 'user',
-          content: `[子代理摘要]\n${summary}`,
-          timestamp: Date.now()
-        }
-        await this.sessions.append(params.parentSessionKey, summaryMsg)
-        if (params.cleanup === 'delete') {
-          await this.sessions.delete(childSessionKey)
-          this.emit({ type: 'session_deleted', sessionKey: childSessionKey })
-        }
-      })
-      .catch((err) => {
-        this.emit({
-          type: 'subagent_error',
-          childSessionKey,
-          label: params.label,
-          task: params.task,
-          error: err instanceof Error ? err.message : String(err)
-        })
-      })
-    return {
-      runId: childSessionKey,
-      sessionKey: childSessionKey
-    }
-  }
-
-  /**
-   * 构建完整系统提示
-   */
-  private async buildSystemPrompt(params?: { sessionKey?: string }): Promise<string> {
-    let prompt = this.baseSystemPrompt
-    const availableTools = new Set(this.resolveToolsForRun().map((t) => t.name))
-
-    if (this.enableContext) {
-      const contextPrompt = await this.context.buildContextPrompt({
-        sessionKey: params?.sessionKey
-      })
-      if (contextPrompt) {
-        prompt += contextPrompt
-      }
-    }
-
-    if (this.enableSkills) {
-      const skillsPrompt = await this.skills.buildSkillsPrompt()
-      if (skillsPrompt) {
-        // 对齐 OpenClaw: system-prompt.ts → buildSkillsSection()
-        // 结构化行为指令，告诉模型如何使用技能
-        prompt += '\n\n## Skills (mandatory)'
-        prompt += '\nBefore replying: scan <available_skills> <description> entries.'
-        prompt +=
-          '\n- If exactly one skill clearly applies: read its SKILL.md at <location> with `read`, then follow it.'
-        prompt += '\n- If multiple could apply: choose the most specific one, then read/follow it.'
-        prompt += '\n- If none clearly apply: do not read any SKILL.md.'
-        prompt +=
-          '\nConstraints: never read more than one skill up front; only read after selecting.'
-        prompt += skillsPrompt
-      }
-    }
-
-    if (
-      this.enableMemory &&
-      (availableTools.has('memory_search') || availableTools.has('memory_save'))
-    ) {
-      prompt += `\n\n## 记忆\n- 回答涉及历史、偏好、决定时：先用 memory_search 查找，再用 memory_get 拉取细节\n- 遇到值得长期保存的信息（用户偏好、关键决策、重要事实）：用 memory_save 写入\n- 不要保存日常闲聊或一次性查询`
-    }
-
-    if (this.sandbox?.enabled) {
-      const writeHint = this.sandbox.allowWrite ? '可写' : '只读'
-      const execHint = this.sandbox.allowExec ? '允许' : '禁止'
-      prompt += `\n\n## 沙箱\n当前为沙箱模式：工作区${writeHint}，命令执行${execHint}。`
-    }
-
-    return prompt
-  }
-
-  /**
-   * 运行 Agent
-   */
-  async run(sessionIdOrKey: string, userMessage: string): Promise<RunResult> {
-    // 动态检查模型配置：如果缺失，尝试从全局配置刷新（更好的逻辑，应对 UI 配置异步性）
+  async run(sessionIdOrKey: string, userMessage?: string | ContentBlock[]): Promise<RunResult> {
     if (!this.modelDef || !this.apiKey) {
       this.refreshModelConfig()
-    }
-
-    if (!this.modelDef || !this.apiKey) {
-      throw new Error(
-        '未检测到可用的 AI 模型配置。请前往“设置 -> AI 模型库”添加模型，并确保已设置默认模型或智能体模型。'
-      )
+      if (!this.modelDef || !this.apiKey) {
+        throw new Error('未检测到可用的 AI 模型配置。请前往“设置 -> AI 模型库”添加模型。')
+      }
     }
 
     const sessionKey = resolveSessionKey({
@@ -646,168 +297,96 @@ export class Agent {
 
     return enqueueInLane(sessionLane, () =>
       enqueueInLane(globalLane, async () => {
-        const runId = crypto.randomUUID()
+        const runId = newShortId(6)
+        const signal = this.stateManager.startRun(sessionKey, runId)
 
-        // AbortController: 每次 run 创建独立的 controller
-        const runAbortController = new AbortController()
-        this.runAbortControllers.set(runId, runAbortController)
-
-        // 初始化 steering 队列
-        if (!this.steeringQueues.has(sessionKey)) {
-          this.steeringQueues.set(sessionKey, [])
+        if (userMessage) {
+          const m: Message = {
+            id: `msg_${newShortId(8)}`,
+            role: 'user',
+            content: userMessage,
+            timestamp: Date.now()
+          }
+          await this.sessions.append(sessionKey, m)
+          this.emit({ type: 'chat:user-message', runId, sessionKey, message: m })
         }
-
-        // 记录 session 对应的 runId
-        if (!this.sessionRunIds.has(sessionKey)) {
-          this.sessionRunIds.set(sessionKey, new Set())
-        }
-        this.sessionRunIds.get(sessionKey)!.add(runId)
 
         this.emit({
-          type: 'agent_start',
+          type: 'agent:run-start',
           runId,
           sessionKey,
           agentId: this.agentId,
           model: this.modelDef?.id || 'none'
         })
 
-        // 标记 loop 内部已 emit 过 agent_error，避免 catch 中重复 emit
+        let agentFinished = false
         let loopError: string | undefined
 
         try {
-          const ctxInfo = resolveContextWindowInfo({
-            contextTokens: this.contextTokens,
-            defaultTokens: DEFAULT_CONTEXT_WINDOW_TOKENS
-          })
-          const ctxGuard = evaluateContextWindowGuard({
-            info: ctxInfo,
-            warnBelowTokens: CONTEXT_WINDOW_WARN_BELOW_TOKENS,
-            hardMinTokens: CONTEXT_WINDOW_HARD_MIN_TOKENS
-          })
-          if (ctxGuard.shouldWarn) {
-            console.warn(
-              `上下文窗口偏小: ctx=${ctxGuard.tokens} (warn<${CONTEXT_WINDOW_WARN_BELOW_TOKENS}) source=${ctxGuard.source}`
-            )
-          }
-          if (ctxGuard.shouldBlock) {
-            throw new Error(
-              `上下文窗口过小 (${ctxGuard.tokens} tokens)，最低要求 ${CONTEXT_WINDOW_HARD_MIN_TOKENS} tokens。`
-            )
+          this.checkContextWindow()
+
+          const history = await this.sessions.load(sessionKey)
+          const currentMessages = [...history]
+
+          let skillTriggered: string | undefined
+          const processedMessage = await this.interceptSkills(userMessage)
+          if (processedMessage !== userMessage) {
+            skillTriggered = 'matched'
+            const userMsg: Message = {
+              role: 'user',
+              content: processedMessage || '',
+              timestamp: Date.now(),
+              runId
+            }
+            await this.sessions.append(sessionKey, userMsg)
+            this.emit({ type: 'chat:user-message', runId, message: userMsg, sessionKey })
+            currentMessages.push(userMsg)
           }
 
-          // 加载历史
-          const history = await this.sessions.load(sessionKey)
+          const compactionParams = { messages: currentMessages, sessionKey, runId }
+          const { summaryMessage, pruned } = await this.contextManager.prepareMessages(compactionParams)
+
+          const isSummaryMessage = (m: Message) =>
+            typeof m.content === 'string' && m.content.startsWith(COMPACTION_SUMMARY_PREFIX)
+
+          let activeSummary = summaryMessage
+          let loopMessages = pruned.messages
+
+          if (!activeSummary) {
+            const first = pruned.messages[0]
+            if (first && isSummaryMessage(first)) {
+              activeSummary = first
+              loopMessages = pruned.messages.slice(1)
+            }
+          } else {
+            loopMessages = pruned.messages.filter((m) => !isSummaryMessage(m))
+          }
+
+          const availableTools = this.resolveToolsForRun()
+          const systemPrompt = await this.promptBuilder.build({ sessionKey, availableTools })
+          const toolsForRun = availableTools.map((t) => wrapToolWithAbortSignal(t, signal))
 
           let memoriesUsed = 0
           const toolCtx: ToolContext = {
             workspaceDir: this.workspaceDir,
             sessionKey,
             sessionId: sessionIdOrKey,
-            agentId: resolveAgentIdFromSessionKey(sessionKey),
+            agentId: this.agentId,
             memory: this.enableMemory ? this.memory : undefined,
-            abortSignal: runAbortController.signal,
-            onMemorySearch: (results) => {
-              memoriesUsed += results.length
+            abortSignal: signal,
+            onMemorySearch: (res) => {
+              memoriesUsed += res.length
             },
-            spawnSubagent: async ({ task, label, cleanup }) =>
-              this.spawnSubagent({
-                parentSessionKey: sessionKey,
-                task,
-                label,
-                cleanup
-              })
-          }
-
-          let processedMessage = userMessage
-          let skillTriggered: string | undefined
-
-          // 技能匹配（对应 OpenClaw: auto-reply/skill-commands.ts → model dispatch 路径）
-          // /command args → 改写消息，引导模型读取对应 SKILL.md
-          if (this.enableSkills) {
-            const match = await this.skills.match(userMessage)
-            if (match) {
-              skillTriggered = match.command.skillName
-              // 对齐 OpenClaw: 改写消息告诉模型使用哪个技能
-              // 模型收到后扫描 <available_skills>，找到对应 skill，
-              // 通过 read 工具加载 SKILL.md 并遵循其指令
-              const userInput = match.args ?? ''
-              processedMessage = `Use the "${match.command.skillName}" skill for this request.\n\nUser input:\n${userInput}`
-            }
-          }
-
-          // Heartbeat: 不在此注入任务到消息
-          // 对齐 openclaw: heartbeat 是独立的主动通知系统，
-          // 读取 HEARTBEAT.md 并传递给 LLM，不会注入到用户消息中
-
-          // 添加用户消息
-          const userMsg: Message = {
-            role: 'user',
-            content: processedMessage,
-            timestamp: Date.now(),
-            runId
-          }
-          await this.sessions.append(sessionKey, userMsg)
-          this.emit({ type: 'user_message', message: { ...userMsg } })
-
-          const currentMessages = [...history, userMsg]
-
-          // Compaction: run 开始前做一次
-          const prep = await this.prepareMessagesForRun({
-            messages: currentMessages,
-            sessionKey,
-            runId
-          })
-          let compactionSummary = prep.summaryMessage
-          if (prep.summary) {
-            let firstKeptEntryId: string | undefined
-            for (const msg of prep.pruned.messages) {
-              const candidate = this.sessions.resolveMessageEntryId(sessionKey, msg)
-              if (candidate) {
-                firstKeptEntryId = candidate
-                break
-              }
-            }
-            if (firstKeptEntryId) {
-              const tokensBefore = estimateMessagesTokens(currentMessages)
-              await this.sessions.appendCompaction(
-                sessionKey,
-                prep.summary,
-                firstKeptEntryId,
-                tokensBefore
-              )
-            } else {
-              console.warn('无法定位 compaction 的 firstKeptEntryId，已跳过记录。')
-            }
-          }
-
-          // 构建系统提示
-          const systemPrompt = await this.buildSystemPrompt({ sessionKey })
-
-          // 工具包装: 注入 run-level abort signal
-          const rawTools = this.resolveToolsForRun()
-          const toolsForRun = rawTools.map((t) =>
-            wrapToolWithAbortSignal(t, runAbortController.signal)
-          )
-
-          // ===== Agent Loop（EventStream 模式） =====
-          // 对应 pi-agent-core: Agent._runLoop() → for await (const event of stream)
-          const getSteeringMessages = async (): Promise<Message[]> => {
-            const queue = this.steeringQueues.get(sessionKey)
-            if (!queue || queue.length === 0) return []
-            const drained = queue.splice(0)
-            return drained.map((text) => ({
-              role: 'user' as const,
-              content: text,
-              timestamp: Date.now()
-            }))
+            spawnSubagent: (params) =>
+              this.subagentService.spawn({ ...params, parentSessionKey: sessionKey })
           }
 
           const stream = runAgentLoop({
             runId,
             sessionKey,
             agentId: this.agentId,
-            currentMessages,
-            compactionSummary,
+            currentMessages: loopMessages,
+            compactionSummary: activeSummary,
             systemPrompt,
             toolsForRun,
             toolCtx,
@@ -819,29 +398,24 @@ export class Agent {
             maxTurns: this.maxTurns,
             maxTokens: this.maxTokens,
             contextTokens: this.contextTokens,
-            getSteeringMessages,
+            getSteeringMessages: () => this.stateManager.drainSteering(sessionKey),
             appendMessage: (sk, msg) => this.sessions.append(sk, msg),
-            prepareCompaction: async (p) => {
-              const r = await this.prepareMessagesForRun(p)
-              return { summary: r.summary, summaryMessage: r.summaryMessage }
-            },
-            abortSignal: runAbortController.signal
+            prepareCompaction: (p) => this.contextManager.prepareMessages(p),
+            abortSignal: signal
           })
 
-          // 对应 pi-agent-core: for await (const event of stream) + emit + state update
           for await (const event of stream) {
+            if (event.type === 'agent:run-end' || event.type === 'agent:run-error') {
+              agentFinished = true
+            }
             this.emit(event)
-
-            if (event.type === 'agent_error') {
+            if (event.type === 'agent:run-error') {
               loopError = event.error
             }
           }
 
           const loopResult = await stream.result()
-
-          if (loopError) {
-            throw new Error(loopError)
-          }
+          if (loopError) throw new Error(loopError)
 
           return {
             runId,
@@ -852,202 +426,180 @@ export class Agent {
             memoriesUsed
           }
         } catch (err) {
-          // loop 内部已 emit 过 agent_error，不重复 emit
-          if (!loopError) {
+          if (!loopError)
             this.emit({
-              type: 'agent_error',
+              type: 'agent:run-error',
               runId,
+              sessionKey,
               error: err instanceof Error ? err.message : String(err)
             })
-          }
           throw err
         } finally {
-          // 对应 OpenClaw: attempt.ts finally → flushPendingToolResults()
-          await this.toolResultGuard.flushPendingToolResults(sessionKey)
-          this.runAbortControllers.delete(runId)
-          this.sessionRunIds.get(sessionKey)?.delete(runId)
+          if (!agentFinished) this.emit({ type: 'agent:run-end', runId, sessionKey, messages: [] })
+          await this.stateManager.endRun(sessionKey, runId)
         }
       })
     )
   }
 
-  /**
-   * 中止运行
-   *
-   * 对应 OpenClaw: pi-embedded-runner/run/attempt.ts → abortRun()
-   */
-  abort(runId?: string): void {
-    if (runId) {
-      const controller = this.runAbortControllers.get(runId)
-      if (controller) {
-        controller.abort()
-      }
-    } else {
-      for (const controller of this.runAbortControllers.values()) {
-        controller.abort()
+  // ============== 私有辅助方法 ==============
+
+  private emit(event: MiniAgentEvent): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(event)
+      } catch (err) {
+        console.error(`[Agent] Listener Error:`, err)
       }
     }
   }
 
-  /**
-   * 中止指定会话的所有运行
-   */
-  abortSession(sessionKey: string): void {
-    const runIds = this.sessionRunIds.get(sessionKey)
-    if (runIds) {
-      for (const rid of runIds) {
-        this.abort(rid)
-      }
+  private resolveToolsForRun(): Tool[] {
+    let tools = [...this.tools]
+    if (!this.enableMemory) tools = tools.filter((t) => !t.name.startsWith('memory_'))
+    const deny: string[] = []
+    if (this.sandbox?.enabled) {
+      if (!this.sandbox.allowExec) deny.push('exec')
+      if (!this.sandbox.allowWrite) deny.push('write', 'edit')
     }
+    let filtered = filterToolsByPolicy(tools, this.toolPolicy)
+    if (deny.length > 0) filtered = filterToolsByPolicy(filtered, { deny })
+    return filtered
   }
 
-  /**
-   * 向运行中的会话注入 steering 消息
-   *
-   * 对应 OpenClaw: pi-agent-core → session.steer(text) / agent.steeringQueue
-   */
-  steer(sessionKey: string, text: string): void {
-    const queue = this.steeringQueues.get(sessionKey)
-    if (queue) {
-      queue.push(text)
-    } else {
-      this.steeringQueues.set(sessionKey, [text])
+  private async interceptSkills(
+    userMessage?: string | ContentBlock[]
+  ): Promise<string | ContentBlock[] | undefined> {
+    if (!this.enableSkills || !userMessage) return userMessage
+    const text =
+      typeof userMessage === 'string'
+        ? userMessage
+        : userMessage.map((b) => ('text' in b ? b.text : '')).join('')
+    const match = await this.skills.match(text)
+    if (match)
+      return `Use the "${match.command.skillName}" skill for this request.\n\nUser input:\n${match.args ?? ''}`
+    return userMessage
+  }
+
+  private checkContextWindow(): void {
+    const info = resolveContextWindowInfo({
+      contextTokens: this.contextTokens,
+      defaultTokens: DEFAULT_CONTEXT_WINDOW_TOKENS
+    })
+    const guard = evaluateContextWindowGuard({
+      info,
+      warnBelowTokens: CONTEXT_WINDOW_WARN_BELOW_TOKENS,
+      hardMinTokens: CONTEXT_WINDOW_HARD_MIN_TOKENS
+    })
+    if (guard.shouldWarn) console.warn(`[Agent] 上下文窗口偏小: ${guard.tokens} tokens.`)
+    if (guard.shouldBlock)
+      throw new Error(
+        `上下文窗口过小 (${guard.tokens} tokens)，最低要求 ${CONTEXT_WINDOW_HARD_MIN_TOKENS} tokens。`
+      )
+  }
+
+  private resolveModelDefinition(config: AgentConfig, provider: string, modelId?: string) {
+    const API_FOR_PROVIDER: Record<string, string> = {
+      anthropic: 'anthropic-messages',
+      openai: 'openai-completions',
+      google: 'google-generative-ai'
     }
-  }
-
-  /**
-   * 启动 Heartbeat 监控
-   *
-   * 对齐 openclaw: heartbeat 是独立的主动通知系统，
-   * 回调接收 HEARTBEAT.md 原始内容（不做任务解析），
-   * 由调用方决定如何处理（通常是调用 LLM）
-   */
-  startHeartbeat(callback?: (content: string, reason: string) => void): void {
-    if (callback) {
-      this.heartbeat.onHeartbeat(async (opts): Promise<{ text?: string } | null> => {
-        callback(opts.content, opts.reason)
-        return null
-      })
-    }
-    this.heartbeat.start()
-  }
-
-  /**
-   * 停止 Heartbeat 监控
-   */
-  stopHeartbeat(): void {
-    this.heartbeat.stop()
-  }
-
-  /**
-   * 手动触发 Heartbeat 检查
-   */
-  async triggerHeartbeat(): Promise<HeartbeatResult> {
-    return this.heartbeat.trigger()
-  }
-
-  async createSession(): Promise<string> {
-    const sessions = await this.sessions.list()
-    let maxIdx = 0
-    for (const key of sessions) {
-      const parsed = parseAgentSessionKey(key)
-      if (parsed && parsed.agentId === this.agentId) {
-        const match = parsed.rest.match(/^s(\d+)$/)
-        if (match) {
-          const idx = parseInt(match[1], 10)
-          if (idx > maxIdx) maxIdx = idx
-        }
-      }
-    }
-    const mainKey = `s${maxIdx + 1}`
-    const fullKey = resolveSessionKey({ agentId: this.agentId, sessionKey: mainKey })
-    await this.sessions.create(fullKey)
-    this.emitLifecycle({ type: 'session_created', sessionKey: fullKey, agentId: this.agentId })
-    return fullKey
-  }
-
-  async reset(id: string): Promise<void> {
-    const sessionKey = resolveSessionKey({ agentId: this.agentId, sessionId: id, sessionKey: id })
-    await this.sessions.reset(sessionKey)
-    this.emitLifecycle({ type: 'session_reset', sessionKey })
-  }
-
-  async deleteSession(id: string): Promise<void> {
-    const sessionKey = resolveSessionKey({ agentId: this.agentId, sessionId: id, sessionKey: id })
-    await this.sessions.delete(sessionKey)
-    this.emitLifecycle({ type: 'session_deleted', sessionKey })
-  }
-
-  async getHistory(id: string): Promise<Message[]> {
-    return this.sessions.load(
-      resolveSessionKey({ agentId: this.agentId, sessionId: id, sessionKey: id })
-    )
-  }
-
-  /**
-   * 列出会话
-   */
-  async listSessions(): Promise<string[]> {
-    return this.sessions.list()
-  }
-
-  // ===== 子系统访问器 =====
-
-  getMemory(): MemoryManager {
-    return this.memory
-  }
-
-  getContext(): ContextLoader {
-    return this.context
-  }
-
-  getSkills(): SkillManager {
-    return this.skills
-  }
-
-  getHeartbeat(): HeartbeatManager {
-    return this.heartbeat
-  }
-
-  /**
-   * 运行时尝试刷新模型配置（应对用户在启动应用后才配置模型的情况）
-   */
-  private refreshModelConfig(): void {
-    try {
-      const configService = ConfigService.getInstance()
-      const appConfig = configService.getConfig()
-
-      // 尝试获取全局默认模型
-      const defaultModel = configService.getModel(appConfig.defaultModelId || '')
-
-      if (defaultModel) {
-        const provider = defaultModel.provider || 'anthropic'
-        const modelId = defaultModel.model || 'claude-sonnet-4-20250514'
-
-        const API_FOR_PROVIDER: Record<string, string> = {
-          anthropic: 'anthropic-messages',
-          openai: 'openai-completions',
-          google: 'google-generative-ai'
-        }
-
-        const api = API_FOR_PROVIDER[provider] || 'openai-completions'
-        this.modelDef = {
+    let md = config.modelDef ?? getModel(provider as any, modelId as any)
+    if (!md && modelId) {
+      const api = API_FOR_PROVIDER[provider]
+      if (api)
+        md = {
           id: modelId,
           name: modelId,
           api,
           provider,
-          baseUrl: defaultModel.baseUrl ?? '',
+          baseUrl: config.baseUrl ?? '',
           reasoning: true,
-          input: defaultModel.supportsVision ? ['text', 'image'] : ['text'],
+          input: config.supportsVision ? ['text', 'image'] : ['text'],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 200_000,
           maxTokens: 8192
         }
-        this.apiKey = defaultModel.apiKey
-        console.log(`[Agent] Runtime config refresh successful for agent ID: ${this.agentId}`)
+    }
+    if (config.baseUrl && md) {
+      md = {
+        ...md,
+        baseUrl: config.baseUrl,
+        headers: {
+          'User-Agent': null,
+          'X-Stainless-Lang': null,
+          'X-Stainless-Package-Version': null,
+          'X-Stainless-OS': null,
+          'X-Stainless-Arch': null,
+          'X-Stainless-Runtime': null,
+          'X-Stainless-Runtime-Version': null,
+          'anthropic-dangerous-direct-browser-access': null,
+          'anthropic-beta': null,
+          ...config.headers
+        } as any
+      }
+    } else if (config.headers && md) {
+      md = { ...md, headers: { ...md.headers, ...config.headers } as any }
+    }
+    this.modelDef = md
+  }
+
+  private refreshModelConfig(): void {
+    try {
+      const cs = ConfigService.getInstance()
+      const app = cs.getConfig()
+      const m = cs.getModel(app.defaultModelId || '')
+      if (m) {
+        const p = m.provider || 'anthropic'
+        const apis: Record<string, string> = {
+          anthropic: 'anthropic-messages',
+          openai: 'openai-completions',
+          google: 'google-generative-ai'
+        }
+        this.modelDef = {
+          id: m.model || 'claude-sonnet-4.5',
+          name: m.model,
+          api: apis[p] || 'openai-completions',
+          provider: p,
+          baseUrl: m.baseUrl ?? '',
+          reasoning: true,
+          input: m.supportsVision ? ['text', 'image'] : ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 200_000,
+          maxTokens: 8192
+        }
+        this.apiKey = m.apiKey
+        this.contextManager.updateConfig({ modelDef: this.modelDef, apiKey: this.apiKey })
       }
     } catch (err) {
-      console.warn('[Agent] Failed to refresh model config at runtime:', err)
+      console.warn('[Agent] Runtime config refresh fail:', err)
     }
+  }
+
+  public getMemory() {
+    return this.memory
+  }
+  public getContext() {
+    return this.context
+  }
+  public getSkills() {
+    return this.skills
+  }
+  public getHeartbeat() {
+    return this.heartbeat
+  }
+  public startHeartbeat(cb?: any) {
+    if (cb)
+      this.heartbeat.onHeartbeat(async (o: any) => {
+        cb(o.content, o.reason)
+        return null
+      })
+    this.heartbeat.start()
+  }
+  public stopHeartbeat() {
+    this.heartbeat.stop()
+  }
+  public async triggerHeartbeat() {
+    return this.heartbeat.trigger()
   }
 }

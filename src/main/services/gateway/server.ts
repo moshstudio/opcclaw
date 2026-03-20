@@ -8,30 +8,20 @@
  * - server-methods.ts → handleGatewayRequest() 方法路由
  * - server-maintenance.ts → tick 定时器
  * - server-close.ts → 优雅关闭
- *
- * 核心模式:
- * 1. Challenge-Response 握手
- * 2. 方法路由: RequestFrame.method → handlers[method]
- * 3. Pub/Sub 广播: broadcast(event, payload) → seq 递增 → 背压控制
- * 4. 心跳: 30s tick → 慢消费者检测
  */
 
 import http from 'node:http'
-import { WebSocketServer, WebSocket } from 'ws'
+import { WebSocketServer } from 'ws'
 import type { AgentRegistry } from '@main/services/agent/registry'
+import type { MiniAgentEvent } from '@main/services/agent/agent-events.js'
 import {
-  type RequestFrame,
-  type ResponseFrame,
-  type EventFrame,
-  isRequestFrame,
-  ErrorCodes,
-  errorShape,
-  newId,
-  TICK_INTERVAL_MS,
-  HANDSHAKE_TIMEOUT_MS
+  TICK_INTERVAL_MS
 } from './protocol.js'
-import { handlers, type GwClient, type HandlerContext } from './handlers/index.js'
+import { type GwClient, type HandlerContext } from './handlers/index.js'
 import { Broadcaster, createBroadcastFn } from './broadcaster.js'
+import { setupConnectionHandler } from './connection-handler'
+import { renderGatewayDoc } from './doc-renderer'
+import { GATEWAY_EVENTS_DOC } from '@shared/metadata/events.js'
 
 // ============== 类型 ==============
 
@@ -46,15 +36,6 @@ export type GatewayServer = {
   port: number
 }
 
-// ============== 广播器（对齐 openclaw server-broadcast.ts） ==============
-
-/**
- * 对齐 openclaw server-broadcast.ts:
- * - seq 全局递增
- * - dropIfSlow: 非关键事件（tick、delta）跳过慢消费者而非断开
- * - 强制关闭: 关键事件时，慢消费者直接断开防止内存泄漏
- */
-
 // ============== 启动服务 ==============
 
 export async function startGatewayServer(opts: GatewayServerOptions): Promise<GatewayServer> {
@@ -65,6 +46,11 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
   const startedAt = Date.now()
 
   const broadcaster = new Broadcaster(broadcast)
+
+  // 注册全局智能体事件监听器，用于跨请求生命周期的自动广播
+  const unsubAll = opts.registry.subscribeAll(async (_agentId: string, event: MiniAgentEvent) => {
+    broadcaster.handleAgentEvent(event)
+  })
 
   const ctx: HandlerContext = {
     registry: opts.registry,
@@ -77,21 +63,37 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
   }
 
   // HTTP 服务（对齐 openclaw server-http.ts createGatewayHttpServer）
-  const httpServer = http.createServer((_req, res) => {
+  const httpServer = http.createServer((req, res) => {
+    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
+    const isJson = url.searchParams.get('format') === 'json' || req.headers.accept?.includes('application/json')
+
+    if (url.pathname === '/events-doc') {
+      if (isJson) {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+        res.end(JSON.stringify({ events: GATEWAY_EVENTS_DOC }, null, 2))
+        return
+      }
+
+      // 渲染美观的 HTML 文档
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.end(renderGatewayDoc(port))
+      return
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ service: 'mini-gateway', uptimeMs: Date.now() - startedAt }))
   })
 
-  // WebSocket 服务（对齐 openclaw: new WebSocketServer + attachGatewayUpgradeHandler）
+  // WebSocket 服务
   const wss = new WebSocketServer({ server: httpServer })
 
   wss.on('connection', (socket) => {
     setupConnectionHandler(socket, ctx)
   })
 
-  // Tick 定时器（对齐 openclaw server-maintenance.ts: 30s tick 广播，可丢弃）
+  // Tick 定时器
   const tickTimer = setInterval(() => {
-    broadcaster.tick(Date.now())
+    broadcaster.dispatch({ type: 'system:tick', ts: Date.now() })
   }, TICK_INTERVAL_MS)
 
   // 监听
@@ -100,15 +102,20 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
     httpServer.listen(port, () => resolve())
   })
 
-  // 优雅关闭（对齐 openclaw server-close.ts: createGatewayCloseHandler）
+  // 优雅关闭
   const close = (opts?: { restartExpectedMs?: number }) => {
-    broadcaster.shutdown('server closing', opts?.restartExpectedMs ?? null)
+    broadcaster.dispatch({
+      type: 'system:shutdown',
+      reason: 'server closing',
+      restartExpectedMs: opts?.restartExpectedMs ?? null
+    })
     clearInterval(tickTimer)
+    unsubAll()
     for (const c of clients) {
       try {
         c.socket.close(1012, 'service restart')
       } catch {
-        console.warn('socket close failed')
+        // ignore
       }
     }
     clients.clear()
@@ -117,122 +124,4 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
   }
 
   return { close, port }
-}
-
-/**
- * 设置新的 WebSocket 连接 (对齐 openclaw ws-connection.ts)
- */
-function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
-  const connId = newId()
-  const client: GwClient = { id: connId, socket: socket as any, authed: false }
-  ctx.clients.add(client)
-
-  console.log(`[GW-CONN] Client connected: ${connId}`)
-
-  // 1. 发送 challenge (握手挑战)
-  const nonce = newId()
-  ctx.nonces.set(connId, nonce)
-  send(socket, {
-    type: 'event',
-    event: 'connect.challenge',
-    payload: { nonce, ts: Date.now() },
-    seq: 0
-  })
-
-  // 2. 握手超时控制
-  const handshakeTimer = setTimeout(() => {
-    if (!client.authed) {
-      socket.close(4000, 'handshake timeout')
-    }
-  }, HANDSHAKE_TIMEOUT_MS)
-
-  // 3. 消息路由处理
-  socket.on('message', async (raw) => {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(String(raw))
-    } catch {
-      return
-    }
-
-    if (!isRequestFrame(parsed)) return
-    const req = parsed as RequestFrame
-    console.log(`[GW-IN] ${req.method} id=${req.id}`, req.params || '')
-
-    // 安全检查：未认证时仅允许 connect
-    if (!client.authed && req.method !== 'connect') {
-      respond(
-        socket,
-        req.id,
-        false,
-        undefined,
-        errorShape(ErrorCodes.UNAUTHORIZED, 'not authenticated')
-      )
-      return
-    }
-
-    // RPC 方法路由
-    const handler = handlers[req.method]
-    if (!handler) {
-      respond(
-        socket,
-        req.id,
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, `unknown method: ${req.method}`)
-      )
-      return
-    }
-
-    try {
-      const result = await handler(req.params, client, ctx)
-      respond(socket, req.id, result.ok, result.payload, result.error)
-      if (req.method === 'connect' && result.ok) {
-        clearTimeout(handshakeTimer)
-      }
-    } catch (err) {
-      respond(socket, req.id, false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)))
-    }
-  })
-
-  // 4. 连接清理逻辑
-  const cleanup = (code?: number, reason?: string) => {
-    clearTimeout(handshakeTimer)
-    if (ctx.clients.has(client)) {
-      const info = code ? `(code: ${code}${reason ? `, reason: ${reason}` : ''})` : ''
-      console.log(`[GW-DISCONN] Client left: ${connId} ${info}`)
-      ctx.clients.delete(client)
-      ctx.nonces.delete(connId)
-    }
-  }
-
-  socket.on('close', (code, reason) => cleanup(code, String(reason)))
-  socket.on('error', (err) => {
-    console.error(`[GW-ERR] Client socket error: ${connId}`, err)
-    cleanup()
-  })
-}
-
-// ============== 帮助函数 ==============
-
-function send(socket: WebSocket, frame: EventFrame | ResponseFrame): void {
-  if (socket.readyState === WebSocket.OPEN) {
-    // if (frame.type === 'res') {
-    //   console.log(`[GW-OUT] RES: id=${frame.id} ok=${frame.ok}`)
-    // } else if (frame.event !== 'tick') {
-    //   console.log(`[GW-OUT] EVENT: event=${frame.event}`)
-    // }
-    const data = JSON.stringify(frame)
-    socket.send(data)
-  }
-}
-
-function respond(
-  socket: WebSocket,
-  id: string,
-  ok: boolean,
-  payload?: unknown,
-  error?: import('./protocol.js').ErrorShape
-): void {
-  send(socket, { type: 'res', id, ok, payload, error })
 }
