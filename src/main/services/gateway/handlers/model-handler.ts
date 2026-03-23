@@ -1,4 +1,5 @@
 import { ConfigService } from '../../config/config-service.js'
+import { AgentRegistry } from '../../agent/registry.js'
 import { ErrorCodes, errorShape } from '../protocol.js'
 import type { Handler } from './types.js'
 
@@ -26,6 +27,10 @@ export const handleModelsAdd: Handler = async (params, _client, ctx) => {
   }
   const configService = ConfigService.getInstance()
   configService.addModel(model)
+
+  // 触发智能体重载
+  await AgentRegistry.getInstance().loadAllAgents()
+
   const config = configService.getConfig()
   ctx.broadcaster.dispatch({
     type: 'models:list',
@@ -45,6 +50,10 @@ export const handleModelsUpdate: Handler = async (params, _client, ctx) => {
   }
   const configService = ConfigService.getInstance()
   configService.updateModel(p.id, p.updates)
+
+  // 触发智能体重载
+  await AgentRegistry.getInstance().loadAllAgents()
+
   const config = configService.getConfig()
   ctx.broadcaster.dispatch({
     type: 'models:list',
@@ -64,6 +73,10 @@ export const handleModelsDelete: Handler = async (params, _client, ctx) => {
   }
   const configService = ConfigService.getInstance()
   configService.deleteModel(p.id)
+
+  // 触发智能体重载
+  await AgentRegistry.getInstance().loadAllAgents()
+
   const config = configService.getConfig()
   ctx.broadcaster.dispatch({
     type: 'models:list',
@@ -83,6 +96,10 @@ export const handleModelsSetDefault: Handler = async (params, _client, ctx) => {
   }
   const configService = ConfigService.getInstance()
   configService.saveConfig({ defaultModelId: p.id })
+
+  // 触发智能体重载
+  await AgentRegistry.getInstance().loadAllAgents()
+
   const config = configService.getConfig()
   ctx.broadcaster.dispatch({
     type: 'models:list',

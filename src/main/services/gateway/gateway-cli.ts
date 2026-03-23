@@ -82,7 +82,9 @@ async function serve() {
   const registry = AgentRegistry.getInstance()
   registry.registerAgent('main', agent)
 
-  const gw = await startGatewayServer({ port, token, registry })
+  const logLevel = (flag(args, '--log-level') as any) || 'info'
+
+  const gw = await startGatewayServer({ port, token, registry, logLevel })
 
   console.log(`\n\x1b[36m\u25cf\x1b[0m \x1b[1mMini Gateway\x1b[0m`)
   console.log(`\x1b[2m  ws://localhost:${gw.port}\x1b[0m`)

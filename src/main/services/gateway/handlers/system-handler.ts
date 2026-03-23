@@ -13,6 +13,8 @@ import {
 import { builtinTools } from '../../tools/builtin.js'
 import { loadWorkspaceBootstrapFiles } from '../../context/bootstrap.js'
 import { ConfigService } from '../../config/config-service.js'
+import { AgentRegistry } from '../../agent/registry.js'
+import { GatewayManager } from '../manager.js'
 import { type Handler, safeEqual } from './types.js'
 import { GATEWAY_EVENTS_DOC } from '@shared/metadata/events.js'
 
@@ -184,7 +186,6 @@ export const handleConfigSave: Handler = async (params, _client, ctx) => {
   if (config.gateway) {
     // 延迟一秒重启，给响应留出时间
     setTimeout(async () => {
-      const { GatewayManager } = await import('../manager.js')
       await GatewayManager.getInstance().restart()
     }, 1000)
   }
@@ -195,7 +196,6 @@ export const handleConfigSave: Handler = async (params, _client, ctx) => {
   const modelsListChanged = config.models !== undefined
 
   if (modelChanged || modelsListChanged) {
-    const { AgentRegistry } = await import('../../agent/registry.js')
     await AgentRegistry.getInstance().loadAllAgents()
 
     const newConfig = configService.getConfig()

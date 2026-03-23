@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from 'react'
-import { Server, Save, CheckCircle2, Copy, Eye, EyeOff, RefreshCw, ExternalLink, FileText } from 'lucide-react'
+import {
+  Server,
+  Save,
+  CheckCircle2,
+  Copy,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  ExternalLink,
+  FileText
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NumberInput } from '@renderer/components/ui/number-input'
 import { Button } from '@renderer/components/ui/button'
@@ -70,14 +80,14 @@ const GatewayTab: React.FC = () => {
   const handleSave = async () => {
     if (!config) return
     setSaving(true)
-    
+
     try {
       const { getGatewayClient } = await import('@renderer/services/gateway-client')
       const client = getGatewayClient()
-      
+
       // 1. 通过 Gateway 保存新配置
       await client.request('config:save', config)
-      
+
       // 2. 触发重连 (因为修改了端口或 Token)
       client.close()
     } catch (err) {
@@ -170,7 +180,11 @@ const GatewayTab: React.FC = () => {
                     onClick={() => setShowToken(!showToken)}
                     className="h-8 w-8 text-muted-foreground hover:text-foreground"
                   >
-                    {showToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    {showToken ? (
+                      <EyeOff className="w-3.5 h-3.5" />
+                    ) : (
+                      <Eye className="w-3.5 h-3.5" />
+                    )}
                   </Button>
                   <Button
                     variant="ghost"
@@ -181,7 +195,11 @@ const GatewayTab: React.FC = () => {
                       copied ? 'text-green-500' : 'text-muted-foreground hover:text-foreground'
                     )}
                   >
-                    {copied ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copied ? (
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
                   </Button>
                   <Button
                     variant="ghost"
@@ -209,7 +227,7 @@ const GatewayTab: React.FC = () => {
               </p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2">
             <div className="hidden sm:block px-3 py-1.5 rounded-md bg-black/40 border border-zinc-800 text-[10px] font-mono text-zinc-400 group-hover:text-primary transition-colors">
               {docUrl}
@@ -217,14 +235,21 @@ const GatewayTab: React.FC = () => {
             <Button
               variant="ghost"
               size="sm"
-              className={cn('h-8 gap-2 text-xs font-bold', copiedUrl ? 'text-green-500' : 'text-zinc-400 hover:text-primary')}
+              className={cn(
+                'h-8 gap-2 text-xs font-bold',
+                copiedUrl ? 'text-green-500' : 'text-zinc-400 hover:text-primary'
+              )}
               onClick={() => {
                 navigator.clipboard.writeText(docUrl)
                 setCopiedUrl(true)
                 setTimeout(() => setCopiedUrl(false), 2000)
               }}
             >
-              {copiedUrl ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              {copiedUrl ? (
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
               {copiedUrl ? '已复制' : '复制链接'}
             </Button>
             <Button

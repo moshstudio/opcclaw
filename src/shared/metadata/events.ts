@@ -69,28 +69,28 @@ export const GATEWAY_EVENTS_DOC: EventDoc[] = [
   },
   {
     channel: 'chat',
-    type: 'chat:tool-call',
+    type: 'chat:toolCall',
     description: 'AI 触发工具调用',
     category: 'chat',
     payload: {
       sessionKey: 'string',
       chunkId: 'string',
       parentId: 'string',
-      state: 'tool_call',
-      toolCall: { id: 'string', name: 'string', args: 'any' }
+      state: 'toolCall',
+      toolCall: { id: 'string', name: 'string', arguments: 'any' }
     }
   },
   {
     channel: 'chat',
-    type: 'chat:tool-result',
+    type: 'chat:toolResult',
     description: '工具执行结果返回给 AI',
     category: 'chat',
     payload: {
       sessionKey: 'string',
       chunkId: 'string',
       parentId: 'string',
-      state: 'tool_result',
-      toolResult: { id: 'string', result: 'string', isError: 'boolean' }
+      state: 'toolResult',
+      toolResult: { toolCallId: 'string', toolName: 'string', content: 'any[]', isError: 'boolean' }
     }
   },
   {
@@ -102,12 +102,12 @@ export const GATEWAY_EVENTS_DOC: EventDoc[] = [
   },
   {
     channel: 'chat',
-    type: 'chat:subagent-feedback',
+    type: 'chat:subagentFeedback',
     description: '子智能体执行反馈',
     category: 'chat',
     payload: {
       sessionKey: 'string',
-      state: 'subagent_feedback',
+      state: 'subagentFeedback',
       subagent: {
         task: 'string',
         summary: 'string',

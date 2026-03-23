@@ -19,6 +19,7 @@
 import { Bot } from 'grammy'
 import { GatewayClient } from '../gateway/client.js'
 import type { EventFrame } from '../gateway/protocol.js'
+import { Logger } from '@main/services/common/logger.js'
 
 // ============== 类型 ==============
 
@@ -36,6 +37,7 @@ const TYPING_INTERVAL_MS = 5000
 // ============== 启动 ==============
 
 export async function startTelegramChannel(opts: TelegramChannelOptions) {
+  const logger = new Logger('[Telegram]')
   const bot = new Bot(opts.botToken)
 
   // sessionKey → chatId 映射（用于从 gateway 事件找到对应的 Telegram 聊天）
@@ -101,15 +103,17 @@ export async function startTelegramChannel(opts: TelegramChannelOptions) {
 
       if (p.state === 'final') {
         stopTyping(chatId)
-        if (p.text) sendLongMessage(chatId, p.text).catch(console.error)
+        if (p.text) sendLongMessage(chatId, p.text).catch((err) => logger.error('Send failed:', err))
       } else if (p.state === 'error') {
         stopTyping(chatId)
-        bot.api.sendMessage(chatId, `Error: ${p.error ?? 'unknown'}`).catch(console.error)
+        bot.api
+          .sendMessage(chatId, `Error: ${p.error ?? 'unknown'}`)
+          .catch((err) => logger.error('Send failed:', err))
       }
       // delta 事件忽略（Telegram 不做流式编辑，等 final 一次性发送）
     },
     onConnect: (hello) => {
-      console.log(`\x1b[2m  gateway reconnected (v${hello.protocol})\x1b[0m`)
+      logger.info(`Gateway reconnected (v${hello.protocol})`)
     }
   })
 
@@ -121,7 +125,7 @@ export async function startTelegramChannel(opts: TelegramChannelOptions) {
 
   // 全局错误处理
   bot.catch((err) => {
-    console.error(`\x1b[33m  bot error: ${err.message}\x1b[0m`)
+    logger.error('Bot error:', err)
   })
 
   // ============== Bot 命令 ==============
@@ -176,13 +180,10 @@ export async function startTelegramChannel(opts: TelegramChannelOptions) {
 
   bot.start()
 
-  console.log(`\n\x1b[36m\u25cf\x1b[0m \x1b[1mTelegram Channel\x1b[0m`)
-  console.log(
-    `\x1b[2m  gateway: ${opts.gatewayUrl ?? 'ws://localhost:18789'} (v${hello.protocol})\x1b[0m`
-  )
-  console.log(`\x1b[2m  bot: polling\x1b[0m`)
-  console.log(`\x1b[2m  commands: /start /reset /health\x1b[0m`)
-  console.log(`\x1b[2m  Ctrl+C to stop\x1b[0m\n`)
+  logger.info('Telegram Channel started')
+  logger.info(`Gateway: ${opts.gatewayUrl ?? 'ws://localhost:18789'} (v${hello.protocol})`)
+  logger.info('Bot: polling')
+  logger.info('Commands: /start /reset /health')
 
   return {
     close: () => {

@@ -51,7 +51,7 @@ export function buildAgentMainSessionKey(params: {
 }): string {
   const agentId = normalizeAgentId(params.agentId)
   const mainKey = normalizeMainKey(params.mainKey)
-  return `agent:${agentId}:${mainKey}`
+  return `${agentId}:${mainKey}`
 }
 
 export function parseAgentSessionKey(
@@ -62,11 +62,11 @@ export function parseAgentSessionKey(
     return null
   }
   const parts = raw.split(':').filter(Boolean)
-  if (parts.length < 3 || parts[0].toLowerCase() !== 'agent') {
+  if (parts.length < 2) {
     return null
   }
-  const agentId = normalizeAgentId(parts[1])
-  const rest = parts.slice(2).join(':').trim()
+  const agentId = normalizeAgentId(parts[0])
+  const rest = parts.slice(1).join(':').trim()
   if (!rest) {
     return null
   }
@@ -96,10 +96,10 @@ export function toAgentStoreSessionKey(params: {
     return buildAgentMainSessionKey({ agentId: params.agentId, mainKey: params.mainKey })
   }
   const lowered = raw.toLowerCase()
-  if (lowered.startsWith('agent:')) {
+  if (lowered.includes(':') && !lowered.startsWith('subagent:')) {
     return lowered
   }
-  return `agent:${normalizeAgentId(params.agentId)}:${lowered}`
+  return `${normalizeAgentId(params.agentId)}:${lowered}`
 }
 
 /**

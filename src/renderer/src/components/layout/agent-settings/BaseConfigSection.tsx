@@ -47,15 +47,18 @@ export const BaseConfigSection: React.FC<SettingsSectionProps> = ({
         <div className="flex flex-col gap-2 pt-2">
           <div className="flex items-center justify-between p-3 bg-muted/10 border border-border/20 rounded-2xl hover:bg-muted/15 transition-all group">
             <div className="space-y-0.5">
-              <label className="text-[11px] font-black uppercase tracking-tight text-foreground/80 group-hover:text-primary transition-colors">{t('common.pin_agent')}</label>
-              <p className="text-[8px] font-bold text-muted-foreground/40 uppercase tracking-widest">{t('common.pin_agent_desc')}</p>
+              <label className="text-[11px] font-black uppercase tracking-tight text-foreground/80 group-hover:text-primary transition-colors">
+                {t('common.pin_agent')}
+              </label>
+              <p className="text-[8px] font-bold text-muted-foreground/40 uppercase tracking-widest">
+                {t('common.pin_agent_desc')}
+              </p>
             </div>
             <Switch
               checked={formData.isPinned}
               onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, isPinned: checked }))}
             />
           </div>
-
         </div>
       </div>
     </CollapsibleSection>

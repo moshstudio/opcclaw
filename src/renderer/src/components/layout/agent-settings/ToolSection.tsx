@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React from 'react'
 import { Wrench, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@renderer/components/ui/switch'
@@ -21,7 +21,11 @@ export const ToolSection: React.FC<SettingsSectionProps> = ({
   onToggle
 }) => {
   const { t } = useTranslation()
-  const { data: tools, loading, refresh } = useGatewayList<Tool>({
+  const {
+    data: tools,
+    loading,
+    refresh
+  } = useGatewayList<Tool>({
     method: 'tools:list',
     autoFetch: isOpen,
     refreshDeps: [isOpen]
@@ -75,7 +79,9 @@ export const ToolSection: React.FC<SettingsSectionProps> = ({
               className="h-7 sm:h-8 px-2 sm:px-3 text-[9px] sm:text-[10px] font-bold rounded-lg border-border/60 hover:bg-muted/50"
               onClick={() => refresh()}
             >
-              <RefreshCw className={cn("w-3 h-3 mr-1.5 text-muted-foreground/40", loading && "animate-spin")} />
+              <RefreshCw
+                className={cn('w-3 h-3 mr-1.5 text-muted-foreground/40', loading && 'animate-spin')}
+              />
               {t('common.refresh_config')}
             </Button>
           </div>
@@ -100,7 +106,10 @@ export const ToolSection: React.FC<SettingsSectionProps> = ({
                   {tool.description}
                 </p>
               </div>
-              <Switch checked={isEnabled(tool.name)} onCheckedChange={() => toggleTool(tool.name)} />
+              <Switch
+                checked={isEnabled(tool.name)}
+                onCheckedChange={() => toggleTool(tool.name)}
+              />
             </div>
           ))}
           {!loading && tools.length === 0 && (

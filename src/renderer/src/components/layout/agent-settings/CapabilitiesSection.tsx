@@ -92,8 +92,8 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
           <div className="grid grid-cols-2 gap-1.5">
             {tools.length > 0 ? (
               tools.map((tool) => (
-                <div 
-                  key={tool.name} 
+                <div
+                  key={tool.name}
                   className="group flex flex-col p-2.5 rounded-xl bg-muted/5 border border-border/10 hover:bg-muted/10 hover:border-primary/20 transition-all cursor-default"
                 >
                   <div className="flex items-center gap-1.5 mb-1">
@@ -130,16 +130,20 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
             <div className="space-y-1.5">
               {skills.length > 0 ? (
                 skills.map((skill) => (
-                  <div 
-                    key={skill.name} 
+                  <div
+                    key={skill.name}
                     className="flex items-center gap-2.5 p-2 rounded-xl bg-muted/5 border border-border/10 hover:bg-muted/10 hover:border-primary/20 transition-all group"
                   >
                     <div className="p-1 rounded-lg bg-background shadow-xs text-muted-foreground/40 group-hover:text-primary transition-colors">
                       <FileCode className="w-3 h-3" />
                     </div>
                     <div className="flex flex-col min-w-0">
-                      <span className="text-[10px] font-bold text-foreground/80 truncate">{skill.name}</span>
-                      <span className="text-[8px] text-muted-foreground/40 font-mono truncate">{skill.path.split(/[\\/]/).slice(-3).join('/')}</span>
+                      <span className="text-[10px] font-bold text-foreground/80 truncate">
+                        {skill.name}
+                      </span>
+                      <span className="text-[8px] text-muted-foreground/40 font-mono truncate">
+                        {skill.path.split(/[\\/]/).slice(-3).join('/')}
+                      </span>
                     </div>
                   </div>
                 ))

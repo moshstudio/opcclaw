@@ -1,4 +1,4 @@
-export type { Tool, ToolContext, ToolCall, ToolResult } from './types.js'
+export type { Tool, ToolContext, ToolCallRecord as ToolCall, ToolResultPreview as ToolResult } from './types.js'
 export {
   builtinTools,
   readTool,

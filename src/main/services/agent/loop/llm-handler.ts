@@ -1,13 +1,16 @@
 import type {
   StreamFunction,
   Model,
+  Api,
   Context as PiContext,
   SimpleStreamOptions,
   Usage,
-  ThinkingLevel
+  ThinkingLevel,
+  AssistantMessage,
+  ToolCall
 } from '@mariozechner/pi-ai'
 import type { EventStream } from '@mariozechner/pi-ai'
-import type { ContentBlock } from '@main/services/session/session'
+
 import type { MiniAgentEvent, MiniAgentResult } from '../agent-events'
 import { retryAsync, describeError, isRateLimitError } from '@main/services/provider/errors.js'
 import { abortable } from '@main/services/tools/abort'
@@ -16,7 +19,7 @@ import type { MetricsTracker } from './metrics'
 export interface ExecuteLlmParams {
   runId: string
   sessionKey: string
-  modelDef: Model<any>
+  modelDef: Model<Api>
   streamFn: StreamFunction
   apiKey?: string
   temperature?: number
@@ -26,8 +29,8 @@ export interface ExecuteLlmParams {
 }
 
 export interface LlmResult {
-  assistantContent: ContentBlock[]
-  toolCalls: { id: string; name: string; input: Record<string, unknown> }[]
+  assistantMessage: AssistantMessage
+  toolCalls: ToolCall[]
   turnText: string
   usage?: Usage
 }
@@ -53,17 +56,11 @@ export async function executeLlmCall(
     abortSignal
   } = params
 
-  const assistantContent: ContentBlock[] = []
-  const toolCalls: { id: string; name: string; input: Record<string, unknown> }[] = []
-  const turnTextParts: string[] = []
+  let finalMessage: AssistantMessage | undefined
   let lastUsage: Usage | undefined
 
   await retryAsync(
     async () => {
-      assistantContent.length = 0
-      toolCalls.length = 0
-      turnTextParts.length = 0
-
       const streamOpts: SimpleStreamOptions = {
         maxTokens: maxTokens ?? modelDef.maxTokens,
         signal: abortSignal,
@@ -73,67 +70,49 @@ export async function executeLlmCall(
       }
       const eventStream = streamFn(modelDef, piContext, streamOpts)
 
-      let accumulatedThinking = ''
       for await (const event of eventStream) {
         if (abortSignal.aborted) break
 
         switch (event.type) {
           case 'thinking_delta':
-            accumulatedThinking += event.delta
-            stream.push({ type: 'chat:thinking', runId, sessionKey, delta: event.delta })
-            break
-
-          case 'thinking_end':
-            if (accumulatedThinking) {
-              const contentIdx = event.contentIndex
-              const block = event.partial.content[contentIdx]
-              const signature = block?.type === 'thinking' ? block.thinkingSignature : undefined
-              assistantContent.push({
-                type: 'thinking',
-                text: accumulatedThinking,
-                thinking_signature: signature
-              })
-            }
+            stream.push({
+              type: 'chat:thinking',
+              runId,
+              sessionKey,
+              delta: event.delta
+            })
             break
 
           case 'text_delta':
             metrics.onFirstToken()
-            stream.push({ type: 'chat:delta', runId, sessionKey, delta: event.delta })
+            stream.push({
+              type: 'chat:delta',
+              runId,
+              sessionKey,
+              delta: event.delta
+            })
             break
 
-          case 'text_end':
-            turnTextParts.push(event.content)
-            assistantContent.push({ type: 'text', text: event.content })
+          case 'toolcall_end':
+            stream.push({
+              type: 'chat:toolCall',
+              runId,
+              sessionKey,
+              toolCallId: event.toolCall.id,
+              toolName: event.toolCall.name,
+              arguments: event.toolCall.arguments
+            })
             break
 
           case 'done':
             lastUsage = event.message.usage
             metrics.recordUsage(lastUsage)
+            finalMessage = event.message
             break
-
-          case 'toolcall_end': {
-            const tc = event.toolCall
-            const tcArgs = tc.arguments as Record<string, unknown>
-            assistantContent.push({
-              type: 'tool_use',
-              id: tc.id,
-              name: tc.name,
-              input: tcArgs
-            })
-            toolCalls.push({
-              id: tc.id,
-              name: tc.name,
-              input: tcArgs
-            })
-            break
-          }
 
           case 'error': {
-            const errObj = (event as any).error
-            const errMsg =
-              errObj?.errorMessage ??
-              (errObj instanceof Error ? errObj.message : null) ??
-              'unknown stream error'
+            const errObj = event.error as AssistantMessage
+            const errMsg = errObj.errorMessage || 'unknown stream error'
             throw new Error(`LLM stream error: ${errMsg}`)
           }
         }
@@ -142,6 +121,7 @@ export async function executeLlmCall(
       const result = eventStream.result()
       await abortable(result, abortSignal)
     },
+    // ... retry config ...
     {
       attempts: 3,
       minDelayMs: 300,
@@ -165,10 +145,24 @@ export async function executeLlmCall(
     }
   )
 
+  if (!finalMessage) {
+    throw new Error('LLM call finished without producing a message')
+  }
+
+  // 提取文本内容供 UI 实时更新（不含思考过程和工具调用）
+  const turnText = finalMessage.content
+    .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+    .map((c) => c.text)
+    .join('')
+
+  const toolCalls = finalMessage.content.filter((c): c is ToolCall => c.type === 'toolCall')
+
   return {
-    assistantContent,
+    assistantMessage: finalMessage,
     toolCalls,
-    turnText: turnTextParts.join(''),
+    turnText,
     usage: lastUsage
   }
 }
+
+

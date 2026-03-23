@@ -1,45 +1,63 @@
 import { ErrorCodes, errorShape } from '../protocol.js'
 import type { Handler } from './types.js'
+import { ensureParams } from './handler-utils.js'
 
 /**
  * agent.list
  */
 export const handleAgentList: Handler = async (_params, _client, ctx) => {
-  const agents = ctx.registry.listAgents().map((a) => ({
-    id: a.id,
-    config: a.config
-  }))
-  return { ok: true, payload: { agents } }
+  let agents = ctx.registry.listAgents()
+
+  // 1. 如果内存列表为空，先尝试从磁盘加载
+  if (agents.length === 0) {
+    await ctx.registry.loadAllAgents()
+    agents = ctx.registry.listAgents()
+  }
+
+  // 2. 如果加载后依然为空，说明是初次运行或已被清空，自动兜底创建默认智能体 (main)
+  if (agents.length === 0) {
+    await ctx.registry.createDefaultAgent('main')
+    agents = ctx.registry.listAgents()
+  }
+
+  const payload = {
+    agents: agents.map((a) => ({
+      id: a.id,
+      config: a.config
+    }))
+  }
+  return { ok: true, payload }
 }
 
 /**
  * agent.create
  */
 export const handleAgentCreate: Handler = async (params, _client, ctx) => {
-  const config = params as any
-  if (!config) {
+  if (!params || typeof params !== 'object') {
     return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, 'config required') }
   }
-  const agentId = await ctx.registry.createAgent(config)
+
+  // Registry.createAgent 内部已包含同步创建第一个 session 的逻辑
+  const agentId = await ctx.registry.createAgent(params)
+  const agent = ctx.registry.getAgent(agentId)
+  const sessionKey = (await agent?.listSessions())?.[0]
 
   // 统一分流：广播新智能体创建事件
   ctx.broadcaster.dispatch({ type: 'agent:created', agentId })
 
-  return { ok: true, payload: { agentId } }
+  return { ok: true, payload: { agentId, sessionKey } }
 }
 
 /**
  * agent.update
  */
 export const handleAgentUpdate: Handler = async (params, _client, ctx) => {
-  const p = params as { agentId: string; [key: string]: any } | undefined
-  if (!p?.agentId) {
-    return {
-      ok: false,
-      error: errorShape(ErrorCodes.INVALID_REQUEST, 'agentId required for update')
-    }
-  }
-  const { agentId, ...updates } = p
+  const check = ensureParams(params, ['agentId'])
+  if (!check.ok) return check
+
+  const { agentId } = check.values
+  const { agentId: _, ...updates } = params as Record<string, any>
+
   await ctx.registry.updateAgent(agentId, updates)
 
   // 统一分流：广播智能体配置更新事件
@@ -52,14 +70,14 @@ export const handleAgentUpdate: Handler = async (params, _client, ctx) => {
  * agent.delete
  */
 export const handleAgentDelete: Handler = async (params, _client, ctx) => {
-  const p = params as { agentId?: string } | undefined
-  if (!p?.agentId) {
-    return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, 'agentId required') }
-  }
-  await ctx.registry.deleteAgent(p.agentId)
+  const check = ensureParams(params, ['agentId'])
+  if (!check.ok) return check
+
+  const { agentId } = check.values
+  await ctx.registry.deleteAgent(agentId)
 
   // 统一分流：广播智能体删除事件
-  ctx.broadcaster.dispatch({ type: 'agent:deleted', agentId: p.agentId })
+  ctx.broadcaster.dispatch({ type: 'agent:deleted', agentId })
 
-  return { ok: true, payload: { agentId: p.agentId } }
+  return { ok: true, payload: { agentId } }
 }

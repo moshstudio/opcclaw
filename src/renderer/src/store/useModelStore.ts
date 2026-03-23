@@ -34,7 +34,7 @@ interface ModelState {
   setDefaultModel: (id: string) => Promise<boolean>
 }
 
-export const useModelStore = create<ModelState>((set, get) => ({
+export const useModelStore = create<ModelState>((set) => ({
   models: [],
   defaultModelId: null,
   isLoading: false,

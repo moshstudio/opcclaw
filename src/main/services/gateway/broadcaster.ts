@@ -1,3 +1,4 @@
+import type { AIModelConfig } from '@shared/types/models.js'
 import type { MiniAgentEvent } from '../agent/agent-events.js'
 import { mapEventToChatFields } from './handlers/chat-bridge.js'
 import type {
@@ -10,6 +11,8 @@ import type {
 } from '@shared/types/gateway'
 import type { GwClient } from './handlers/types.js'
 import { type EventFrame, MAX_BUFFERED_BYTES } from './protocol.js'
+import { formatGatewayDebugData } from './helpers/debug-utils.js'
+import type { Logger } from '@main/services/common/logger.js'
 
 /**
  * 下一代网关业务事件模型 (BEM)
@@ -23,7 +26,7 @@ export type GatewayBusinessEvent =
   | { type: 'session:reset'; agentId: string; sessionKey: string }
   | { type: 'session:deleted'; agentId: string; sessionKey: string }
   | { type: 'config:saved'; path: string }
-  | { type: 'models:list'; models: any[]; defaultModelId: string | null }
+  | { type: 'models:list'; models: AIModelConfig[]; defaultModelId: string | null }
   | { type: 'system:tick'; ts: number }
   | { type: 'system:shutdown'; reason: string; restartExpectedMs: number | null }
 
@@ -35,9 +38,24 @@ export interface BroadcastOptions {
 }
 
 /**
+ * 广播负载联合类型
+ */
+export type BroadcastPayload =
+  | ChatPayload
+  | AgentEventPayload
+  | ModelsPayload
+  | TickPayload
+  | ShutdownPayload
+  | MiniAgentEvent // 用于转发原始事件时
+
+/**
  * 广播函数签名
  */
-export type BroadcastFn = (channel: GatewayEvent, payload: any, opts?: BroadcastOptions) => void
+export type BroadcastFn = (
+  channel: GatewayEvent | (string & {}),
+  payload: BroadcastPayload,
+  opts?: BroadcastOptions
+) => void
 
 /**
  * 统一网关分流器 (Gateway Dispatcher)
@@ -46,6 +64,7 @@ export type BroadcastFn = (channel: GatewayEvent, payload: any, opts?: Broadcast
  */
 export class Broadcaster {
   private lastChunkIdMap = new Map<string, string>() // sessionKey -> lastChunkId
+  private sessionToAgentMap = new Map<string, string>() // sessionKey -> agentId
 
   constructor(private readonly broadcast: BroadcastFn) {}
 
@@ -56,16 +75,19 @@ export class Broadcaster {
     switch (event.type) {
       case 'session:reset':
       case 'session:deleted':
-        this.resetSession((event as any).sessionKey)
-        this.emit('agent', event as AgentEventPayload)
+        this.resetSession(event.sessionKey)
+        this.emit('session', event as AgentEventPayload)
         break
 
       case 'agent:created':
       case 'agent:updated':
       case 'agent:deleted':
-      case 'session:created':
       case 'config:saved':
         this.emit('agent', event as AgentEventPayload)
+        break
+
+      case 'session:created':
+        this.emit('session', event as AgentEventPayload)
         break
 
       case 'models:list':
@@ -89,12 +111,12 @@ export class Broadcaster {
     }
   }
 
-/**
+  /**
    * 处理智能体引擎产生的 MiniAgentEvent 并路由到对应的网关频道。
    * 支持 namespace:action 格式自动化分发。
    */
   public handleAgentEvent(event: MiniAgentEvent) {
-    const sessionKey = (event as any).sessionKey || 'global'
+    const sessionKey = 'sessionKey' in event ? event.sessionKey : 'global'
     const [ns] = event.type.split(':')
 
     // 1. 聊天频道特殊逻辑 (管理消息 ID 连)
@@ -104,12 +126,21 @@ export class Broadcaster {
         const chunkId = `chunk_${Math.random().toString(36).slice(2, 11)}`
         const parentId = this.lastChunkIdMap.get(sessionKey)
 
+        // 尝试从事件中提取 agentId，若无则使用缓存
+        const agentId =
+          ('agentId' in event ? event.agentId : undefined) ||
+          this.sessionToAgentMap.get(sessionKey) ||
+          ''
+        const runId = ('runId' in event ? event.runId : '') as string
+
         this.chat({
+          agentId,
+          runId,
           sessionKey,
           chunkId,
           parentId,
           ...payload
-        } as any)
+        } as ChatPayload)
 
         if (payload.state === 'final' || payload.state === 'error') {
           this.lastChunkIdMap.delete(sessionKey)
@@ -122,15 +153,25 @@ export class Broadcaster {
 
     // 2. 智能体生命周期频道
     if (ns === 'agent' || ns === 'session') {
-      if (event.type === 'session:reset' || event.type === 'session:deleted') {
-        this.resetSession((event as any).sessionKey)
+      if (event.type === 'agent:run-start') {
+        this.sessionToAgentMap.set(event.sessionKey, event.agentId)
+        this.emit('agent', event as AgentEventPayload)
+        return
       }
-      this.emit('agent', event as AgentEventPayload)
+
+      if (event.type === 'session:reset' || event.type === 'session:deleted') {
+        this.resetSession(event.sessionKey)
+        this.sessionToAgentMap.delete(event.sessionKey)
+        this.emit('session', event as AgentEventPayload)
+        return
+      }
+
+      this.emit(ns as any, event as AgentEventPayload)
       return
     }
 
     // 3. 通用转发/兜底 (如 future notification 等频道)
-    this.emit((ns || 'system') as any, event)
+    this.emit((ns || 'system') as GatewayEvent, event)
   }
 
   /**
@@ -148,7 +189,11 @@ export class Broadcaster {
     this.lastChunkIdMap.delete(sessionKey)
   }
 
-  private emit(channel: GatewayEvent, payload: any, opts?: BroadcastOptions) {
+  private emit(
+    channel: GatewayEvent | (string & {}),
+    payload: BroadcastPayload,
+    opts?: BroadcastOptions
+  ) {
     this.broadcast(channel, payload, opts)
   }
 }
@@ -156,11 +201,19 @@ export class Broadcaster {
 /**
  * 创建底层广播函数 (对齐高并发场景)
  */
-export function createBroadcastFn(clients: Set<GwClient>): BroadcastFn {
+export function createBroadcastFn(clients: Set<GwClient>, logger: Logger): BroadcastFn {
   let seq = 0
-  return (event: GatewayEvent, payload: any, opts?: BroadcastOptions) => {
+  return (
+    event: GatewayEvent | (string & {}),
+    payload: BroadcastPayload,
+    opts?: BroadcastOptions
+  ) => {
     const frame = { type: 'event', event, payload, seq: ++seq } as EventFrame
     const data = JSON.stringify(frame)
+
+    if (logger.level === 'debug') {
+      logger.debug(`[GW-OUT] BROADCAST: ${formatGatewayDebugData(frame)}`)
+    }
 
     for (const c of clients) {
       if (!c.authed) continue

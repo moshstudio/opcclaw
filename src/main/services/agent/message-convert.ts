@@ -1,11 +1,5 @@
-/**
- * 消息格式转换: 内部 Message[] → pi-ai Message[]
- *
- * pi-ai 使用三种 role: "user" / "assistant" / "toolResult"
- * 内部格式: role 只有 "user" / "assistant"，tool_result 嵌在 user 消息的 content 中
- */
-
-import type { Message } from '@main/services/session/session'
+import { normalizeMessage } from '@shared/utils/message.js'
+import type { Message } from '@shared/types/agent.js'
 import type {
   Message as PiMessage,
   AssistantMessage as PiAssistantMessage,
@@ -18,10 +12,7 @@ import type {
  * 更稳健的 Assistant 消息类型
  */
 type RobustAssistantMessage = PiAssistantMessage & {
-  reasoning_content?: string
-  reasoning?: string
-  reasoning_text?: string
-  [key: string]: string | number | object | undefined // 更保守的索引签名
+  [key: string]: any // 允许动态注入思维链字段
 }
 
 const EMPTY_USAGE = {
@@ -35,12 +26,6 @@ const EMPTY_USAGE = {
 
 /**
  * 将内部 Message[] 转换为 pi-ai 的 Message[]
- *
- * 转换规则:
- * - user + string content → PiUserMessage
- * - user + ContentBlock[] 含 tool_result → 拆分为独立 PiToolResultMessage
- * - user + ContentBlock[] 含 text → PiUserMessage
- * - assistant + ContentBlock[] → PiAssistantMessage（tool_use → ToolCall）
  */
 export function convertMessagesToPi(
   messages: Message[],
@@ -48,57 +33,36 @@ export function convertMessagesToPi(
 ): PiMessage[] {
   const result: PiMessage[] = []
 
-  for (const msg of messages) {
-    const timestamp = typeof msg.timestamp === 'string' ? new Date(msg.timestamp).getTime() : msg.timestamp
+  for (const rawMsg of messages) {
+    const msg = normalizeMessage(rawMsg)
+    const { timestamp, role } = msg
 
-    if (msg.role === 'user') {
+    if (role === 'user') {
       if (typeof msg.content === 'string') {
-        result.push({
-          role: 'user',
-          content: msg.content,
-          timestamp
-        })
+        result.push({ role: 'user', content: msg.content, timestamp: Number(timestamp) })
         continue
       }
 
       const textParts: PiTextContent[] = []
-      for (const block of msg.content) {
+      const blocks = msg.content as any[]
+      for (const block of blocks) {
         if (block.type === 'text' && block.text) {
           textParts.push({ type: 'text', text: block.text })
-        } else if (block.type === 'tool_result') {
+        } else if (block.type === 'toolResult') {
           result.push({
             role: 'toolResult',
-            toolCallId: block.tool_use_id ?? '',
-            toolName: block.name ?? '',
-            content: [{ type: 'text', text: typeof block.content === 'string' ? block.content : '' }],
-            isError: false,
-            timestamp
+            toolCallId: block.toolCallId,
+            toolName: block.toolName,
+            content: block.content,
+            isError: block.isError,
+            timestamp: Number(timestamp)
           })
         }
       }
       if (textParts.length > 0) {
-        result.push({
-          role: 'user',
-          content: textParts,
-          timestamp
-        })
+        result.push({ role: 'user', content: textParts, timestamp: Number(timestamp) })
       }
-    } else {
-      // assistant
-      if (typeof msg.content === 'string') {
-        result.push({
-          role: 'assistant',
-          content: [{ type: 'text', text: msg.content }],
-          api: modelInfo.api,
-          provider: modelInfo.provider,
-          model: modelInfo.id,
-          usage: EMPTY_USAGE,
-          stopReason: 'stop',
-          timestamp
-        })
-        continue
-      }
-
+    } else if (role === 'assistant') {
       const isDeepSeek =
         modelInfo.id.toLowerCase().includes('deepseek') || modelInfo.provider === 'deepseek'
       const piContent: (PiTextContent | PiThinkingContent | PiToolCall)[] = []
@@ -108,27 +72,23 @@ export function convertMessagesToPi(
       for (const block of msg.content) {
         if (block.type === 'text' && block.text) {
           piContent.push({ type: 'text', text: block.text })
-        } else if (block.type === 'thinking' && block.text) {
-          // 优先使用历史记录中的签名，否则对 DeepSeek 兜底使用规范字段
+        } else if (block.type === 'thinking' && block.thinking) {
           const sig = block.thinking_signature || (isDeepSeek ? 'reasoning_content' : undefined)
+          piContent.push({
+            type: 'thinking',
+            thinking: block.thinking,
+            ...(sig ? { thinkingSignature: sig } : {})
+          })
           if (sig) {
-            piContent.push({
-              type: 'thinking',
-              thinking: block.text,
-              thinkingSignature: sig
-            })
-            reasoningContent += block.text
+            reasoningContent += block.thinking
             detectedSignature = sig
-          } else {
-            // 通用逻辑: 存入内容块但不注入顶层字段
-            piContent.push({ type: 'thinking', thinking: block.text })
           }
-        } else if (block.type === 'tool_use') {
+        } else if (block.type === 'toolCall') {
           piContent.push({
             type: 'toolCall',
-            id: block.id ?? '',
-            name: block.name ?? '',
-            arguments: block.input ?? {}
+            id: block.id,
+            name: block.name,
+            arguments: block.arguments
           })
         }
       }
@@ -139,17 +99,24 @@ export function convertMessagesToPi(
         api: modelInfo.api,
         provider: modelInfo.provider,
         model: modelInfo.id,
-        usage: EMPTY_USAGE,
-        stopReason: 'stop',
-        timestamp
+        usage: msg.usage || EMPTY_USAGE,
+        stopReason: msg.stopReason || 'stop',
+        timestamp: Number(timestamp)
       }
 
       if (reasoningContent && detectedSignature) {
-        // 动态注入思维链字段: 仅在发现支持协议签名时注入
         assistantMsg[detectedSignature] = reasoningContent
       }
-
-      result.push(assistantMsg)
+      result.push(assistantMsg as PiAssistantMessage)
+    } else if (role === 'toolResult') {
+      result.push({
+        role: 'toolResult',
+        toolCallId: msg.toolCallId,
+        toolName: msg.toolName,
+        content: msg.content as any,
+        isError: msg.isError,
+        timestamp: Number(timestamp)
+      })
     }
   }
 

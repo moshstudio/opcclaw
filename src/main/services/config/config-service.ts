@@ -11,6 +11,7 @@ import { type AIModelConfig } from '../../../shared/types/models.js'
 export interface GatewaySettings {
   port: number
   token?: string
+  logLevel?: import('./../common/logger.js').LogLevel
 }
 
 export interface AppConfig {
@@ -23,7 +24,8 @@ const DEFAULT_CONFIG: AppConfig = {
   models: [],
   gateway: {
     port: 18789,
-    token: 'openclaw-mini-secret'
+    token: 'openclaw-mini-secret',
+    logLevel: 'info'
   },
   defaultModelId: ''
 }

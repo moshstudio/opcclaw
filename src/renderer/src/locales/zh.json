@@ -39,6 +39,7 @@
     "giant": "特大",
     "no_messages": "暂无消息",
     "typing": "正在输入...",
+    "generating": "正在输出...",
     "waiting": "正在连接...",
     "thinking": "正在思考...",
     "thought": "已思考",
@@ -165,7 +166,13 @@
     "ms": "ms",
     "subagent_summary": "子代理摘要",
     "subagent_error": "子代理错误",
-    "subagent_running": "子代理运行中"
+    "subagent_running": "子代理运行中",
+    "copy": "复制",
+    "tokens_count": "{{count}} TOKENS"
+  },
+  "chat": {
+    "thinking": "正在思考...",
+    "thought_process": "思考过程"
   },
   "onboarding": {
     "title": "欢迎启用 OpcClaw",

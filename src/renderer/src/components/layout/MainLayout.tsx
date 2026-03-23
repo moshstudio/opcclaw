@@ -15,8 +15,6 @@ const MainLayout: React.FC = () => {
 
       {/* Center Chat Area */}
       <ChatBox
-        toggleSidebar={toggleSidebar}
-        sidebarCollapsed={uiConfig.sidebarCollapsed}
         settingsVisible={uiConfig.settingsPanelVisible}
         toggleSettings={toggleSettingsPanel}
       />

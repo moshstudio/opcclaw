@@ -35,14 +35,14 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
   } as React.CSSProperties
 
   return (
-    <div className="my-3 border rounded-xl overflow-hidden bg-white/50 dark:bg-zinc-900/30 backdrop-blur-md shadow-sm transition-all duration-300 hover:shadow-md hover:border-primary/40 w-full min-w-0 group/tool">
+    <div className="my-1 border rounded-[6px] overflow-hidden bg-white/50 dark:bg-zinc-900/30 backdrop-blur-md shadow-sm transition-all duration-300 hover:shadow-md hover:border-primary/40 w-full min-w-0 group/tool">
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-3 cursor-pointer select-none bg-muted/30 hover:bg-muted/50 transition-colors"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0 shadow-sm group-hover/tool:scale-105 transition-transform duration-300">
+          <div className="w-8 h-8 rounded-[6px] bg-primary/10 flex items-center justify-center text-primary shrink-0 shadow-sm group-hover/tool:scale-105 transition-transform duration-300">
             <Wrench className="w-4 h-4" />
           </div>
           <div className="flex flex-col flex-1 min-w-0">
@@ -98,9 +98,9 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'circOut' }}
           >
-            <div className="px-4 pb-5 pt-1 space-y-4">
+            <div className="px-4 pb-4 pt-1 space-y-3">
               {/* Input Section */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="flex items-center gap-2 px-1">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary/40" />
                   <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
@@ -109,7 +109,7 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
                 </div>
                 <div
                   className={cn(
-                    'rounded-xl overflow-hidden border border-border/50 w-full shadow-inner transition-colors',
+                    'rounded-[6px] overflow-hidden border border-border/50 w-full shadow-inner transition-colors',
                     isDarkMode ? 'bg-black/40' : 'bg-zinc-50'
                   )}
                 >
@@ -131,7 +131,7 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
 
               {/* Result Section */}
               {result && (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <div className="flex items-center gap-2 px-1">
                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/40" />
                     <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
@@ -140,7 +140,7 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
                   </div>
                   <div
                     className={cn(
-                      'rounded-xl overflow-hidden border border-border/50 w-full shadow-inner transition-colors',
+                      'rounded-[6px] overflow-hidden border border-border/50 w-full shadow-inner transition-colors',
                       isDarkMode ? 'bg-black/40' : 'bg-zinc-100/30'
                     )}
                   >

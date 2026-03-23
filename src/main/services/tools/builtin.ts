@@ -24,7 +24,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
-import type { Tool, ToolContext } from './types.js'
+import type { Tool } from './types.js'
 import { assertSandboxPath } from '@main/services/sandbox-paths.js'
 
 // ============== 文件读取 ==============

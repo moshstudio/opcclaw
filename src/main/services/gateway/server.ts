@@ -14,14 +14,14 @@ import http from 'node:http'
 import { WebSocketServer } from 'ws'
 import type { AgentRegistry } from '@main/services/agent/registry'
 import type { MiniAgentEvent } from '@main/services/agent/agent-events.js'
-import {
-  TICK_INTERVAL_MS
-} from './protocol.js'
+import { TICK_INTERVAL_MS } from './protocol.js'
 import { type GwClient, type HandlerContext } from './handlers/index.js'
 import { Broadcaster, createBroadcastFn } from './broadcaster.js'
 import { setupConnectionHandler } from './connection-handler'
 import { renderGatewayDoc } from './doc-renderer'
 import { GATEWAY_EVENTS_DOC } from '@shared/metadata/events.js'
+
+import { Logger, type LogLevel, setGlobalLogLevel } from '@main/services/common/logger.js'
 
 // ============== 类型 ==============
 
@@ -29,6 +29,7 @@ export type GatewayServerOptions = {
   port?: number
   token?: string
   registry: AgentRegistry
+  logLevel?: LogLevel
 }
 
 export type GatewayServer = {
@@ -42,7 +43,14 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
   const port = opts.port ?? 18789
   const clients = new Set<GwClient>()
   const nonces = new Map<string, string>()
-  const broadcast = createBroadcastFn(clients)
+
+  if (opts.logLevel) {
+    setGlobalLogLevel(opts.logLevel)
+  }
+  setGlobalLogLevel('debug')
+
+  const logger = new Logger('[Gateway]')
+  const broadcast = createBroadcastFn(clients, logger)
   const startedAt = Date.now()
 
   const broadcaster = new Broadcaster(broadcast)
@@ -59,13 +67,15 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
     clients,
     token: opts.token,
     nonces,
-    startedAt
+    startedAt,
+    logger
   }
 
   // HTTP 服务（对齐 openclaw server-http.ts createGatewayHttpServer）
   const httpServer = http.createServer((req, res) => {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
-    const isJson = url.searchParams.get('format') === 'json' || req.headers.accept?.includes('application/json')
+    const isJson =
+      url.searchParams.get('format') === 'json' || req.headers.accept?.includes('application/json')
 
     if (url.pathname === '/events-doc') {
       if (isJson) {
@@ -98,8 +108,14 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
 
   // 监听
   await new Promise<void>((resolve, reject) => {
-    httpServer.on('error', reject)
-    httpServer.listen(port, () => resolve())
+    httpServer.on('error', (err) => {
+      logger.error('HTTP Server Error:', err)
+      reject(err)
+    })
+    httpServer.listen(port, () => {
+      logger.info(`Gateway server started on port ${port}`)
+      resolve()
+    })
   })
 
   // 优雅关闭

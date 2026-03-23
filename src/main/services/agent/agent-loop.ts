@@ -9,9 +9,9 @@
  * - 纯函数设计，不持有 Agent 实例状态，通过 params 接收依赖。
  */
 
-import type { EventStream } from '@mariozechner/pi-ai'
+import type { EventStream, Api, Usage } from '@mariozechner/pi-ai'
 import type { Tool, ToolContext } from '@main/services/tools/types'
-import type { Message } from '@main/services/session/session'
+import type { Message, AgentPerformance } from '@main/services/agent/agent-events'
 import type { Model, StreamFunction, ThinkingLevel } from '@mariozechner/pi-ai'
 import { describeError, isContextOverflowError } from '@main/services/provider/errors.js'
 import { createMiniAgentStream, type MiniAgentEvent, type MiniAgentResult } from './agent-events.js'
@@ -24,6 +24,16 @@ import { executeToolCalls } from './loop/tool-handler'
 
 // ============== 类型定义 ==============
 
+export interface UsageRecord {
+  runId: string
+  sessionKey: string
+  agentId: string
+  model: string
+  timestamp: number
+  usage: Usage
+  performance: AgentPerformance
+}
+
 export interface AgentLoopParams {
   runId: string
   sessionKey: string
@@ -34,7 +44,7 @@ export interface AgentLoopParams {
   systemPrompt: string
   toolsForRun: Tool[]
   toolCtx: ToolContext
-  modelDef: Model<any>
+  modelDef: Model<Api>
   streamFn: StreamFunction
   apiKey?: string
   temperature?: number
@@ -65,7 +75,7 @@ export interface AgentLoopParams {
     summaryMessage?: Message
   }>
   /** 记录用量统计 */
-  recordUsage?: (record: any) => Promise<void>
+  recordUsage?: (record: UsageRecord) => Promise<void>
   /** 外部中止信号 */
   abortSignal: AbortSignal
 }
@@ -133,9 +143,9 @@ export function runAgentLoop(
           // 处理待响应消息（Steering 或 Follow-up）
           if (pendingMessages.length > 0) {
             for (const msg of pendingMessages) {
-              msg.runId = runId
               await appendMessage(sessionKey, msg)
               currentMessages.push(msg)
+              stream.push({ type: 'chat:userMessage', runId, sessionKey, message: msg })
             }
             pendingMessages = []
           }
@@ -152,18 +162,21 @@ export function runAgentLoop(
 
           // 推送压缩/清理事件
           if (prunedCount > 0) {
-            const firstBlock = compactionSummary?.content?.[0]
-            const summaryLen =
-              typeof firstBlock === 'string'
-                ? firstBlock.length
-                : (firstBlock as any)?.text?.length || 0
+            const content = compactionSummary?.content
+            let summaryLen = 0
+            if (typeof content === 'string') {
+              summaryLen = content.length
+            } else if (Array.isArray(content)) {
+              summaryLen = content
+                .map((b) => ('text' in b ? String(b.text || '') : ''))
+                .join('').length
+            }
             stream.push({
               type: 'chat:notice',
               runId,
               sessionKey,
               summaryChars: summaryLen,
-              droppedMessages: prunedCount,
-              firstKeptEntryId: (firstBlock as any)?.id
+              droppedMessages: prunedCount
             })
           }
 
@@ -212,13 +225,9 @@ export function runAgentLoop(
           }
 
           // 3. 保存 Assistant 消息
-          const assistantMsg: Message = {
-            role: 'assistant',
-            content: llmOutput.assistantContent,
-            timestamp: Date.now(),
-            runId,
-            usage: llmOutput.usage
-          }
+          const assistantMsg = llmOutput.assistantMessage as Message
+          assistantMsg.performance = metrics.getPerformance()
+          if (llmOutput.usage) assistantMsg.usage = llmOutput.usage
           await appendMessage(sessionKey, assistantMsg)
           currentMessages.push(assistantMsg)
 
@@ -255,27 +264,15 @@ export function runAgentLoop(
           )
 
           // 5. 保存工具执行结果
-          const resultMsg: Message = {
-            role: 'user',
-            content: toolResults,
-            timestamp: Date.now(),
-            runId
+          for (const res of toolResults) {
+            await appendMessage(sessionKey, res)
+            currentMessages.push(res)
           }
-          await appendMessage(sessionKey, resultMsg)
-          currentMessages.push(resultMsg)
 
           stream.push({ type: 'agent:turn-end', runId, sessionKey, turn: turns })
 
           // 检查 Steering（如工具执行过程中产生的反馈或干预）
           pendingMessages = await getSteeringMessages()
-          if (pendingMessages.length > 0) {
-            stream.push({
-              type: 'chat:planning',
-              runId,
-              sessionKey,
-              pendingCount: pendingMessages.length
-            })
-          }
         } // end inner while
 
         // 检查 Follow-up

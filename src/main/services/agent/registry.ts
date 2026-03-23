@@ -3,6 +3,8 @@ import path from 'node:path'
 import { Agent, type AgentConfig } from './agent.js'
 import { ConfigService } from '../config/config-service.js'
 import { MiniAgentEvent } from './agent-events.js'
+import { Logger } from '@main/services/common/logger.js'
+import { newShortId } from '@shared/utils/id.js'
 
 export interface RegisteredAgent {
   id: string
@@ -13,6 +15,9 @@ export interface RegisteredAgent {
 export class AgentRegistry {
   private static instance: AgentRegistry
   private agents = new Map<string, RegisteredAgent>()
+  private logger = new Logger('[AgentRegistry]')
+  private createLocks = new Map<string, Promise<void>>()
+  private loadLock: Promise<void> | null = null
 
   private constructor() {
     // Private constructor for singleton
@@ -43,6 +48,11 @@ export class AgentRegistry {
    * 手动注册一个智能体实例
    */
   public registerAgent(agentId: string, instance: Agent, config: any = {}): void {
+    // 为新实例挂载所有全局监听器
+    for (const fn of this.globalListeners) {
+      instance.subscribe((ev) => fn(agentId, ev))
+    }
+
     this.agents.set(agentId, {
       id: agentId,
       instance,
@@ -54,28 +64,33 @@ export class AgentRegistry {
    * 初始化并加载所有智能体
    */
   public async loadAllAgents(): Promise<void> {
-    const configService = ConfigService.getInstance()
-    const agentsDir = configService.getAgentsRootDir()
+    if (this.loadLock) return this.loadLock
 
-    if (!fs.existsSync(agentsDir)) {
-      fs.mkdirSync(agentsDir, { recursive: true })
-    }
+    this.loadLock = (async () => {
+      const configService = ConfigService.getInstance()
+      const agentsDir = configService.getAgentsRootDir()
 
-    const folders = fs.readdirSync(agentsDir)
-    for (const folder of folders) {
-      const agentPath = path.join(agentsDir, folder)
-      if (fs.statSync(agentPath).isDirectory()) {
-        try {
-          await this.loadAgent(folder)
-        } catch (err) {
-          console.error(`[AgentRegistry] Failed to load agent ${folder}:`, err)
+      if (!fs.existsSync(agentsDir)) {
+        fs.mkdirSync(agentsDir, { recursive: true })
+      }
+
+      const folders = fs.readdirSync(agentsDir)
+      for (const folder of folders) {
+        const agentPath = path.join(agentsDir, folder)
+        if (fs.statSync(agentPath).isDirectory()) {
+          try {
+            await this.loadAgent(folder)
+          } catch (err) {
+            this.logger.error(`Failed to load agent ${folder}:`, err)
+          }
         }
       }
-    }
+    })()
 
-    // 如果没有任何智能体，创建一个默认的 'main' 智能体
-    if (this.agents.size === 0) {
-      await this.createDefaultAgent('main')
+    try {
+      await this.loadLock
+    } finally {
+      this.loadLock = null
     }
   }
 
@@ -153,33 +168,57 @@ export class AgentRegistry {
       memoryDir: agentConfig.memoryDir
     })
 
-    console.log(`[AgentRegistry] Loaded agent: ${agentId}`)
+    this.logger.info(`Loaded agent: ${agentId}`)
   }
 
-  private async createDefaultAgent(agentId: string): Promise<void> {
-    const configService = ConfigService.getInstance()
-    const agentDir = configService.getAgentDir(agentId)
+  public async createDefaultAgent(agentId: string): Promise<void> {
+    if (this.agents.has(agentId)) return
 
-    if (!fs.existsSync(agentDir)) {
-      fs.mkdirSync(agentDir, { recursive: true })
-      fs.mkdirSync(path.join(agentDir, 'workspace'), { recursive: true })
-      fs.writeFileSync(
-        path.join(agentDir, 'agent.md'),
-        '# Identity\n\nYou are a helpful AI assistant.'
-      )
-      fs.writeFileSync(
-        path.join(agentDir, 'agent.json'),
-        JSON.stringify(
-          {
-            name: 'Default Assistant'
-          },
-          null,
-          2
+    // 并发锁：防止多个请求同时创建同一个智能体
+    const existingLock = this.createLocks.get(agentId)
+    if (existingLock) return existingLock
+
+    const promise = (async () => {
+      const configService = ConfigService.getInstance()
+      const agentDir = configService.getAgentDir(agentId)
+
+      if (!fs.existsSync(agentDir)) {
+        fs.mkdirSync(agentDir, { recursive: true })
+        fs.mkdirSync(path.join(agentDir, 'workspace'), { recursive: true })
+        fs.writeFileSync(
+          path.join(agentDir, 'agent.md'),
+          '# Identity\n\nYou are a helpful AI assistant.'
         )
-      )
-    }
+        fs.writeFileSync(
+          path.join(agentDir, 'agent.json'),
+          JSON.stringify(
+            {
+              name: 'Default Assistant'
+            },
+            null,
+            2
+          )
+        )
+      }
 
-    await this.loadAgent(agentId)
+      await this.loadAgent(agentId)
+
+      // 创建第一个 session
+      const agent = this.getAgent(agentId)
+      if (agent) {
+        const sessions = await agent.listSessions()
+        if (sessions.length === 0) {
+          await agent.createSession()
+        }
+      }
+    })()
+
+    this.createLocks.set(agentId, promise)
+    try {
+      await promise
+    } finally {
+      this.createLocks.delete(agentId)
+    }
   }
 
   public getAgent(agentId: string): Agent | undefined {
@@ -187,7 +226,7 @@ export class AgentRegistry {
   }
 
   public async createAgent(config: any): Promise<string> {
-    const agentId = config.id || `agent-${Date.now()}`
+    const agentId = config.id || `agent-${newShortId(8)}`
     const configService = ConfigService.getInstance()
     const agentDir = configService.getAgentDir(agentId)
 
@@ -210,6 +249,16 @@ export class AgentRegistry {
     }
 
     await this.loadAgent(agentId)
+
+    // 创建第一个 session (仅在列表为空时创建，确保幂等性)
+    const agent = this.getAgent(agentId)
+    if (agent) {
+      const sessions = await agent.listSessions()
+      if (sessions.length === 0) {
+        await agent.createSession()
+      }
+    }
+
     return agentId
   }
 
@@ -258,5 +307,15 @@ export class AgentRegistry {
 
   public listAgents(): RegisteredAgent[] {
     return Array.from(this.agents.values())
+  }
+
+  public stopAll(): void {
+    for (const agent of this.agents.values()) {
+      try {
+        agent.instance.abort()
+      } catch (err) {
+        this.logger.error(`Failed to abort agent ${agent.id}:`, err)
+      }
+    }
   }
 }

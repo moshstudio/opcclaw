@@ -17,7 +17,7 @@ import { SkillSection } from './agent-settings/SkillSection'
 import { useConfirm } from '@renderer/hooks/use-confirm'
 import { getGatewayClient } from '@renderer/services/gateway-client'
 import { UsageStats } from '@shared/types/usage'
-import { Activity, Zap, Coins, TrendingUp, Clock, AlertTriangle } from 'lucide-react'
+import { Activity, Zap, TrendingUp, Clock, AlertTriangle } from 'lucide-react'
 
 interface SettingsPanelProps {
   visible: boolean
@@ -101,9 +101,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
     try {
       const res = (await getGatewayClient().request('usage:stats', {
         agentId: activeAgentId
-      })) as any
-      if (res.ok) {
-        setUsageStats(res.payload.stats)
+      })) as { stats: UsageStats }
+      
+      if (res && res.stats) {
+        setUsageStats(res.stats)
       }
     } catch (err) {
       console.error('Failed to fetch usage stats:', err)
@@ -180,28 +181,41 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
             className="fixed inset-0 bg-black/10 dark:bg-black/40 backdrop-blur-[2px] z-[60] cursor-default"
           />
           <motion.div
-            initial={{ x: '100%', opacity: 0 }}
+            initial={{ 
+              x: '100%', 
+              opacity: 0,
+              width: isExpanded ? 800 : 420
+            }}
             animate={{
               x: 0,
               opacity: 1,
-              width: isExpanded ? 'min(600px, 100vw)' : 'min(340px, 100vw)'
+              width: isExpanded ? 800 : 420
             }}
             exit={{ x: '100%', opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="fixed top-0 right-0 h-full bg-background border-l z-[70] flex flex-col shadow-2xl overflow-hidden"
+            transition={{ 
+              duration: 0.35, 
+              ease: [0.22, 1, 0.36, 1] 
+            }}
+            className="fixed top-0 right-0 h-full bg-background border-l z-[70] flex flex-col shadow-2xl overflow-hidden max-w-full will-change-transform"
           >
             <header className="h-16 flex items-center justify-between px-6 border-b shrink-0 bg-background/80 backdrop-blur-md sticky top-0 z-10">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary shadow-sm">
-                  <Settings2 className="w-4 h-4" />
+                  <motion.div 
+                    animate={{ rotate: visible ? 0 : -90 }}
+                    transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <Settings2 className="w-4 h-4" />
+                  </motion.div>
                 </div>
                 <div className="flex flex-col">
                   <h3 className="text-xs font-black uppercase tracking-widest text-foreground/90">
                     {t('common.agent_settings_title')}
                   </h3>
-                  <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-tighter">
+                  <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-tighter truncate max-w-[150px]">
                     {editingAgent?.id === 'main' &&
-                    (!editingAgent?.config.name || editingAgent?.config.name === 'Default Assistant')
+                    (!editingAgent?.config.name ||
+                      editingAgent?.config.name === 'Default Assistant')
                       ? t('common.default_assistant')
                       : editingAgent?.config.name || 'Settings'}
                   </span>
@@ -215,7 +229,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                   className="text-muted-foreground hover:text-foreground h-8 w-8 rounded-xl hover:bg-muted"
                   title={isExpanded ? t('common.collapse') : t('common.expand')}
                 >
-                  {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={isExpanded ? 'min' : 'max'}
+                      initial={{ opacity: 0, rotate: -90, scale: 0.8 }}
+                      animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                      exit={{ opacity: 0, rotate: 90, scale: 0.8 }}
+                      transition={{ duration: 0.2, ease: 'easeOut' }}
+                      className="flex items-center justify-center"
+                    >
+                      {isExpanded ? (
+                        <Minimize2 className="w-4 h-4" />
+                      ) : (
+                        <Maximize2 className="w-4 h-4" />
+                      )}
+                    </motion.div>
+                  </AnimatePresence>
                 </Button>
                 <Button
                   variant="ghost"
@@ -265,7 +294,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
               </button>
             </div>
 
-            <ScrollArea className="flex-1">
+            <ScrollArea className="flex-1" style={{ scrollbarGutter: 'stable' }}>
               <div className="p-5 space-y-4 pb-48">
                 {!editingAgent ? (
                   <div className="h-[40vh] flex flex-col items-center justify-center text-center p-8 space-y-4 opacity-40">
@@ -329,60 +358,81 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                       </div>
                     ) : (
                       <>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 gap-4">
                           <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10 flex flex-col gap-1">
                             <div className="flex items-center gap-2 text-primary">
                               <Zap className="w-3 h-3" />
-                              <span className="text-[10px] font-black uppercase tracking-tighter">{t('common.usage_total_tokens')}</span>
+                              <span className="text-[10px] font-black uppercase tracking-tighter">
+                                {t('common.usage_total_tokens')}
+                              </span>
                             </div>
-                            <div className="text-xl font-black">{usageStats?.totalTokens.toLocaleString() ?? 0}</div>
-                          </div>
-                          <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10 flex flex-col gap-1">
-                            <div className="flex items-center gap-2 text-amber-500">
-                              <Coins className="w-3 h-3" />
-                              <span className="text-[10px] font-black uppercase tracking-tighter">{t('common.usage_total_cost')}</span>
+                            <div className="text-xl font-black">
+                              {usageStats?.totalTokens.toLocaleString() ?? 0}
                             </div>
-                            <div className="text-xl font-black">${usageStats?.totalCost.toFixed(4) ?? '0.0000'}</div>
                           </div>
                         </div>
 
                         <div className="space-y-2">
-                          <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1">{t('common.usage_details')}</div>
+                          <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1">
+                            {t('common.usage_details')}
+                          </div>
                           <div className="rounded-2xl border bg-muted/30 divide-y overflow-hidden">
                             <div className="p-4 flex justify-between items-center">
                               <div className="flex items-center gap-3">
                                 <TrendingUp className="w-4 h-4 text-emerald-500" />
-                                <span className="text-[11px] font-bold">{t('common.usage_throughput')}</span>
+                                <span className="text-[11px] font-bold">
+                                  {t('common.usage_throughput')}
+                                </span>
                               </div>
-                              <span className="text-xs font-black">{(usageStats?.avgThroughput ?? 0).toFixed(2)} t/s</span>
+                              <span className="text-xs font-black">
+                                {(usageStats?.avgThroughput ?? 0).toFixed(2)} t/s
+                              </span>
                             </div>
                             <div className="p-4 flex justify-between items-center">
                               <div className="flex items-center gap-3">
                                 <Clock className="w-4 h-4 text-blue-500" />
-                                <span className="text-[11px] font-bold">{t('common.usage_avg_latency')}</span>
+                                <span className="text-[11px] font-bold">
+                                  {t('common.usage_avg_latency')}
+                                </span>
                               </div>
-                              <span className="text-xs font-black">{(usageStats?.avgLatencyMs ?? 0).toFixed(0)} ms</span>
+                              <span className="text-xs font-black">
+                                {(usageStats?.avgLatencyMs ?? 0).toFixed(0)} ms
+                              </span>
                             </div>
                             <div className="p-4 flex justify-between items-center text-muted-foreground/60">
                               <div className="flex items-center gap-3">
                                 <Bot className="w-4 h-4" />
-                                <span className="text-[11px] font-bold">{t('common.usage_total_runs')}</span>
+                                <span className="text-[11px] font-bold">
+                                  {t('common.usage_total_runs')}
+                                </span>
                               </div>
-                              <span className="text-xs font-black">{usageStats?.runCount ?? 0}</span>
+                              <span className="text-xs font-black">
+                                {usageStats?.runCount ?? 0}
+                              </span>
                             </div>
                           </div>
                         </div>
 
                         <div className="space-y-2">
-                          <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1">{t('common.usage_cache_performance')}</div>
+                          <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1">
+                            {t('common.usage_cache_performance')}
+                          </div>
                           <div className="p-4 rounded-2xl border bg-muted/30 grid grid-cols-2 gap-8 ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                             <div className="flex flex-col gap-1">
-                              <span className="text-[10px] font-bold text-muted-foreground italic tracking-tight">{t('common.usage_cache_read')}</span>
-                              <div className="text-lg font-black text-emerald-500">{(usageStats?.cacheReadTokens ?? 0).toLocaleString()}</div>
+                              <span className="text-[10px] font-bold text-muted-foreground italic tracking-tight">
+                                {t('common.usage_cache_read')}
+                              </span>
+                              <div className="text-lg font-black text-emerald-500">
+                                {(usageStats?.cacheReadTokens ?? 0).toLocaleString()}
+                              </div>
                             </div>
                             <div className="flex flex-col gap-1">
-                              <span className="text-[10px] font-bold text-muted-foreground italic tracking-tight">{t('common.usage_cache_write')}</span>
-                              <div className="text-lg font-black text-amber-500">{(usageStats?.cacheWriteTokens ?? 0).toLocaleString()}</div>
+                              <span className="text-[10px] font-bold text-muted-foreground italic tracking-tight">
+                                {t('common.usage_cache_write')}
+                              </span>
+                              <div className="text-lg font-black text-amber-500">
+                                {(usageStats?.cacheWriteTokens ?? 0).toLocaleString()}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -391,12 +441,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                           <div className="p-4 rounded-2xl border border-destructive/20 bg-destructive/5 flex items-center gap-3">
                             <AlertTriangle className="w-4 h-4 text-destructive" />
                             <div className="flex flex-col">
-                              <span className="text-[10px] font-black uppercase text-destructive tracking-widest">{t('common.usage_anomalies')}</span>
-                              <span className="text-xs font-bold">{usageStats.errorCount} {t('common.usage_errors_recorded')}</span>
+                              <span className="text-[10px] font-black uppercase text-destructive tracking-widest">
+                                {t('common.usage_anomalies')}
+                              </span>
+                              <span className="text-xs font-bold">
+                                {usageStats.errorCount} {t('common.usage_errors_recorded')}
+                              </span>
                             </div>
                           </div>
                         ) : null}
-                        
+
                         <Button
                           variant="outline"
                           size="sm"

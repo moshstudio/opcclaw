@@ -18,7 +18,7 @@ import {
   resolveContextWindowInfo
 } from './context-window-guard.js'
 import { SkillManager } from '@main/services/skills/skills'
-import { HeartbeatManager, type HeartbeatResult } from '@main/services/heartbeat/heartbeat'
+import { HeartbeatManager } from '@main/services/heartbeat/heartbeat'
 import { normalizeAgentId, resolveSessionKey } from '@main/services/session/session-key'
 import {
   enqueueInLane,
@@ -308,7 +308,7 @@ export class Agent {
             timestamp: Date.now()
           }
           await this.sessions.append(sessionKey, m)
-          this.emit({ type: 'chat:user-message', runId, sessionKey, message: m })
+          this.emit({ type: 'chat:userMessage', runId, sessionKey, message: m })
         }
 
         this.emit({
@@ -339,12 +339,13 @@ export class Agent {
               runId
             }
             await this.sessions.append(sessionKey, userMsg)
-            this.emit({ type: 'chat:user-message', runId, message: userMsg, sessionKey })
+            this.emit({ type: 'chat:userMessage', runId, message: userMsg, sessionKey })
             currentMessages.push(userMsg)
           }
 
           const compactionParams = { messages: currentMessages, sessionKey, runId }
-          const { summaryMessage, pruned } = await this.contextManager.prepareMessages(compactionParams)
+          const { summaryMessage, pruned } =
+            await this.contextManager.prepareMessages(compactionParams)
 
           const isSummaryMessage = (m: Message) =>
             typeof m.content === 'string' && m.content.startsWith(COMPACTION_SUMMARY_PREFIX)
@@ -401,6 +402,7 @@ export class Agent {
             getSteeringMessages: () => this.stateManager.drainSteering(sessionKey),
             appendMessage: (sk, msg) => this.sessions.append(sk, msg),
             prepareCompaction: (p) => this.contextManager.prepareMessages(p),
+            recordUsage: (record) => this.usage.recordRun(record),
             abortSignal: signal
           })
 

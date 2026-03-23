@@ -35,6 +35,7 @@
     "giant": "Giant",
     "no_messages": "No messages yet",
     "typing": "Typing...",
+    "generating": "Responding...",
     "waiting": "Connecting...",
     "thinking": "Thinking...",
     "thought": "Thought",
@@ -161,7 +162,13 @@
     "ms": "ms",
     "subagent_summary": "Subagent Summary",
     "subagent_error": "Subagent Error",
-    "subagent_running": "Subagent Running"
+    "subagent_running": "Subagent Running",
+    "copy": "Copy",
+    "tokens_count": "{{count}} TOKENS"
+  },
+  "chat": {
+    "thinking": "Thinking...",
+    "thought_process": "Thought Process"
   },
   "onboarding": {
     "title": "Welcome to OpcClaw",

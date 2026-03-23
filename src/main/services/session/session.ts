@@ -27,7 +27,8 @@ import path from 'node:path'
 import { newUUID, newShortId } from '@shared/utils/id.js'
 import { acquireSessionWriteLock } from './session-write-lock.js'
 
-import { Message, ContentBlock } from '@shared/types/agent'
+import { type Message, type ContentBlock } from '@shared/types/agent.js'
+import { normalizeMessage } from '@shared/utils/message.js'
 export type { Message, ContentBlock }
 
 // ============== Session Entry 结构（对齐 OpenClaw） ==============
@@ -81,7 +82,12 @@ export function createCompactionSummaryMessage(
         : Date.now()
   return {
     role: 'user',
-    content: `${COMPACTION_SUMMARY_PREFIX}${summary}${COMPACTION_SUMMARY_SUFFIX}`,
+    content: [
+      {
+        type: 'text',
+        text: `${COMPACTION_SUMMARY_PREFIX}${summary}${COMPACTION_SUMMARY_SUFFIX}`
+      }
+    ],
     timestamp: Number.isFinite(resolvedTimestamp) ? resolvedTimestamp : Date.now()
   }
 }
@@ -150,14 +156,12 @@ export class SessionManager {
   async append(sessionKey: string, message: Message): Promise<void> {
     const state = await this.ensureState(sessionKey)
 
-    // 确保消息具有唯一 ID (对齐商用版本：Entry ID 与 Message ID 保持一致)
-    if (!message.id) {
-      message.id = generateId(state.byId)
-    }
+    // 确保 Entry 具有唯一 ID (对齐商用版本：Entry ID 用于会话索引)
+    const entryId = generateId(state.byId)
 
     const entry: MessageEntry = {
       type: 'message',
-      id: message.id,
+      id: entryId,
       parentId: state.leafId,
       timestamp: new Date().toISOString(),
       message
@@ -385,10 +389,10 @@ function isSessionHeader(value: unknown): value is SessionHeaderEntry {
   return header.type === 'session' && typeof header.id === 'string'
 }
 
-function isLegacyMessage(value: unknown): value is Message {
+function isLegacyMessage(value: unknown): value is any {
   if (!value || typeof value !== 'object') return false
-  const msg = value as Message
-  if (msg.role !== 'user' && msg.role !== 'assistant') return false
+  const msg = value as any
+  if (msg.role !== 'user' && msg.role !== 'assistant' && msg.role !== 'toolResult') return false
   if (!('content' in msg)) return false
   return typeof msg.timestamp === 'number'
 }
@@ -553,25 +557,20 @@ function buildStateFromLegacy(filePath: string, messages: Message[]): SessionSta
   const messageIdByRef = new WeakMap<Message, string>()
   let leafId: string | null = null
 
-  for (const message of messages) {
+  for (const rawMessage of messages as any[]) {
+    const piMessage = normalizeMessage(rawMessage)
+
     const entry: MessageEntry = {
       type: 'message',
       id: generateId(byId),
       parentId: leafId,
       timestamp: new Date().toISOString(),
-      message: {
-        role: message.role,
-        content: message.content,
-        timestamp: typeof message.timestamp === 'number' ? message.timestamp : Date.now()
-      }
+      message: piMessage
     }
     entries.push(entry)
     byId.set(entry.id, entry)
     messageIdByRef.set(entry.message, entry.id)
     leafId = entry.id
-    if (entry.message.role === 'assistant') {
-      // ignored
-    }
   }
 
   return {

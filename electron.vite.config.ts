@@ -10,7 +10,11 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [externalizeDepsPlugin()]
+    plugins: [
+      externalizeDepsPlugin({
+        exclude: ['@mariozechner/pi-ai']
+      })
+    ]
   },
   preload: {
     resolve: {

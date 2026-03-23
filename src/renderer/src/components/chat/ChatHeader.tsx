@@ -1,6 +1,5 @@
 import React, { useRef, useEffect } from 'react'
 import {
-  PanelLeft,
   ChevronDown,
   History,
   MessageSquare,
@@ -19,8 +18,6 @@ import { AgentInfo } from '@renderer/store/useAgentStore'
 interface ChatHeaderProps {
   activeAgent: AgentInfo | undefined
   activeAgentId: string | null
-  sidebarCollapsed: boolean
-  toggleSidebar: () => void
   isTyping: boolean
   chatStatus: string
   getStatusDisplay: () => string
@@ -40,8 +37,6 @@ interface ChatHeaderProps {
 const ChatHeader: React.FC<ChatHeaderProps> = ({
   activeAgent,
   activeAgentId,
-  sidebarCollapsed,
-  toggleSidebar,
   isTyping,
   chatStatus,
   getStatusDisplay,
@@ -75,16 +70,6 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   return (
     <header className="h-16 border-b flex items-center justify-between px-6 shrink-0 bg-background/80 backdrop-blur-md sticky top-0 z-50 font-bold">
       <div className="flex items-center gap-4">
-        {sidebarCollapsed && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleSidebar}
-            className="text-muted-foreground hover:text-foreground transition-all"
-          >
-            <PanelLeft className="w-5 h-5" />
-          </Button>
-        )}
         <div className="flex flex-col text-left relative" ref={dropdownRef}>
           <h3 className="text-sm font-bold uppercase tracking-tight">
             {activeAgent?.id === 'main' &&

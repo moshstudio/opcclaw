@@ -13,6 +13,8 @@ export type GwClient = {
   authed: boolean
 }
 
+import { type Logger } from '@main/services/common/logger.js'
+
 export type HandlerContext = {
   registry: AgentRegistry
   broadcast: BroadcastFn
@@ -21,6 +23,7 @@ export type HandlerContext = {
   token?: string
   nonces: Map<string, string>
   startedAt: number
+  logger: Logger
 }
 
 export type HandlerResult = { ok: boolean; payload?: unknown; error?: ErrorShape }

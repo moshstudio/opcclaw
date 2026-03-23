@@ -8,18 +8,11 @@ import MessageList from '../chat/MessageList'
 import ChatInput from '../chat/ChatInput'
 
 interface ChatBoxProps {
-  toggleSidebar: () => void
-  sidebarCollapsed: boolean
   settingsVisible: boolean
   toggleSettings: () => void
 }
 
-const ChatBox: React.FC<ChatBoxProps> = ({
-  toggleSidebar,
-  sidebarCollapsed,
-  settingsVisible,
-  toggleSettings
-}) => {
+const ChatBox: React.FC<ChatBoxProps> = ({ settingsVisible, toggleSettings }) => {
   const { t } = useTranslation()
   const {
     sendMessage,
@@ -51,7 +44,14 @@ const ChatBox: React.FC<ChatBoxProps> = ({
   ) as ChatStatus
 
   const currentError = currentSessionKey ? errorMessages[currentSessionKey] : null
-  const isTyping = ['waiting', 'thinking', 'streaming', 'tool_executing'].includes(chatStatus)
+  const isTyping = [
+    'waiting',
+    'thinking',
+    'streaming',
+    'toolCalling',
+    'toolExecuting',
+    'retrying'
+  ].includes(chatStatus)
   const isLoading = currentSessionKey ? isLoadingHistory[currentSessionKey] : false
   const activeAgentSessions = activeAgentId ? allSessions[activeAgentId] || [] : []
 
@@ -64,15 +64,14 @@ const ChatBox: React.FC<ChatBoxProps> = ({
         return t('common.waiting') || 'Waiting'
       case 'thinking':
         return t('common.thinking') || 'Thinking'
-      case 'tool_executing':
+      case 'toolExecuting':
         return t('common.executing_tool') || 'Executing'
       case 'streaming':
-        return t('common.typing') || 'Typing'
+        return t('common.generating') || 'Responding'
       default:
-        return t('common.typing') || 'Typing'
+        return t('common.generating') || 'Responding'
     }
   }, [isTyping, chatStatus, currentSessionKey, t])
-
 
   const handleSend = async () => {
     if (isTyping) {
@@ -93,8 +92,6 @@ const ChatBox: React.FC<ChatBoxProps> = ({
       <ChatHeader
         activeAgent={activeAgent}
         activeAgentId={activeAgentId}
-        sidebarCollapsed={sidebarCollapsed}
-        toggleSidebar={toggleSidebar}
         isTyping={isTyping}
         chatStatus={chatStatus}
         getStatusDisplay={getStatusDisplay}

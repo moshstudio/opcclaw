@@ -2,11 +2,13 @@ import { startGatewayServer, type GatewayServer } from './server.js'
 import { GatewayClient } from './client.js'
 import { ConfigService } from '@main/services/config/config-service.js'
 import { AgentRegistry } from '@main/services/agent/registry.js'
+import { Logger, LogLevel, setGlobalLogLevel } from '@main/services/common/logger.js'
 
 export class GatewayManager {
   private static instance: GatewayManager
   private server?: GatewayServer
   private client?: GatewayClient
+  private logger = new Logger('[GatewayMgr]')
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -22,10 +24,13 @@ export class GatewayManager {
   /**
    * 启动 Gateway 服务和主进程客户端
    */
-  public async start(): Promise<void> {
+  public async start(logLevel: LogLevel): Promise<void> {
     const configService = ConfigService.getInstance()
     const appConfig = configService.getConfig()
     const gwSettings = appConfig.gateway
+
+    // 0. 设置全局日志级别
+    setGlobalLogLevel(logLevel)
 
     // 1. 初始化并加载所有智能体
     const registry = AgentRegistry.getInstance()
@@ -35,10 +40,11 @@ export class GatewayManager {
     this.server = await startGatewayServer({
       registry,
       port: gwSettings.port,
-      token: gwSettings.token
+      token: gwSettings.token,
+      logLevel
     })
 
-    console.log(`[GatewayManager] Server started on port ${this.server.port}`)
+    this.logger.info(`Server started on port ${this.server.port}`)
 
     // 3. 创建主进程内部客户端用于 IPC 桥接
     this.client = new GatewayClient({
@@ -49,9 +55,9 @@ export class GatewayManager {
 
     try {
       await this.client.connect()
-      console.log('[GatewayManager] Local client connected')
+      this.logger.info('Local client connected')
     } catch (err) {
-      console.error('[GatewayManager] Failed to connect local client:', err)
+      this.logger.error('Failed to connect local client:', err)
     }
   }
 
@@ -59,9 +65,10 @@ export class GatewayManager {
    * 重启服务（用于由于配置更改触发的刷新）
    */
   public async restart(): Promise<void> {
-    console.log('[GatewayManager] Restarting services...')
+    this.logger.info('Restarting services...')
     this.stop()
-    await this.start()
+    const config = ConfigService.getInstance().getConfig()
+    await this.start(config.gateway.logLevel || 'info')
   }
 
   /**
@@ -72,7 +79,7 @@ export class GatewayManager {
     this.server?.close()
     this.client = undefined
     this.server = undefined
-    console.log('[GatewayManager] Services stopped')
+    this.logger.info('Services stopped')
   }
 
   public getClient(): GatewayClient | undefined {

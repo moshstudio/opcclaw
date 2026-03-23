@@ -1,4 +1,4 @@
-import type { ContentBlock, Message } from '@main/services/session/session.js'
+import type { ContentBlock, Message } from '@shared/types/agent.js'
 
 export const CHARS_PER_TOKEN_ESTIMATE = 4
 
@@ -6,17 +6,31 @@ function estimateBlockChars(block: ContentBlock): number {
   if (block.type === 'text') {
     return block.text?.length ?? 0
   }
-  if (block.type === 'tool_use') {
+  if (block.type === 'thinking') {
+    return block.thinking?.length ?? 0
+  }
+  if (block.type === 'toolCall') {
     const base = block.name?.length ?? 0
     try {
-      const input = block.input ? JSON.stringify(block.input) : ''
-      return base + input.length + 16
+      const args = block.arguments ? JSON.stringify(block.arguments) : ''
+      return base + args.length + 16
     } catch {
       return base + 128
     }
   }
-  if (block.type === 'tool_result') {
-    return block.content?.length ?? 0
+  if (block.type === 'toolResult') {
+    return estimateContentChars(block.content)
+  }
+  if (block.type === 'subagent') {
+    return (block.subagent?.task?.length || 0) + (block.subagent?.summary?.length || 0) + 32
+  }
+  return 0
+}
+
+function estimateContentChars(content: any): number {
+  if (typeof content === 'string') return content.length
+  if (Array.isArray(content)) {
+    return content.reduce((sum, b) => sum + estimateBlockChars(b as ContentBlock), 0)
   }
   return 0
 }

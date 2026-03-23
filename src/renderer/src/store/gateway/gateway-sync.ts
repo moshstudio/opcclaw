@@ -1,8 +1,8 @@
-import { getGatewayClient } from '../services/gateway-client'
-import { useChatStore } from './useChatStore'
-import { useAgentStore } from './useAgentStore'
-import { useModelStore } from './useModelStore'
-import { useSystemStore } from './useSystemStore'
+import { getGatewayClient } from '@renderer/services/gateway-client'
+import { useChatStore } from '@renderer/store/useChatStore'
+import { useAgentStore } from '@renderer/store/useAgentStore'
+import { useModelStore } from '@renderer/store/useModelStore'
+import { useSystemStore } from '@renderer/store/useSystemStore'
 import {
   ChatPayload,
   AgentEventPayload,
@@ -51,7 +51,7 @@ export const initGatewaySync = () => {
   // --- 2. 领域业务事件分发 (Domain Events Dispatching) ---
   // A. 聊天流与智能体执行反馈
   client.onChat((payload: ChatPayload) => {
-    useChatStore.getState().handleEvent(payload, 'chat')
+    useChatStore.getState().handleChatEvent(payload)
   })
 
   // B. 智能体生命周期与核心会话状态
@@ -61,10 +61,16 @@ export const initGatewaySync = () => {
       useAgentStore.getState().handleLifecycleEvent(payload)
     }
 
-    const runStatusTypes = ['agent:run-start', 'agent:run-end', 'agent:run-error', 'session:reset']
+    const runStatusTypes = ['agent:run-start', 'agent:run-end', 'agent:run-error']
     if (runStatusTypes.includes(payload.type)) {
-      useChatStore.getState().handleEvent(payload, 'agent')
+      useChatStore.getState().handleAgentEvent(payload)
     }
+  })
+
+  // C. 会话生命周期与独立状态
+  client.onSession((payload: AgentEventPayload) => {
+    // 处理会话级变更事件 (created, reset, deleted)
+    useChatStore.getState().handleSessionEvent(payload)
   })
 
   // C. 模型同步事件

@@ -19,11 +19,11 @@
  *    ```
  *    User: "读取 src/index.ts 文件"
  *         ↓
- *    LLM 返回: { tool_use: { name: "read", input: { file_path: "src/index.ts" } } }
+ *    LLM 返回 Assistant 消息: { content: [ { type: "toolCall", name: "read", arguments: { file_path: "src/index.ts" } } ] }
  *         ↓
  *    Agent 执行: readTool.execute({ file_path: "src/index.ts" }, ctx)
  *         ↓
- *    Agent 返回: { tool_result: { content: "文件内容..." } }
+ *    Agent 返回 ToolResult 消息: { role: "toolResult", content: [ { type: "text", text: "文件内容..." } ] }
  *         ↓
  *    LLM 继续生成最终回复
  *    ```
@@ -120,24 +120,26 @@ export interface Tool<TInput = any> {
 
 /**
  * 工具调用记录
- * LLM 返回的 tool_use 块解析后的结构
+ * LLM 返回的 toolCall 块解析后的结构
  */
-export interface ToolCall {
-  /** 调用 ID: 由 API 生成，用于关联 tool_result */
+export interface ToolCallRecord {
+  /** 调用 ID: 用于关联 toolResult */
   id: string
   /** 工具名称 */
   name: string
   /** 调用参数 */
-  input: Record<string, unknown>
+  arguments: Record<string, unknown>
 }
 
 /**
  * 工具执行结果
- * 返回给 LLM 的 tool_result 块
+ * 返回给 LLM 的 toolResult 块预览
  */
-export interface ToolResult {
+export interface ToolResultPreview {
   /** 关联的工具调用 ID */
-  toolUseId: string
+  toolCallId: string
+  /** 工具名称 */
+  toolName: string
   /** 执行结果内容 */
   content: string
   /** 是否是错误 */

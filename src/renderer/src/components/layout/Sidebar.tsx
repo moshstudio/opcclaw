@@ -1,15 +1,13 @@
 import React, { useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Settings as SettingsIcon, PanelLeft } from 'lucide-react'
+import { Plus, Settings as SettingsIcon, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
 import { Button } from '@renderer/components/ui/button'
 import { useAgentStore } from '@renderer/store/useAgentStore'
 import { useChatStore } from '@renderer/store/useChatStore'
-
 import { useSystemStore } from '@renderer/store/useSystemStore'
-
 import NewAgentModal from '../modals/NewAgentModal'
 
 interface SidebarProps {
@@ -22,11 +20,9 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
   const { agents, activeAgentId, setActiveAgent } = useAgentStore()
   const { fetchHistory, fetchSessions } = useChatStore()
   const [isNewAgentOpen, setIsNewAgentOpen] = React.useState(false)
+  const { status: connStatus } = useSystemStore()
   const navigate = useNavigate()
 
-  const { status: connStatus } = useSystemStore()
-
-  // 监听 activeAgentId 变化，自动触发历史载入和会话列表载入
   useEffect(() => {
     if (activeAgentId) {
       fetchHistory(activeAgentId)
@@ -52,75 +48,100 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
     return 0
   })
 
+  // 统一的线性动画参数
+  const linearTransition = { duration: 0.3, ease: 'linear' as const }
+
   return (
     <motion.aside
       initial={false}
-      animate={{
-        width: collapsed ? 0 : 280,
-        opacity: collapsed ? 0 : 1
-      }}
-      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className={cn(
-        'relative h-full bg-muted/30 border-r flex flex-col overflow-hidden',
-        collapsed && 'border-none'
-      )}
+      animate={{ width: collapsed ? 80 : 280 }}
+      transition={linearTransition}
+      className="relative h-full bg-muted/30 border-r flex flex-col overflow-hidden"
     >
-      {/* Header */}
-      <div className="p-6 flex items-center justify-between">
-        {!collapsed && (
-          <div className="flex flex-col">
-            <motion.h1
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent"
-            >
-              OpcClaw
-            </motion.h1>
-            <div className="flex items-center gap-1.5 mt-0.5 ml-0.5">
-              <div
-                className={cn(
-                  'w-1.5 h-1.5 rounded-full shadow-[0_0_8px]',
-                  connStatus === 'connected'
-                    ? 'bg-green-500 shadow-green-500/50'
-                    : connStatus === 'reconnecting'
-                      ? 'bg-yellow-500 animate-pulse shadow-yellow-500/50'
-                      : 'bg-red-500 shadow-red-500/50'
-                )}
-              />
-              <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest leading-none">
-                Gateway {connStatus}
-              </span>
-            </div>
-          </div>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleSidebar}
-          className="h-8 w-8 text-muted-foreground hover:text-primary transition-all"
+      {/* 1. Header Section - 锁定高度 64px */}
+      <div className="h-[64px] px-[20px] flex items-center justify-start relative overflow-hidden">
+        <motion.div
+          initial={false}
+          animate={{
+            opacity: collapsed ? 0 : 1,
+            width: collapsed ? 0 : 'auto',
+            x: collapsed ? -10 : 0
+          }}
+          transition={linearTransition}
+          className="flex flex-col whitespace-nowrap overflow-hidden shrink-0"
         >
-          <PanelLeft className="w-4 h-4" />
-        </Button>
+          <h1 className="text-[20px] leading-[28px] font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
+            OpcClaw
+          </h1>
+          <div className="flex items-center gap-[6px] mt-[2px] ml-[2px]">
+            <div
+              className={cn(
+                'w-[6px] h-[6px] rounded-full shadow-[0_0_8px]',
+                connStatus === 'connected'
+                  ? 'bg-green-500 shadow-green-500/50'
+                  : connStatus === 'reconnecting'
+                    ? 'bg-yellow-500 animate-pulse shadow-yellow-500/50'
+                    : 'bg-red-500 shadow-red-500/50'
+              )}
+            />
+            <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest shrink-0">
+              Gateway {connStatus}
+            </span>
+          </div>
+        </motion.div>
+
+        {/* 动态伸缩空间 - 基于像素的线性驱动 */}
+        <div className="flex-1 transition-all duration-300 ease-linear" />
+
+        <motion.div
+          layout
+          transition={linearTransition}
+          className="w-[40px] h-[40px] flex items-center justify-center shrink-0"
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleSidebar}
+            className="h-[32px] w-[32px] text-muted-foreground hover:text-primary transition-all duration-300 ease-linear"
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="w-[18px] h-[18px]" />
+            ) : (
+              <PanelLeftClose className="w-[18px] h-[18px]" />
+            )}
+          </Button>
+        </motion.div>
       </div>
 
-      {/* New Agent Button */}
-      <div className="px-4 mb-4">
+      {/* 2. New Agent Button - 锁定高度 56px */}
+      <div className="mb-[16px]">
         <Button
           variant="outline"
           onClick={() => setIsNewAgentOpen(true)}
-          className="w-full flex items-center justify-start gap-2 px-3 py-6 border-muted bg-background/50 hover:bg-background rounded-xl transition-all group"
+          className="p-0 px-[20px] w-full h-[56px] border-muted bg-background/50 hover:bg-background rounded-[12px] transition-all duration-300 ease-linear overflow-hidden flex items-center justify-start gap-[12px]"
         >
-          <Plus className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-          <span className="text-sm font-bold text-muted-foreground group-hover:text-foreground transition-colors">
+          <div className="w-[40px] h-[40px] flex items-center justify-center shrink-0">
+            <Plus className="w-[16px] h-[16px] text-muted-foreground group-hover:text-primary transition-all duration-300 ease-linear" />
+          </div>
+          <motion.span
+            initial={false}
+            animate={{
+              opacity: collapsed ? 0 : 1,
+              width: collapsed ? 0 : 'auto',
+              x: collapsed ? -5 : 0
+            }}
+            transition={linearTransition}
+            className="text-[14px] font-bold text-muted-foreground whitespace-nowrap overflow-hidden"
+          >
             {t('common.new_agent')}
-          </span>
+          </motion.span>
         </Button>
       </div>
 
       <NewAgentModal open={isNewAgentOpen} onOpenChange={setIsNewAgentOpen} />
 
-      {/* Agent List */}
-      <div className="flex-1 overflow-y-auto px-2 space-y-1 custom-scrollbar">
+      {/* 3. Agent List */}
+      <div className="flex-1 overflow-y-auto space-y-[4px] custom-scrollbar">
         {sortedAgents.map((agent) => {
           const agentName =
             agent.id === 'main' && (!agent.config.name || agent.config.name === 'Default Assistant')
@@ -132,15 +153,13 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
               key={agent.id}
               onClick={() => handleAgentClick(agent.id)}
               className={cn(
-                'w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group text-left relative',
-                activeAgentId === agent.id
-                  ? 'bg-primary/10 border border-primary/20 shadow-sm'
-                  : 'hover:bg-muted/50 border border-transparent'
+                'w-full h-[56px] flex items-center justify-start gap-[12px] px-[20px] rounded-[12px] transition-all duration-300 ease-linear group relative border border-transparent',
+                activeAgentId === agent.id ? 'bg-primary/10' : 'hover:bg-muted/50'
               )}
             >
               <div
                 className={cn(
-                  'w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 shadow-sm transition-all uppercase',
+                  'w-[40px] h-[40px] rounded-full flex items-center justify-center text-[14px] font-bold shrink-0 shadow-sm transition-all duration-300 ease-linear uppercase',
                   activeAgentId === agent.id
                     ? 'bg-primary text-primary-foreground scale-105'
                     : 'bg-muted text-muted-foreground'
@@ -148,46 +167,74 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
               >
                 {agentName[0]}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-center mb-0.5">
-                  <p
-                    className={cn(
-                      'text-sm font-bold truncate',
-                      activeAgentId === agent.id
-                        ? 'text-foreground'
-                        : 'text-muted-foreground group-hover:text-foreground'
-                    )}
-                  >
-                    {agentName}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <motion.div
+                initial={false}
+                animate={{
+                  opacity: collapsed ? 0 : 1,
+                  width: collapsed ? 0 : 'auto',
+                  x: collapsed ? -10 : 0
+                }}
+                transition={linearTransition}
+                className="flex-1 min-w-0 overflow-hidden text-left"
+              >
+                <p
+                  className={cn(
+                    'text-[14px] font-bold truncate transition-colors duration-300 ease-linear',
+                    activeAgentId === agent.id
+                      ? 'text-foreground'
+                      : 'text-muted-foreground group-hover:text-foreground'
+                  )}
+                >
+                  {agentName}
+                </p>
+              </motion.div>
             </button>
           )
         })}
       </div>
 
-      {/* Footer */}
-      <div className="p-4 mt-auto border-t bg-background/40 backdrop-blur-sm flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-orange-400 to-pink-500 shadow-md" />
-        <div className="flex-1 overflow-hidden">
-          <p className="text-xs font-bold text-foreground truncate">{t('common.user_account')}</p>
-          <p className="text-[10px] text-muted-foreground/60 truncate font-bold uppercase tracking-tighter">
-            {t('common.premium_member')}
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => {
-            navigate('/settings')
+      {/* 4. Footer Section - 锁定高度 64px */}
+      <div className="h-[64px] mt-auto border-t bg-background/40 backdrop-blur-sm flex items-center justify-start px-[20px] relative overflow-hidden">
+        <motion.div
+          initial={false}
+          animate={{
+            opacity: collapsed ? 0 : 1,
+            width: collapsed ? 0 : 'auto',
+            x: collapsed ? -10 : 0
           }}
-          className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+          transition={linearTransition}
+          className="flex items-center gap-[12px] overflow-hidden whitespace-nowrap shrink-0"
         >
-          <SettingsIcon className="w-4 h-4" />
-        </Button>
+          <div className="w-[40px] h-[40px] flex items-center justify-center shrink-0">
+            <div className="w-[32px] h-[32px] rounded-full bg-gradient-to-tr from-orange-400 to-pink-500 shadow-md shrink-0" />
+          </div>
+          <div className="flex flex-col overflow-hidden">
+            <p className="text-[12px] font-bold text-foreground truncate leading-tight">
+              {t('common.user_account')}
+            </p>
+            <p className="text-[10px] text-muted-foreground/60 truncate font-bold uppercase tracking-tighter leading-none">
+              {t('common.premium_member')}
+            </p>
+          </div>
+        </motion.div>
+
+        {/* 动态伸缩空间 */}
+        <div className="flex-1 transition-all duration-300 ease-linear" />
+
+        <motion.div
+          layout
+          transition={linearTransition}
+          className="w-[40px] h-[40px] flex items-center justify-center shrink-0"
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/settings')}
+            className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-300 ease-linear"
+          >
+            <SettingsIcon className="w-[16px] h-[16px]" />
+          </Button>
+        </motion.div>
       </div>
     </motion.aside>
   )

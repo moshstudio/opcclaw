@@ -154,8 +154,6 @@ export abstract class BaseGatewayClient implements IGatewayClient {
         } catch {
           return
         }
-        console.log('gateway-client-core onMessage:', parsed)
-
         if (isResponseFrame(parsed)) {
           const res = parsed as ResponseFrame
           const p = this.pending.get(res.id)

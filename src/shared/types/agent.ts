@@ -1,3 +1,16 @@
+import {
+  UserMessage as PiUserMessage,
+  AssistantMessage as PiAssistantMessage,
+  ToolResultMessage as PiToolResultMessage,
+  Usage,
+  TextContent,
+  ThinkingContent,
+  ToolCall,
+  ImageContent,
+  StopReason
+} from '@mariozechner/pi-ai'
+export type { Usage, StopReason }
+
 /**
  * Agent 相关通用类型定义 (Shared)
  */
@@ -21,44 +34,26 @@ export interface SubagentInfo {
   childSessionKey?: string
 }
 
-export interface ContentBlock {
-  /** 类型 */
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'subagent'
-  /** 文本内容 (type=text 或 type=thinking 时) */
-  text?: string
-  /** 思考签名 (type=thinking 时用于记录原始字段名，如 reasoning_content) */
-  thinking_signature?: string
-  /** 工具调用 ID (type=tool_use 时由 API 生成) */
-  id?: string
-  /** 工具名称 (type=tool_use 时) */
-  name?: string
-  /** 工具输入参数 (type=tool_use 时) */
-  input?: Record<string, unknown>
-  /** 关联的工具调用 ID (type=tool_result 时) */
-  tool_use_id?: string
-  /** 工具执行结果 (type=tool_result 时) */
-  content?: string
-  /** 子代理信息 (type=subagent 时) */
-  subagent?: SubagentInfo
+/** 分辨率联合类型的内容块定义 */
+export type AgentTextBlock = TextContent & { type: 'text' }
+export type AgentThinkingBlock = ThinkingContent & { type: 'thinking'; thinking_signature?: string }
+export type AgentToolCallBlock = ToolCall & { type: 'toolCall' }
+export type AgentToolResultBlock = {
+  type: 'toolResult'
+  toolCallId: string
+  toolName: string
+  content: (AgentTextBlock | ImageContent)[] // 明确类型，对应 pi-ai 的 ToolResultMessage.content
+  isError: boolean
 }
+export type AgentSubagentBlock = { type: 'subagent'; subagent: SubagentInfo }
 
-/**
- * Usage 统计结构
- */
-export interface Usage {
-  input: number
-  output: number
-  cacheRead: number
-  cacheWrite: number
-  totalTokens: number
-  cost: {
-    input: number
-    output: number
-    cacheRead: number
-    cacheWrite: number
-    total: number
-  }
-}
+export type ContentBlock =
+  | AgentTextBlock
+  | AgentThinkingBlock
+  | AgentToolCallBlock
+  | AgentToolResultBlock
+  | AgentSubagentBlock
+  | ImageContent
 
 /**
  * AgentPerformance 性能指标
@@ -71,29 +66,35 @@ export interface AgentPerformance {
 }
 
 /**
- * 消息结构
- * 与 Anthropic API 的 MessageParam 兼容
+ * 消息本地扩展元数据 (Shared Metadata)
  */
-export interface Message {
-  /** 消息唯一 ID */
+export interface LocalMetadata {
   id?: string
-  /** 角色: user 或 assistant */
-  role: 'user' | 'assistant' | 'system' | 'compaction'
-  /** 内容: 可以是纯文本，也可以是多个内容块（包含工具调用） */
-  content: string | ContentBlock[]
-  /** 时间戳: 用于排序和调试 */
-  timestamp: number | string
-  /** 所属的任务 ID (同一个任务内的多次迭代共享 ID) */
   runId?: string
-  /** Token 消耗和成本统计 (仅 assistant 角色) */
-  usage?: Usage
-  /** 整个会话过程的总消耗 (在 agent_end 时由后端累计返回) */
-  totalUsage?: Usage
-  /** 性能指标 (仅 agent_end 时) */
+  timestamp: number | string // 扩展兼容 string 格式
+  usage?: Usage // 覆盖为可选 (流式响应中可能为空)
   performance?: AgentPerformance
-  /** 最后一个处理过的 Chunk ID (用于去重) */
+}
+
+/**
+ * 消息扩展工具类型
+ * T: pi-ai 原始消息类型
+ * C: 覆盖后的 content 类型
+ */
+type ExtendMessage<T, C> = Omit<T, 'content' | 'timestamp' | 'usage'> &
+  LocalMetadata & {
+    content: C
+  }
+
+export type UserMessage = ExtendMessage<PiUserMessage, string | ContentBlock[]>
+
+export type AssistantMessage = ExtendMessage<PiAssistantMessage, ContentBlock[]> & {
   lastChunkId?: string
 }
+
+export type ToolResultMessage = ExtendMessage<PiToolResultMessage, ContentBlock[]>
+
+export type Message = UserMessage | AssistantMessage | ToolResultMessage
 
 /**
  * AI 对话输出状态机状态枚举
@@ -102,10 +103,9 @@ export type ChatStatus =
   | 'idle'
   | 'waiting' // 请求已发送，尚无任何回应
   | 'thinking' // 大脑思考中 (Thought/Reasoning)
-  | 'planning' // 正在规划下一步或多步任务
   | 'streaming' // 正在输出正文或工具参数
-  | 'tool_calling' // 正在生成工具调用
-  | 'tool_executing' // 正在执行工具
+  | 'toolCalling' // 正在生成工具调用
+  | 'toolExecuting' // 正在执行工具
   | 'retrying' // 发生重试
   | 'completed' // 已完成（本次运行结束）
   | 'error' // 发生错误

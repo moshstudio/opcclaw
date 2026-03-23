@@ -9,10 +9,12 @@ import type { RunUsageRecord, UsageStats } from './types.js'
 export class UsageManager {
   private baseDir: string
   private runsPath: string
+  private totalsPath: string
 
   constructor(baseDir: string) {
     this.baseDir = baseDir
     this.runsPath = path.join(this.baseDir, 'runs.jsonl')
+    this.totalsPath = path.join(this.baseDir, 'totals.json')
   }
 
   /**
@@ -24,25 +26,101 @@ export class UsageManager {
 
   /**
    * 记录单次运行的用量明细 (Run Record)
-   * 采用 JSONL 格式追加写入，保证 O(1) 效率
+   * 并同步触发增量更新
    */
   async recordRun(record: RunUsageRecord): Promise<void> {
     await this.ensureDir()
+
+    // 1. 追加明细到 JSONL
     const line = JSON.stringify(record) + '\n'
     await fs.appendFile(this.runsPath, line, 'utf-8')
-    
-    // (可选) 这里可以更新内存中的汇总，或者实时增量写入 totals.json
-    // 为保持代码解耦和实时性，我们在 getStats 时进行动态聚合，或后续再做触发式增量更新
+
+    // 2. 异步更新汇总缓存 (防止写明细被阻塞)
+    this.updateTotals(record).catch((err) => {
+      console.error('[UsageManager] Full totals update failed:', err)
+    })
   }
 
   /**
-   * 获取指定会话或全局的统计报表
-   * @param sessionKey 如果传空则返回全局统计
+   * 获取统计报表
+   * 核心优化：全局查询直接走 totals.json (O(1))
    */
   async getStats(sessionKey?: string): Promise<UsageStats> {
     await this.ensureDir()
-    
-    // 初始化统计结果
+
+    // 情况 A：按会话查询，必须扫描明细 (O(N))
+    if (sessionKey) {
+      return this.scanAndAggregate({ sessionKey })
+    }
+
+    // 情况 B：全局查询，优先读汇总缓存 (O(1))
+    try {
+      const totalsContent = await fs.readFile(this.totalsPath, 'utf8')
+      const totals = JSON.parse(totalsContent) as UsageStats
+      console.log(`[UsageManager] Fetched stats from cache: runs=${totals.runCount}`)
+      return totals
+    } catch (err: any) {
+      // 如果汇总文件不存在或损坏，执行全量修复
+      if (err.code !== 'ENOENT') {
+        console.warn('[UsageManager] Totals cache corrupted, rebuilding...', err)
+      }
+      return this.rebuildTotals()
+    }
+  }
+
+  /**
+   * 增量更新局部汇总文件
+   */
+  private async updateTotals(record: RunUsageRecord): Promise<void> {
+    let totals: UsageStats
+    try {
+      const content = await fs.readFile(this.totalsPath, 'utf8')
+      totals = JSON.parse(content)
+    } catch {
+      // 如果没有缓存，则执行一次全量扫描来初始化
+      await this.rebuildTotals()
+      return
+    }
+
+    // 执行增量累加
+    const count = totals.runCount || 0
+    const nextCount = count + 1
+
+    totals.runCount = nextCount
+    totals.totalTokens += record.usage.totalTokens || 0
+    totals.promptTokens += record.usage.input || 0
+    totals.completionTokens += record.usage.output || 0
+    totals.cacheReadTokens += record.usage.cacheRead || 0
+    totals.cacheWriteTokens += record.usage.cacheWrite || 0
+    totals.totalCost += record.usage.cost?.total || 0
+
+    // 计算滚动的性能平均值: (OldAvg * OldCount + NewVal) / NewCount
+    if (record.performance?.throughput) {
+      totals.avgThroughput =
+        ((totals.avgThroughput || 0) * count + record.performance.throughput) / nextCount
+    }
+    if (record.performance?.totalDurationMs) {
+      totals.avgLatencyMs =
+        ((totals.avgLatencyMs || 0) * count + record.performance.totalDurationMs) / nextCount
+    }
+
+    await fs.writeFile(this.totalsPath, JSON.stringify(totals, null, 2), 'utf8')
+  }
+
+  /**
+   * 重建全量汇总信息 (回滚机制)
+   */
+  private async rebuildTotals(): Promise<UsageStats> {
+    const stats = await this.scanAndAggregate({})
+    await fs.writeFile(this.totalsPath, JSON.stringify(stats, null, 2), 'utf8')
+    console.log(`[UsageManager] Totals cache rebuilt: runs=${stats.runCount}`)
+    return stats
+  }
+
+  /**
+   * 基础扫描聚合逻辑
+   */
+  private async scanAndAggregate(filters: { sessionKey?: string }): Promise<UsageStats> {
     const stats: UsageStats = {
       messageCount: 0,
       runCount: 0,
@@ -59,53 +137,42 @@ export class UsageManager {
 
     try {
       const content = await fs.readFile(this.runsPath, 'utf-8')
-      const lines = content.split('\n').filter(l => l.trim())
-      
+      const lines = content.split('\n').filter((l) => l.trim())
+
       let totalThroughput = 0
       let totalLatency = 0
-      let recordsHandled = 0
+      let count = 0
 
       for (const line of lines) {
         try {
           const record: RunUsageRecord = JSON.parse(line)
-          
-          // 如果指定了 sessionKey 且不匹配，则跳过
-          if (sessionKey && record.sessionKey !== sessionKey) {
+          if (filters.sessionKey && record.sessionKey !== filters.sessionKey) {
             continue
           }
 
           stats.runCount++
-          stats.totalTokens += record.usage.totalTokens
-          stats.promptTokens += record.usage.input
-          stats.completionTokens += record.usage.output
-          stats.cacheReadTokens += record.usage.cacheRead
-          stats.cacheWriteTokens += record.usage.cacheWrite
-          stats.totalCost += record.usage.cost.total
-          
-          if (record.performance.throughput) {
-            totalThroughput += record.performance.throughput
-          }
-          if (record.performance.totalDurationMs) {
-            totalLatency += record.performance.totalDurationMs
-          }
-          
-          recordsHandled++
+          stats.totalTokens += record.usage.totalTokens || 0
+          stats.promptTokens += record.usage.input || 0
+          stats.completionTokens += record.usage.output || 0
+          stats.cacheReadTokens += record.usage.cacheRead || 0
+          stats.cacheWriteTokens += record.usage.cacheWrite || 0
+          stats.totalCost += record.usage.cost?.total || 0
+
+          if (record.performance?.throughput) totalThroughput += record.performance.throughput
+          if (record.performance?.totalDurationMs) totalLatency += record.performance.totalDurationMs
+
+          count++
         } catch (e) {
-          // 跳过损坏的行
-          console.error('UsageManager: failed to parse line', e)
+          console.error('[UsageManager] Skip corrupted line')
         }
       }
 
-      // 计算平均值
-      if (recordsHandled > 0) {
-        stats.avgThroughput = totalThroughput / recordsHandled
-        stats.avgLatencyMs = totalLatency / recordsHandled
+      if (count > 0) {
+        stats.avgThroughput = totalThroughput / count
+        stats.avgLatencyMs = totalLatency / count
       }
-      
     } catch (err: any) {
-      if (err.code !== 'ENOENT') {
-        console.error('UsageManager: failed to read runs.jsonl', err)
-      }
+      if (err.code !== 'ENOENT') throw err
     }
 
     return stats
@@ -118,8 +185,9 @@ export class UsageManager {
     await this.ensureDir()
     try {
       await fs.unlink(this.runsPath)
+      await fs.unlink(this.totalsPath)
     } catch {
-       // Ignore if file doesn't exist
+      // Ignore
     }
   }
 }

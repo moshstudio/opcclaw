@@ -3,6 +3,9 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { GatewayManager } from './services/gateway/manager'
+import { ConfigService } from './services/config/config-service'
+import { AgentRegistry } from './services/agent/registry'
+import { setSystemClosing } from './services/common/logger'
 import { initIpcServices } from './ipc'
 
 function createWindow(): void {
@@ -58,8 +61,9 @@ app.whenReady().then(() => {
   initIpcServices()
 
   // --- 初始化核心服务 ---
+  const config = ConfigService.getInstance().getConfig()
   GatewayManager.getInstance()
-    .start()
+    .start(config.gateway?.logLevel || 'info')
     .then(() => {
       console.log('Gateway manager started successfully')
     })
@@ -86,7 +90,13 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  setSystemClosing()
   GatewayManager.getInstance().stop()
+  try {
+    AgentRegistry.getInstance().stopAll()
+  } catch (err) {
+    console.error('Failed to stop agents during quit:', err)
+  }
 })
 
 // In this file you can include the rest of your app's specific main process

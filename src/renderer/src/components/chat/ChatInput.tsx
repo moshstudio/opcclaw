@@ -92,7 +92,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 className={cn(
                   'h-9 w-9 rounded-xl shadow-lg transition-all duration-300 relative flex items-center justify-center overflow-hidden',
                   input.trim() || isTyping
-                    ? 'bg-gradient-to-br from-primary via-primary to-primary/80 text-primary-foreground shadow-primary/25 hover:shadow-primary/40 hover:scale-105 active:scale-95'
+                    ? 'bg-gradient-to-br from-orange-400 to-orange-600 dark:from-orange-500 dark:to-orange-700 text-white shadow-orange-500/25 hover:shadow-orange-500/40 hover:scale-105 active:scale-95'
                     : 'bg-muted/50 text-muted-foreground/20 shadow-none cursor-not-allowed',
                   isTyping &&
                     'from-destructive via-destructive/90 to-destructive/80 shadow-destructive/25'

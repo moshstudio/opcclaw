@@ -7,7 +7,7 @@ interface SystemState {
   isShuttingDown: boolean
   shutdownReason: string | null
   restartExpectedMs: number | null
-  
+
   initialized: boolean
 
   handleConnect: () => void
@@ -37,7 +37,7 @@ export const useSystemStore = create<SystemState>((set) => ({
   },
 
   handleTick: (payload: any) => {
-    set({ 
+    set({
       lastTick: payload?.ts || Date.now(),
       status: 'connected'
     })
@@ -49,7 +49,7 @@ export const useSystemStore = create<SystemState>((set) => ({
       shutdownReason: payload.reason || 'Server is shutting down',
       restartExpectedMs: payload.restartExpectedMs
     })
-    
+
     toast.error('System Shutdown Warning', {
       description: payload.reason || 'The server is shutting down. Please save your work.',
       duration: 10000

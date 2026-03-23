@@ -9,6 +9,8 @@ import {
 } from './protocol.js'
 import { handlers, type GwClient, type HandlerContext } from './handlers/index.js'
 import { type EventFrame, type ResponseFrame } from './protocol.js'
+import { formatGatewayDebugData } from './helpers/debug-utils.js'
+import type { Logger } from '@main/services/common/logger.js'
 
 /**
  * 设置新的 WebSocket 连接 (对齐 openclaw ws-connection.ts)
@@ -18,17 +20,21 @@ export function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
   const client: GwClient = { id: connId, socket: socket as any, authed: false }
   ctx.clients.add(client)
 
-  console.log(`[GW-CONN] Client connected: ${connId}`)
+  ctx.logger.info(`Client connected: ${connId}`)
 
   // 1. 发送 challenge (握手挑战)
   const nonce = newId()
   ctx.nonces.set(connId, nonce)
-  send(socket, {
-    type: 'event',
-    event: 'connect:challenge',
-    payload: { nonce, ts: Date.now() },
-    seq: 0
-  })
+  send(
+    socket,
+    {
+      type: 'event',
+      event: 'connect:challenge',
+      payload: { nonce, ts: Date.now() },
+      seq: 0
+    },
+    ctx.logger
+  )
 
   // 2. 握手超时控制
   const handshakeTimer = setTimeout(() => {
@@ -48,7 +54,10 @@ export function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
 
     if (!isRequestFrame(parsed)) return
     const req = parsed as RequestFrame
-    console.log(`[GW-IN] ${req.method} id=${req.id}`, req.params || '')
+
+    if (ctx.logger.level === 'debug') {
+      ctx.logger.debug(`[GW-IN] ${formatGatewayDebugData(req)}`)
+    }
 
     // 安全检查：未认证时仅允许 connect
     if (!client.authed && req.method !== 'connect') {
@@ -57,7 +66,8 @@ export function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
         req.id,
         false,
         undefined,
-        errorShape(ErrorCodes.UNAUTHORIZED, 'not authenticated')
+        errorShape(ErrorCodes.UNAUTHORIZED, 'not authenticated'),
+        ctx.logger
       )
       return
     }
@@ -70,19 +80,27 @@ export function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
         req.id,
         false,
         undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, `unknown method: ${req.method}`)
+        errorShape(ErrorCodes.INVALID_REQUEST, `unknown method: ${req.method}`),
+        ctx.logger
       )
       return
     }
 
     try {
       const result = await handler(req.params, client, ctx)
-      respond(socket, req.id, result.ok, result.payload, result.error)
+      respond(socket, req.id, result.ok, result.payload, result.error, ctx.logger)
       if (req.method === 'connect' && result.ok) {
         clearTimeout(handshakeTimer)
       }
     } catch (err) {
-      respond(socket, req.id, false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)))
+      respond(
+        socket,
+        req.id,
+        false,
+        undefined,
+        errorShape(ErrorCodes.UNAVAILABLE, String(err)),
+        ctx.logger
+      )
     }
   })
 
@@ -91,7 +109,7 @@ export function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
     clearTimeout(handshakeTimer)
     if (ctx.clients.has(client)) {
       const info = code ? `(code: ${code}${reason ? `, reason: ${reason}` : ''})` : ''
-      console.log(`[GW-DISCONN] Client left: ${connId} ${info}`)
+      ctx.logger.info(`Client left: ${connId} ${info}`)
       ctx.clients.delete(client)
       ctx.nonces.delete(connId)
     }
@@ -99,7 +117,7 @@ export function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
 
   socket.on('close', (code, reason) => cleanup(code, String(reason)))
   socket.on('error', (err) => {
-    console.error(`[GW-ERR] Client socket error: ${connId}`, err)
+    ctx.logger.error(`Client socket error: ${connId}`, err)
     cleanup()
   })
 }
@@ -107,9 +125,18 @@ export function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
 /**
  * 帮助函数：发送帧
  */
-function send(socket: WebSocket, frame: EventFrame | ResponseFrame): void {
+function send(
+  socket: WebSocket,
+  frame: EventFrame | ResponseFrame,
+  logger: Logger | undefined
+): void {
   if (socket.readyState === WebSocket.OPEN) {
     const data = JSON.stringify(frame)
+
+    if (logger?.level === 'debug') {
+      logger.debug(`[GW-OUT] SEND: ${formatGatewayDebugData(frame)}`)
+    }
+
     socket.send(data)
   }
 }
@@ -121,8 +148,9 @@ function respond(
   socket: WebSocket,
   id: string,
   ok: boolean,
-  payload?: unknown,
-  error?: import('./protocol.js').ErrorShape
+  payload: unknown,
+  error: import('./protocol.js').ErrorShape | undefined,
+  logger: Logger | undefined
 ) {
-  send(socket, { type: 'res', id, ok, payload, error })
+  send(socket, { type: 'res', id, ok, payload, error } as any, logger)
 }

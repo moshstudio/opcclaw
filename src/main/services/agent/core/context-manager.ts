@@ -95,7 +95,7 @@ export class AgentContextManager {
       // 2. 发出总结消息事件（用于 UI 渲染总结卡片）
       if (result.summaryMessage) {
         this.options.emit({
-          type: 'chat:user-message',
+          type: 'chat:userMessage',
           runId: params.runId,
           sessionKey: params.sessionKey,
           message: result.summaryMessage

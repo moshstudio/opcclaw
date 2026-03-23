@@ -1,4 +1,5 @@
-import { AgentInfo } from './useAgentStore'
+import { AgentEventPayload } from '@shared/types/gateway'
+import { AgentInfo } from '../useAgentStore'
 
 export interface AgentPatch {
   agents: AgentInfo[]
@@ -12,16 +13,21 @@ export interface AgentPatch {
  * 1. 收到广播载荷后，计算最新的智能体列表。
  * 2. 如果载荷包含完整对象，则直接 Patch；否则标记需要刷新。
  */
-export const applyAgentLifecycleEvent = (payload: any, currentAgents: AgentInfo[]): AgentPatch => {
+export const applyAgentLifecycleEvent = (
+  payload: AgentEventPayload,
+  currentAgents: AgentInfo[]
+): AgentPatch => {
   const { type, agentId, agent } = payload
   let nextAgents = [...currentAgents]
   let shouldRefetch = false
 
+  const targetAgent = agent as AgentInfo | undefined
+
   switch (type) {
     case 'agent:created':
-      if (agent) {
-        if (!nextAgents.some((a) => a.id === agent.id)) {
-          nextAgents.push(agent)
+      if (targetAgent) {
+        if (!nextAgents.some((a) => a.id === targetAgent.id)) {
+          nextAgents.push(targetAgent)
         }
       } else {
         shouldRefetch = true
@@ -29,21 +35,21 @@ export const applyAgentLifecycleEvent = (payload: any, currentAgents: AgentInfo[
       break
 
     case 'agent:updated':
-      if (agent) {
-        nextAgents = nextAgents.map((a) => (a.id === agent.id ? agent : a))
+      if (targetAgent) {
+        nextAgents = nextAgents.map((a) => (a.id === targetAgent.id ? targetAgent : a))
       } else if (agentId) {
         // 后端没发全量数据时，标记由 Store 发起 fetch
         shouldRefetch = true
       }
       break
 
-    case 'agent:deleted':
-      if (agentId) {
-        nextAgents = nextAgents.filter((a) => a.id !== agentId)
-      } else if (payload.id) {
-        nextAgents = nextAgents.filter((a) => a.id !== payload.id)
+    case 'agent:deleted': {
+      const idToDelete = agentId || (payload.id as string)
+      if (idToDelete) {
+        nextAgents = nextAgents.filter((a) => a.id !== idToDelete)
       }
       break
+    }
   }
 
   return { agents: nextAgents, shouldRefetch }

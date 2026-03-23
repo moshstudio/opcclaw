@@ -100,6 +100,13 @@ export class RendererGatewayClient extends BaseGatewayClient {
   }
 
   /**
+   * 领域特定事件订阅 - 会话状态 (对齐 session 频道)
+   */
+  onSession(callback: (payload: AgentEventPayload) => void) {
+    return this.onChannel('session', callback)
+  }
+
+  /**
    * 领域特定事件订阅 - 模型列表 (对齐 models 频道)
    */
   onModels(callback: (payload: ModelsPayload) => void) {

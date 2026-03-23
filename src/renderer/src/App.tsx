@@ -6,7 +6,7 @@ import SettingsPage from './components/settings/SettingsPage'
 import { useSettingsStore } from './store/useSettingsStore'
 import { OnboardingOverlay } from './components/layout/OnboardingOverlay'
 import { ThemeProvider } from './components/ThemeProvider'
-import { initGatewaySync } from './store/gateway-sync'
+import { initGatewaySync } from './store/gateway/gateway-sync'
 
 import { Toaster } from 'sonner'
 import { ConfirmProvider } from './components/ui/confirm-dialog'
