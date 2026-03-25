@@ -8,7 +8,8 @@ import type {
   ModelsPayload,
   TickPayload,
   ShutdownPayload,
-  HeartbeatEventPayload
+  HeartbeatEventPayload,
+  HeartbeatTaskStatus
 } from '@shared/types/gateway'
 import type { GwClient } from './handlers/types'
 import { type EventFrame, MAX_BUFFERED_BYTES } from './protocol'
@@ -30,10 +31,10 @@ export type GatewayBusinessEvent =
   | { type: 'models:list'; models: AIModelConfig[]; defaultModelId: string | null }
   | { type: 'system:tick'; ts: number }
   | { type: 'system:shutdown'; reason: string; restartExpectedMs: number | null }
-  | { type: 'heartbeat:created'; agentId: string; status: any }
-  | { type: 'heartbeat:updated'; agentId: string; status: any }
+  | { type: 'heartbeat:created'; agentId: string; status: HeartbeatTaskStatus }
+  | { type: 'heartbeat:updated'; agentId: string; status: HeartbeatTaskStatus }
   | { type: 'heartbeat:deleted'; agentId: string }
-  | { type: 'heartbeat:triggered'; agentId: string }
+  | { type: 'heartbeat:triggered'; agentId: string; status: HeartbeatTaskStatus }
 
 /**
  * 广播器发送选项

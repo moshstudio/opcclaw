@@ -14,6 +14,7 @@ import { SecuritySection } from './agent-settings/SecuritySection'
 import { FileSection } from './agent-settings/FileSection'
 import { ToolSection } from './agent-settings/ToolSection'
 import { SkillSection } from './agent-settings/SkillSection'
+import { DEFAULT_MAX_CONCURRENT_RUNS } from '@shared/types/agent'
 import { useConfirm } from '@renderer/hooks/use-confirm'
 import { getGatewayClient } from '@renderer/services/gateway-client'
 import { UsageStats } from '@shared/types/usage'
@@ -52,7 +53,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
     enableHeartbeat: false,
     workspaceDir: '',
     maxTurns: 20,
-    maxConcurrentRuns: 4,
+    maxConcurrentRuns: DEFAULT_MAX_CONCURRENT_RUNS,
     sandboxEnabled: false,
     sandboxAllowExec: false,
     sandboxAllowWrite: true,
@@ -88,7 +89,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
         enableHeartbeat: config.enableHeartbeat ?? false,
         workspaceDir: config.workspaceDir || '',
         maxTurns: config.maxTurns ?? 20,
-        maxConcurrentRuns: config.maxConcurrentRuns ?? 4,
+        maxConcurrentRuns: config.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS,
         sandboxEnabled: config.sandbox?.enabled ?? false,
         sandboxAllowExec: config.sandbox?.allowExec ?? false,
         sandboxAllowWrite: config.sandbox?.allowWrite ?? true,

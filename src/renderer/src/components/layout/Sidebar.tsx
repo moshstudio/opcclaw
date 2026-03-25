@@ -170,13 +170,16 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
             >
               <div
                 className={cn(
-                  'w-[40px] h-[40px] rounded-full flex items-center justify-center shrink-0 transition-all duration-300 ease-linear',
+                  'w-[40px] h-[40px] rounded-full flex items-center justify-center shrink-0 transition-all duration-300 ease-linear relative',
                   activeAgentId === agent.id
-                    ? 'bg-primary text-primary-foreground scale-105'
+                    ? 'bg-primary text-primary-foreground scale-105 shadow-[0_0_15px_hsl(var(--primary)/0.3)]'
                     : 'bg-muted text-muted-foreground'
                 )}
               >
                 {agentName[0]}
+                {(agent.config?.isPinned ?? agent.id === 'main') && (
+                  <div className="absolute -top-0.5 -right-0.5 w-[10px] h-[10px] bg-primary/60 rounded-full border-2 border-background shadow-[0_0_8px_rgba(0,0,0,0.1)] z-10" />
+                )}
               </div>
               <motion.div
                 initial={false}

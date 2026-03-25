@@ -1,3 +1,4 @@
+import { JsonlStore } from '../common/jsonl'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { RunUsageRecord, UsageStats } from './types'
@@ -8,13 +9,13 @@ import type { RunUsageRecord, UsageStats } from './types'
  */
 export class UsageManager {
   private baseDir: string
-  private runsPath: string
+  private runsStore: JsonlStore<RunUsageRecord>
   private totalsPath: string
   private updateLock: Promise<void> = Promise.resolve()
 
   constructor(baseDir: string) {
     this.baseDir = baseDir
-    this.runsPath = path.join(this.baseDir, 'runs.jsonl')
+    this.runsStore = new JsonlStore(path.join(this.baseDir, 'runs.jsonl'))
     this.totalsPath = path.join(this.baseDir, 'totals.json')
   }
 
@@ -33,8 +34,7 @@ export class UsageManager {
     await this.ensureDir()
 
     // 1. 追加明细到 JSONL
-    const line = JSON.stringify(record) + '\n'
-    await fs.appendFile(this.runsPath, line, 'utf-8')
+    await this.runsStore.append(record)
 
     // 2. 异步更新汇总缓存 (防止写明细被阻塞)
     this.updateTotals(record).catch((err) => {
@@ -153,16 +153,14 @@ export class UsageManager {
     }
 
     try {
-      const content = await fs.readFile(this.runsPath, 'utf-8')
-      const lines = content.split('\n').filter((l) => l.trim())
+      const records = await this.runsStore.readAll()
 
       let totalThroughput = 0
       let totalLatency = 0
       let count = 0
 
-      for (const line of lines) {
+      for (const record of records) {
         try {
-          const record: RunUsageRecord = JSON.parse(line)
           if (filters.sessionKey && record.sessionKey !== filters.sessionKey) {
             continue
           }
@@ -202,7 +200,7 @@ export class UsageManager {
   async reset(): Promise<void> {
     await this.ensureDir()
     try {
-      await fs.unlink(this.runsPath)
+      await this.runsStore.delete()
       await fs.unlink(this.totalsPath)
     } catch {
       // Ignore

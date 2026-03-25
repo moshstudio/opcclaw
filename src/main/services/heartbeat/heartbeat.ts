@@ -27,6 +27,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { HeartbeatLogEntry, HeartbeatLogStatus } from '@shared/types/gateway'
+import { JsonlStore } from '../common/jsonl'
 
 // ============== 类型定义 ==============
 
@@ -261,6 +262,8 @@ interface RunnerState {
   lastTextAt: number | null
   /** 执行记录 (最近 100 条) */
   logs: HeartbeatLogEntry[]
+  /** 正在执行 */
+  isRunning: boolean
 }
 
 /**
@@ -279,6 +282,7 @@ export class HeartbeatManager {
   private config: Required<Omit<HeartbeatConfig, 'activeHours'>> & {
     activeHours?: ActiveHours
   }
+  private logStore: JsonlStore<HeartbeatLogEntry>
 
   private state: RunnerState = {
     nextDueMs: 0,
@@ -286,14 +290,15 @@ export class HeartbeatManager {
     lastRunMs: null,
     lastText: null,
     lastTextAt: null,
-    logs: []
+    logs: [],
+    isRunning: false
   }
 
   private wake: HeartbeatWake
   private callback: HeartbeatCallback | null = null
   private started = false
 
-  constructor(workspaceDir: string, config: HeartbeatConfig = {}) {
+  constructor(workspaceDir: string, logDir: string, config: HeartbeatConfig = {}) {
     this.workspaceDir = workspaceDir
     this.config = {
       intervalMs: config.intervalMs ?? 30 * 60 * 1000,
@@ -304,10 +309,18 @@ export class HeartbeatManager {
       activeHours: config.activeHours
     }
 
+    this.logStore = new JsonlStore(path.join(logDir, 'heartbeat-logs.jsonl'))
+
     this.wake = new HeartbeatWake(this.config.coalesceMs)
     // HeartbeatWake 的 handler 对应 openclaw 的 runHeartbeatOnce
     this.wake.setHandler((opts) => this.runOnce(opts.reason))
+
+    // 初始化加载历史日志
+    const logs = this.logStore.readAllSync()
+    this.state.logs = logs.reverse().slice(0, 100)
   }
+
+  // 移除了内部路径和读写方法，改为使用 logStore
 
   // ============== 公共 API ==============
 
@@ -375,7 +388,18 @@ export class HeartbeatManager {
   }
 
   /**
-   * 获取执行记录
+   * 读取执行记录 (支持分页)
+   */
+  async readLogs(options?: {
+    limit?: number
+    offset?: number
+    reverse?: boolean
+  }): Promise<{ items: HeartbeatLogEntry[]; total: number; hasMore: boolean }> {
+    return this.logStore.read(options)
+  }
+
+  /**
+   * 获取执行记录 (内存缓存)
    */
   getLogs(): HeartbeatLogEntry[] {
     return [...this.state.logs]
@@ -399,6 +423,8 @@ export class HeartbeatManager {
     if (this.state.logs.length > 100) {
       this.state.logs.pop()
     }
+    // 持久化到磁盘
+    this.logStore.append(entry)
   }
 
   /**
@@ -435,6 +461,7 @@ export class HeartbeatManager {
   getStatus(): {
     enabled: boolean
     started: boolean
+    isRunning: boolean
     nextDueMs: number
     lastRunMs: number | null
     intervalMs: number
@@ -446,10 +473,11 @@ export class HeartbeatManager {
     return {
       enabled: this.config.enabled,
       started: this.started,
+      isRunning: this.state.isRunning,
       nextDueMs: this.state.nextDueMs,
-      lastRunMs: this.state.lastRunMs,
+      lastRunMs: this.state.lastRunMs || 0,
       intervalMs: this.config.intervalMs,
-      activeHours: this.config.activeHours,
+      activeHours: this.config.activeHours || { start: '00:00', end: '23:59' },
       isWithinActiveHours: this.isWithinActiveHours(Date.now()),
       hasPending: this.wake.hasPending(),
       heartbeatPath: this.config.heartbeatPath
@@ -502,8 +530,8 @@ export class HeartbeatManager {
     const startMs = Date.now()
     const wakeReason = (reason as WakeReason) || 'requested'
 
-    // 1. 活跃时间窗口检查
-    if (!this.isWithinActiveHours(startMs)) {
+    // 1. 活跃时间窗口检查 (手动触发 'requested' 绕过)
+    if (wakeReason !== 'requested' && !this.isWithinActiveHours(startMs)) {
       this.state.lastRunMs = startMs
       this.recordLog({ reason: wakeReason, status: 'skipped', message: 'outside-active-hours' })
       this.scheduleNext()
@@ -529,6 +557,7 @@ export class HeartbeatManager {
       return { status: 'skipped', reason: 'no-callback' }
     }
 
+    this.state.isRunning = true
     try {
       const result = await this.callback({
         content: content ?? '',
@@ -581,6 +610,8 @@ export class HeartbeatManager {
       })
       this.scheduleNext()
       return { status: 'failed', reason: 'callback-error' }
+    } finally {
+      this.state.isRunning = false
     }
   }
 

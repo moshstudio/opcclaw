@@ -40,6 +40,8 @@ const ScheduledTasks: React.FC = () => {
     saveHeartbeatFile,
     fetchHeartbeatFile,
     heartbeatLogs,
+    heartbeatLogsHasMore,
+    heartbeatLogsLoading,
     fetchHeartbeatLogs
   } = useHeartbeatStore()
 
@@ -78,9 +80,9 @@ const ScheduledTasks: React.FC = () => {
   }
 
   const handleTrigger = async (agentId: string) => {
+    toast.info(t('common.trigger_now') + '...')
     try {
       await triggerHeartbeat(agentId)
-      toast.success(t('common.trigger_now') + '...')
     } catch (err) {
       toast.error('Trigger failed')
     }
@@ -156,7 +158,21 @@ const ScheduledTasks: React.FC = () => {
     setIsLogsModalOpen(true)
     setIsFetchingLogs(true)
     try {
-      await fetchHeartbeatLogs()
+      await fetchHeartbeatLogs({ limit: 50, offset: 0 })
+    } finally {
+      setIsFetchingLogs(false)
+    }
+  }
+
+  const handleLoadMoreLogs = async () => {
+    if (heartbeatLogsLoading) return
+    setIsFetchingLogs(true)
+    try {
+      await fetchHeartbeatLogs({
+        limit: 50,
+        offset: heartbeatLogs.length,
+        append: true
+      })
     } finally {
       setIsFetchingLogs(false)
     }
@@ -309,16 +325,60 @@ const ScheduledTasks: React.FC = () => {
                         onCheckedChange={() => handleToggle(task)}
                         className="scale-90 mr-2"
                       />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9 rounded-lg hover:text-primary hover:bg-primary/5 transition-all"
-                        onClick={() => handleTrigger(task.agentId)}
-                        disabled={!task.status.enabled}
-                        title={t('common.trigger_now')}
-                      >
-                        <Zap className="w-4.5 h-4.5 fill-current text-yellow-500" />
-                      </Button>
+                      <div className="relative">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={cn(
+                            'h-9 w-9 rounded-lg transition-all relative overflow-hidden',
+                            task.status.isRunning
+                              ? 'text-yellow-500 cursor-default bg-yellow-500/10'
+                              : 'hover:text-primary hover:bg-primary/5'
+                          )}
+                          onClick={() => !task.status.isRunning && handleTrigger(task.agentId)}
+                          disabled={task.status.isRunning}
+                          title={t('common.trigger_now')}
+                        >
+                          {task.status.isRunning ? (
+                            <motion.div
+                              animate={{
+                                rotate: 360,
+                                scale: [1, 1.2, 1],
+                                opacity: [0.8, 1, 0.8]
+                              }}
+                              transition={{
+                                rotate: { duration: 2, repeat: Infinity, ease: 'linear' },
+                                scale: { duration: 1.5, repeat: Infinity },
+                                opacity: { duration: 1.5, repeat: Infinity }
+                              }}
+                            >
+                              <Zap className="w-4.5 h-4.5 fill-current text-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.5)]" />
+                            </motion.div>
+                          ) : (
+                            <Zap
+                              className={cn(
+                                'w-4.5 h-4.5 fill-current',
+                                task.status.enabled ? 'text-yellow-500' : 'text-muted-foreground/40'
+                              )}
+                            />
+                          )}
+
+                          {/* Golden shimmer effect when running */}
+                          {task.status.isRunning && (
+                            <motion.div
+                              className="absolute inset-0 bg-gradient-to-r from-transparent via-yellow-400/20 to-transparent -translate-x-full"
+                              animate={{
+                                translateX: ['100%', '-100%']
+                              }}
+                              transition={{
+                                duration: 1.5,
+                                repeat: Infinity,
+                                ease: 'easeInOut'
+                              }}
+                            />
+                          )}
+                        </Button>
+                      </div>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -651,61 +711,79 @@ const ScheduledTasks: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {heartbeatTasks.length > 0 &&
-                      heartbeatLogs.map((log) => (
-                        <div
-                          key={log.id}
-                          className="flex items-center gap-4 p-4 rounded-xl border bg-muted/5 hover:bg-muted/10 transition-all border-white/5"
-                        >
-                          <div className="flex items-center gap-4 flex-1 min-w-0">
-                            <div
-                              className={cn(
-                                'w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs shrink-0',
-                                'bg-primary/5 text-primary'
-                              )}
-                            >
-                              {log.agentName[0]}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[13px] font-bold truncate">
-                                  {log.agentName}
-                                </span>
-                                <span className="text-[10px] text-muted-foreground/40 font-mono">
-                                  {new Date(log.timestamp).toLocaleString()}
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-muted-foreground/60 truncate">
-                                <span className="font-bold text-primary/60 mr-2 uppercase text-[9px]">
-                                  {log.reason}
-                                </span>
-                                {log.message}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-4 shrink-0">
-                            {log.durationMs !== undefined && (
-                              <div className="text-[10px] font-mono font-bold text-muted-foreground/30 tabular-nums">
-                                {log.durationMs}ms
-                              </div>
+                    {heartbeatLogs.map((log) => (
+                      <div
+                        key={log.id}
+                        className="flex items-center gap-4 p-4 rounded-xl border bg-muted/5 hover:bg-muted/10 transition-all border-white/5"
+                      >
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          <div
+                            className={cn(
+                              'w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs shrink-0',
+                              'bg-primary/5 text-primary'
                             )}
-                            <div
-                              className={cn(
-                                'px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1.5',
-                                log.status === 'success' && 'bg-green-500/10 text-green-500',
-                                log.status === 'skipped' && 'bg-yellow-500/10 text-yellow-500',
-                                log.status === 'failed' && 'bg-red-500/10 text-red-500'
-                              )}
-                            >
-                              {log.status === 'success' && <CheckCircle2 className="w-3 h-3" />}
-                              {log.status === 'skipped' && <HelpCircle className="w-3 h-3" />}
-                              {log.status === 'failed' && <AlertCircle className="w-4 h-4" />}
-                              <span className="uppercase tracking-wider">{log.status}</span>
+                          >
+                            {log.agentName[0]}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[13px] font-bold truncate">
+                                {log.agentName}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground/40 font-mono">
+                                {new Date(log.timestamp).toLocaleString()}
+                              </span>
                             </div>
+                            <p className="text-[11px] text-muted-foreground/60 truncate">
+                              <span className="font-bold text-primary/60 mr-2 uppercase text-[9px]">
+                                {log.reason}
+                              </span>
+                              {log.message}
+                            </p>
                           </div>
                         </div>
-                      ))}
+
+                        <div className="flex items-center gap-4 shrink-0">
+                          {log.durationMs !== undefined && (
+                            <div className="text-[10px] font-mono font-bold text-muted-foreground/30 tabular-nums">
+                              {log.durationMs}ms
+                            </div>
+                          )}
+                          <div
+                            className={cn(
+                              'px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1.5',
+                              log.status === 'success' && 'bg-green-500/10 text-green-500',
+                              log.status === 'skipped' && 'bg-yellow-500/10 text-yellow-500',
+                              log.status === 'failed' && 'bg-red-500/10 text-red-500'
+                            )}
+                          >
+                            {log.status === 'success' && <CheckCircle2 className="w-3 h-3" />}
+                            {log.status === 'skipped' && <HelpCircle className="w-3 h-3" />}
+                            {log.status === 'failed' && <AlertCircle className="w-4 h-4" />}
+                            <span className="uppercase tracking-wider">{log.status}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {heartbeatLogsHasMore && (
+                      <div className="pt-4 flex justify-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleLoadMoreLogs}
+                          disabled={isFetchingLogs}
+                          className="h-10 px-8 rounded-xl border border-dashed border-muted/50 hover:border-primary/50 text-[11px] font-bold uppercase tracking-wider gap-2 transition-all active:scale-95"
+                        >
+                          {isFetchingLogs ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <History className="w-3.5 h-3.5" />
+                          )}
+                          {t('common.load_more')}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

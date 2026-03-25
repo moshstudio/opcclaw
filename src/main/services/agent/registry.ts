@@ -5,6 +5,7 @@ import { ConfigService } from '../config/config-service'
 import { MiniAgentEvent } from './agent-events'
 import { Logger } from '@main/services/common/logger'
 import { newShortId } from '@shared/utils/id'
+import { DEFAULT_MAX_CONCURRENT_RUNS } from '@shared/types/agent'
 
 export interface RegisteredAgent {
   id: string
@@ -99,8 +100,15 @@ export class AgentRegistry {
    */
   private async loadAgent(agentId: string): Promise<void> {
     const configService = ConfigService.getInstance()
-    const agentDir = configService.getAgentDir(agentId)
+    // 1. 如果已有实例，先停掉防止心跳泄漏
+    const existing = this.agents.get(agentId)
+    if (existing) {
+      existing.instance.stopHeartbeat()
+      existing.instance.abort()
+    }
 
+    // 2. 加载配置并创建新实例
+    const agentDir = configService.getAgentDir(agentId)
     const configPath = path.join(agentDir, 'agent.json')
     const promptPath = path.join(agentDir, 'agent.md')
     const toolsPath = path.join(agentDir, 'tools.json')
@@ -142,6 +150,7 @@ export class AgentRegistry {
       memoryDir: path.join(agentDir, 'memory'),
       workspaceDir: agentJson.workspaceDir || path.join(agentDir, 'workspace'),
       usageDir: agentJson.usageDir || path.join(agentDir, 'usage'),
+      heartbeatDir: agentJson.heartbeatDir || path.join(agentDir, 'heartbeat'),
       // 功能开关
       enableMemory: agentJson.enableMemory,
       enableSkills: agentJson.enableSkills,
@@ -154,7 +163,7 @@ export class AgentRegistry {
       maxTurns: agentJson.maxTurns,
       contextTokens: agentJson.contextTokens,
       maxTokens: agentJson.maxTokens,
-      maxConcurrentRuns: agentJson.maxConcurrentRuns,
+      maxConcurrentRuns: DEFAULT_MAX_CONCURRENT_RUNS,
       supportsVision: agentJson.supportsVision ?? defaultModel?.supportsVision,
       // 沙箱配置
       sandbox: agentJson.sandbox,
@@ -162,12 +171,6 @@ export class AgentRegistry {
     }
 
     const instance = new Agent(agentConfig)
-
-    // 如果配置中启用了心跳，则自动启动
-    if (agentConfig.enableHeartbeat) {
-      instance.startHeartbeat()
-    }
-
     this.registerAgent(agentId, instance, agentConfig)
 
     this.logger.info(
@@ -192,6 +195,7 @@ export class AgentRegistry {
         fs.mkdirSync(path.join(agentDir, 'sessions'), { recursive: true })
         fs.mkdirSync(path.join(agentDir, 'memory'), { recursive: true })
         fs.mkdirSync(path.join(agentDir, 'usage'), { recursive: true })
+        fs.mkdirSync(path.join(agentDir, 'heartbeat'), { recursive: true })
         fs.writeFileSync(path.join(agentDir, 'agent.md'), '# 身份\n\n你是一个乐于助人的 AI 助手。')
         fs.writeFileSync(
           path.join(agentDir, 'agent.json'),
@@ -242,6 +246,7 @@ export class AgentRegistry {
     fs.mkdirSync(path.join(agentDir, 'workspace'), { recursive: true })
     fs.mkdirSync(path.join(agentDir, 'sessions'), { recursive: true })
     fs.mkdirSync(path.join(agentDir, 'usage'), { recursive: true })
+    fs.mkdirSync(path.join(agentDir, 'heartbeat'), { recursive: true })
 
     const { systemPrompt, ...agentJson } = config
 

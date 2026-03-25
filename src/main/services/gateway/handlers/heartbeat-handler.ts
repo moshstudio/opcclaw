@@ -70,15 +70,32 @@ export const handleHeartbeatTrigger: Handler = async (params, _client, ctx) => {
     throw new Error(`Agent ${agentId} not found`)
   }
 
-  const result = await agent.triggerHeartbeat()
-
-  // 广播触发事件
+  // 1. 广播开始 (isRunning: true)
   ctx.broadcaster.dispatch({
-    type: 'heartbeat:triggered',
-    agentId
+    type: 'heartbeat:updated',
+    agentId,
+    status: agent.getHeartbeatStatus()
   })
 
-  return { ok: true, payload: { result } }
+  try {
+    const result = await agent.triggerHeartbeat()
+
+    // 2. 广播触发结果
+    ctx.broadcaster.dispatch({
+      type: 'heartbeat:triggered',
+      agentId,
+      status: agent.getHeartbeatStatus()
+    })
+
+    return { ok: true, payload: { result } }
+  } finally {
+    // 3. 广播结束 (isRunning: false)
+    ctx.broadcaster.dispatch({
+      type: 'heartbeat:updated',
+      agentId,
+      status: agent.getHeartbeatStatus()
+    })
+  }
 }
 
 /**
@@ -142,10 +159,43 @@ export const handleHeartbeatGetFile: Handler = async (params, _client, ctx) => {
   return { ok: true, payload: { content } }
 }
 
+interface HeartbeatLogsParams {
+  agentId?: string
+  limit?: number
+  offset?: number
+}
+
 /**
  * 获取心跳任务执行记录
  */
-export const handleHeartbeatLogs: Handler = async (_params, _client, ctx) => {
+export const handleHeartbeatLogs: Handler = async (params, _client, ctx) => {
+  const { agentId, limit: paramLimit, offset: paramOffset } = (params || {}) as HeartbeatLogsParams
+  const limit = paramLimit || 50
+  const offset = paramOffset || 0
+
+  // 1. 如果指定了特定的 Agent
+  if (agentId) {
+    const agent = ctx.registry.getAgent(agentId)
+    if (!agent) {
+      throw new Error(`Agent ${agentId} not found`)
+    }
+
+    const { items, total, hasMore } = await agent.readHeartbeatLogs({
+      limit,
+      offset,
+      reverse: true
+    })
+
+    const logs: HeartbeatLog[] = items.map((log) => ({
+      ...log,
+      agentId: agent.id,
+      agentName: agent.config.name || agent.id
+    }))
+
+    return { ok: true, payload: { logs, total, hasMore } }
+  }
+
+  // 2. 全局日志 (暂维持从内存中聚合最近 100 条的做法，但支持分页切片)
   const agents = ctx.registry.listAgents()
   const allLogs: HeartbeatLog[] = []
 
@@ -161,8 +211,9 @@ export const handleHeartbeatLogs: Handler = async (_params, _client, ctx) => {
   // 按时间倒序排序
   allLogs.sort((a, b) => b.timestamp - a.timestamp)
 
-  // 仅返回最近 200 条
-  const logs = allLogs.slice(0, 200)
+  // 应用分页
+  const logs = allLogs.slice(offset, offset + limit)
+  const hasMore = offset + limit < allLogs.length
 
-  return { ok: true, payload: { logs } }
+  return { ok: true, payload: { logs, total: allLogs.length, hasMore } }
 }

@@ -25,13 +25,25 @@ interface HeartbeatState {
   saveHeartbeatFile: (agentId: string, content: string) => Promise<void>
   deleteHeartbeatFile: (agentId: string) => Promise<void>
   fetchHeartbeatFile: (agentId: string) => Promise<string>
-  fetchHeartbeatLogs: () => Promise<void>
   heartbeatLogs: HeartbeatLog[]
+  heartbeatLogsHasMore: boolean
+  heartbeatLogsLoading: boolean
+  heartbeatLogsTotal: number
+
+  fetchHeartbeatLogs: (options?: {
+    agentId?: string
+    limit?: number
+    offset?: number
+    append?: boolean
+  }) => Promise<void>
 }
 
 export const useHeartbeatStore = create<HeartbeatState>((set, get) => ({
   heartbeatTasks: [],
   heartbeatLogs: [],
+  heartbeatLogsHasMore: false,
+  heartbeatLogsLoading: false,
+  heartbeatLogsTotal: 0,
 
   fetchHeartbeatTasks: async () => {
     try {
@@ -55,7 +67,7 @@ export const useHeartbeatStore = create<HeartbeatState>((set, get) => ({
 
       if (status) {
         if (existingIdx > -1) {
-          // 更新现有任务状态
+          // 更新现有任务状态 (created/updated/triggered)
           tasks[existingIdx] = {
             ...tasks[existingIdx],
             status: { ...tasks[existingIdx].status, ...status }
@@ -66,16 +78,8 @@ export const useHeartbeatStore = create<HeartbeatState>((set, get) => ({
           tasks.push({
             agentId,
             agentName: agent?.config.name || agentId,
-            status: status as HeartbeatTaskStatus
+            status: status
           })
-        }
-      } else if (type === 'heartbeat:triggered') {
-        // 触发事件通常不带 status，可以在这里做一些视觉提示的状态更新
-        if (existingIdx > -1) {
-          tasks[existingIdx] = {
-            ...tasks[existingIdx],
-            status: { ...tasks[existingIdx].status, started: true } // 假设触发即认为是启动/活跃态
-          }
         }
       }
 
@@ -143,12 +147,27 @@ export const useHeartbeatStore = create<HeartbeatState>((set, get) => ({
       return ''
     }
   },
-  fetchHeartbeatLogs: async () => {
+
+  fetchHeartbeatLogs: async (options) => {
+    const { agentId, limit = 50, offset = 0, append = false } = options || {}
+
+    set({ heartbeatLogsLoading: true })
     try {
-      const res = await getGatewayClient().request<{ logs: HeartbeatLog[] }>('heartbeat:logs', {})
-      set({ heartbeatLogs: res.logs || [] })
+      const res = await getGatewayClient().request<{
+        logs: HeartbeatLog[]
+        total: number
+        hasMore: boolean
+      }>('heartbeat:logs', { agentId, limit, offset })
+
+      set((state) => ({
+        heartbeatLogs: append ? [...state.heartbeatLogs, ...(res.logs || [])] : res.logs || [],
+        heartbeatLogsTotal: res.total || 0,
+        heartbeatLogsHasMore: res.hasMore || false,
+        heartbeatLogsLoading: false
+      }))
     } catch (err) {
       console.error('[HeartbeatStore] Fetch logs failed:', err)
+      set({ heartbeatLogsLoading: false })
     }
   }
 }))

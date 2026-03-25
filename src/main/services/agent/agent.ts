@@ -64,7 +64,7 @@ export class Agent {
     this.memoryManager = new MemoryManager(config.memoryDir!)
     this.skillManager = new SkillManager(this.workspaceDir)
     this.usageManager = new UsageManager(config.usageDir!)
-    this.heartbeat = new HeartbeatManager(this.workspaceDir, {
+    this.heartbeat = new HeartbeatManager(this.workspaceDir, config.heartbeatDir!, {
       enabled: config.enableHeartbeat,
       intervalMs: config.heartbeatInterval,
       heartbeatPath: 'HEARTBEAT.md'
@@ -106,6 +106,22 @@ export class Agent {
         // 子代理任务完成后的回调，目前为空
       }
     )
+    // 3. 注册心跳回调 (始终注册，确保手动触发可用)
+    this.heartbeat.onHeartbeat(async (o) => {
+      const sk = resolveSessionKey({ agentId: this.id, sessionKey: 'heartbeat' })
+      try {
+        await this.run(sk, `[Heartbeat Wake] Reason: ${o.reason}\n\nContext:\n${o.content}`)
+        return { text: 'Executed heartbeat task' }
+      } catch (err) {
+        console.error(`[Agent ${this.id}] Heartbeat execution failed:`, err)
+        return null
+      }
+    })
+
+    // 4. 如果配置启用，则启动调度
+    if (config.enableHeartbeat) {
+      this.heartbeat.start()
+    }
   }
 
   /**
@@ -388,6 +404,7 @@ export class Agent {
     return {
       enabled: status.enabled,
       started: status.started,
+      isRunning: status.isRunning,
       lastRunMs: status.lastRunMs || 0,
       nextDueMs: status.nextDueMs,
       intervalMs: status.intervalMs,
@@ -420,16 +437,6 @@ export class Agent {
   }
 
   public startHeartbeat() {
-    this.heartbeat.onHeartbeat(async (o) => {
-      const sk = resolveSessionKey({ agentId: this.id, sessionKey: 'heartbeat' })
-      try {
-        await this.run(sk, `[Heartbeat Wake] Reason: ${o.reason}\n\nContext:\n${o.content}`)
-        return { text: 'Executed heartbeat task' }
-      } catch (err) {
-        console.error(`[Agent ${this.id}] Heartbeat execution failed:`, err)
-        return null
-      }
-    })
     this.heartbeat.start()
   }
 
@@ -451,6 +458,10 @@ export class Agent {
 
   public getHeartbeatLogs() {
     return this.heartbeat.getLogs()
+  }
+
+  public async readHeartbeatLogs(options?: { limit?: number; offset?: number; reverse?: boolean }) {
+    return this.heartbeat.readLogs(options)
   }
 
   private getHeartbeatFilePath(): string {

@@ -344,6 +344,7 @@ export interface ShutdownPayload {
 export interface HeartbeatTaskStatus {
   enabled: boolean
   started: boolean
+  isRunning: boolean
   lastRunMs: number
   nextDueMs: number
   intervalMs: number

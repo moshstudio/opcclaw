@@ -17,6 +17,7 @@ import {
 export type { Usage, StopReason, ThinkingLevel, StreamFunction, Model, Api }
 
 export type MemorySource = 'memory' | 'sessions'
+export const DEFAULT_MAX_CONCURRENT_RUNS = 1 // 锁定并发数为 1
 
 /**
  * 记忆条目 (Shared)
@@ -130,6 +131,7 @@ export interface AgentConfig {
   sessionDir?: string
   memoryDir?: string
   usageDir?: string
+  heartbeatDir?: string
 
   // --- 并发与限制 ---
   maxConcurrentRuns?: number

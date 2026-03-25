@@ -5,5 +5,8 @@
   "token": "访问令牌",
   "network": "网络设置",
   "saving": "正在重启服务...",
-  "save_applied": "保存并应用更改"
+  "save_applied": "保存并应用更改",
+  "refresh_token_title": "重置令牌",
+  "refresh_token_confirm": "确定要重置网关令牌吗？外部应用将需要更新配置。",
+  "external_access_only": "仅用于外部接入"
 }

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Input } from '@renderer/components/ui/input'
 import { CollapsibleSection } from '@renderer/components/ui/collapsible-section'
 import { SettingsSectionProps } from './types'
+import { DEFAULT_MAX_CONCURRENT_RUNS } from '@shared/types/agent'
 
 export const EnvironmentSection: React.FC<SettingsSectionProps> = ({
   formData,
@@ -62,11 +63,9 @@ export const EnvironmentSection: React.FC<SettingsSectionProps> = ({
             </label>
             <Input
               type="number"
-              value={formData.maxConcurrentRuns}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, maxConcurrentRuns: parseInt(e.target.value) }))
-              }
-              className="h-9 bg-muted/20 border-border/40 rounded-xl text-xs"
+              value={DEFAULT_MAX_CONCURRENT_RUNS}
+              disabled
+              className="h-9 bg-muted/20 border-border/40 rounded-xl text-xs opacity-60 cursor-not-allowed"
             />
           </div>
         </div>

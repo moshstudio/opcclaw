@@ -1,6 +1,6 @@
 {
   "title": "AI 模型库",
-  "desc": "管理您的 AI 模型提供商和 API 密钥。",
+  "desc": "管理您的 AI 模型提供商 and API 密钥。",
   "add_model": "添加模型",
   "edit_model": "编辑模型",
   "delete_confirm": "确定要删除此模型配置吗？",

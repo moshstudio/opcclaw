@@ -1,37 +1,18 @@
 /**
  * 会话管理器 (Session Manager)
- *
- * 对应 OpenClaw 源码: src/agents/session-manager.ts
- *
- * 核心设计决策:
- *
- * 1. 为什么用 JSONL 而不是单个 JSON 文件？
- *    - JSONL (JSON Lines) 每行一条消息，追加写入
- *    - 优点: 写入是 O(1)，不需要读取整个文件再写回
- *    - 优点: 文件损坏时只影响单行，容错性更好
- *    - 优点: 可以用 tail -f 实时监控
- *    - OpenClaw 也是这样做的
- *
- * 2. 为什么用内存缓存 + 磁盘持久化（双写）？
- *    - 内存缓存: 避免每次 get() 都读磁盘，性能好
- *    - 磁盘持久化: Agent 重启后能恢复上下文
- *    - 写入时同时更新两者，保持一致性
- *
- * 3. 会话 Key 的安全处理
- *    - 用户可能传入恶意 sessionKey (如 "../../../etc/passwd")
- *    - 必须清理为安全的文件名
  */
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { newUUID, newShortId } from '@shared/utils/id'
 import { acquireSessionWriteLock } from './session-write-lock'
+import { JsonlStore } from '../common/jsonl'
 
 import { type Message, type ContentBlock } from '@shared/types/agent'
 import { normalizeMessage } from '@shared/utils/message'
 export type { Message, ContentBlock }
 
-// ============== Session Entry 结构（对齐 OpenClaw） ==============
+// ============== Session Entry 结构 ==============
 
 export const CURRENT_SESSION_VERSION = 3
 
@@ -65,7 +46,6 @@ export interface CompactionEntry extends SessionEntryBase {
 export type SessionEntry = MessageEntry | CompactionEntry
 export type SessionFileEntry = SessionHeaderEntry | SessionEntry
 
-// 与 OpenClaw 一致的摘要前缀/后缀
 export const COMPACTION_SUMMARY_PREFIX =
   'The conversation history before this point was compacted into the following summary:\n\n<summary>\n'
 export const COMPACTION_SUMMARY_SUFFIX = '\n</summary>'
@@ -95,22 +75,13 @@ export function createCompactionSummaryMessage(
 // ============== 会话管理器 ==============
 
 export class SessionManager {
-  /** 会话文件存储目录 */
   private baseDir: string
-
-  /** Session 缓存（避免重复加载/解析） */
   private states = new Map<string, SessionState>()
 
   constructor(baseDir: string) {
     this.baseDir = baseDir
   }
 
-  /**
-   * 获取会话文件路径
-   *
-   * 安全处理: 使用 encodeURIComponent 编码 sessionKey
-   * 防止路径注入攻击 (如 sessionKey = "../../../etc/passwd")
-   */
   private getPath(sessionKey: string): string {
     const safeId = encodeURIComponent(sessionKey)
     return path.join(this.baseDir, `${safeId}.jsonl`)
@@ -131,18 +102,6 @@ export class SessionManager {
     }
   }
 
-  /**
-   * 加载会话历史
-   *
-   * 优先从内存缓存读取，缓存未命中时从磁盘加载
-   * 这是典型的 Cache-Aside 模式
-   */
-  /**
-   * 加载会话历史
-   *
-   * 优先从内存缓存读取，缓存未命中时从磁盘加载
-   * 支持分页读取（从最近的消息开始往前推）
-   */
   async load(
     sessionKey: string,
     options?: { limit?: number; offset?: number }
@@ -153,9 +112,6 @@ export class SessionManager {
 
     if (options?.limit !== undefined) {
       const offset = options.offset || 0
-      // 这里的逻辑是从末尾（最新消息）开始算
-      // 如果 limit=20, offset=0, 返回最新的 20 条
-      // 如果 limit=20, offset=20, 返回倒数第 21-40 条
       const end = total - offset
       const start = Math.max(0, end - options.limit)
       return {
@@ -168,21 +124,9 @@ export class SessionManager {
     return { messages: allMessages, hasMore: false, total }
   }
 
-  /**
-   * 追加消息
-   *
-   * 双写策略:
-   * 1. 先更新内存缓存（保证后续 get() 能立即读到）
-   * 2. 再追加写入磁盘（保证持久化）
-   *
-   * 为什么用 appendFile 而不是 writeFile？
-   * - appendFile 是追加写入，不需要读取整个文件
-   * - 写入是 O(1)，无论文件多大
-   */
   async append(sessionKey: string, message: Message): Promise<void> {
     const state = await this.ensureState(sessionKey)
-
-    // 确保 Entry 具有唯一 ID (对齐商用版本：Entry ID 用于会话索引)
+    const store = new JsonlStore<SessionFileEntry>(state.filePath)
     const entryId = generateId(state.byId)
 
     const entry: MessageEntry = {
@@ -196,12 +140,20 @@ export class SessionManager {
     state.byId.set(entry.id, entry)
     state.messageIdByRef.set(message, entry.id)
     state.leafId = entry.id
-    await this.persistEntry(state, entry)
+    
+    const lock = await acquireSessionWriteLock({ sessionFile: state.filePath })
+    try {
+      if (!state.flushed) {
+        await store.writeAll([state.header, ...state.entries])
+        state.flushed = true
+      } else {
+        await store.append(entry)
+      }
+    } finally {
+      await lock.release()
+    }
   }
 
-  /**
-   * 追加 compaction 记录（对齐 OpenClaw）
-   */
   async appendCompaction(
     sessionKey: string,
     summary: string,
@@ -209,6 +161,7 @@ export class SessionManager {
     tokensBefore: number
   ): Promise<void> {
     const state = await this.ensureState(sessionKey)
+    const store = new JsonlStore<SessionFileEntry>(state.filePath)
     const entry: CompactionEntry = {
       type: 'compaction',
       id: generateId(state.byId),
@@ -221,14 +174,20 @@ export class SessionManager {
     state.entries.push(entry)
     state.byId.set(entry.id, entry)
     state.leafId = entry.id
-    await this.persistEntry(state, entry)
+    
+    const lock = await acquireSessionWriteLock({ sessionFile: state.filePath })
+    try {
+      if (!state.flushed) {
+        await store.writeAll([state.header, ...state.entries])
+        state.flushed = true
+      } else {
+        await store.append(entry)
+      }
+    } finally {
+      await lock.release()
+    }
   }
 
-  /**
-   * 根据 Message 找到对应的 entryId
-   * - 先走引用映射
-   * - 再按 timestamp + role 兜底
-   */
   resolveMessageEntryId(sessionKey: string, message: Message): string | undefined {
     if (typeof message.content === 'string') {
       const trimmed = message.content.trimStart()
@@ -237,13 +196,11 @@ export class SessionManager {
       }
     }
     const state = this.states.get(sessionKey)
-    if (!state) {
-      return undefined
-    }
+    if (!state) return undefined
+    
     const direct = state.messageIdByRef.get(message)
-    if (direct) {
-      return direct
-    }
+    if (direct) return direct
+
     for (const entry of state.entries) {
       if (entry.type !== 'message') continue
       if (entry.message.timestamp === message.timestamp && entry.message.role === message.role) {
@@ -253,22 +210,21 @@ export class SessionManager {
     return undefined
   }
 
-  /**
-   * 获取会话消息 (仅内存)
-   * 用于快速读取，不触发磁盘 IO
-   */
   async get(sk: string): Promise<Message[]> {
     const state = this.states.get(sk)
     return state ? buildSessionContext(state) : []
   }
 
-  /**
-   * 显式创建一个物理会话文件
-   */
   async create(sk: string): Promise<void> {
     const state = await this.ensureState(sk)
-    // 强制执行一次文件重写以确保持久化
-    await rewriteSessionFile(state, this.baseDir)
+    const store = new JsonlStore<SessionFileEntry>(state.filePath)
+    const lock = await acquireSessionWriteLock({ sessionFile: state.filePath })
+    try {
+      await store.writeAll([state.header, ...state.entries])
+      state.flushed = true
+    } finally {
+      await lock.release()
+    }
   }
 
   async delete(sk: string): Promise<void> {
@@ -278,7 +234,7 @@ export class SessionManager {
       try {
         await fs.unlink(p)
       } catch {
-        // 忽略文件不存在或删除失败的错误
+        // ignore
       }
     }
   }
@@ -289,19 +245,21 @@ export class SessionManager {
     state.byId.clear()
     state.leafId = null
     state.flushed = true
-    await rewriteSessionFile(state, this.baseDir)
+    const store = new JsonlStore<SessionFileEntry>(state.filePath)
+    const lock = await acquireSessionWriteLock({ sessionFile: state.filePath })
+    try {
+      await store.writeAll([state.header])
+    } finally {
+      await lock.release()
+    }
   }
 
-  /**
-   * 列出所有会话
-   * 扫描目录下的 .jsonl 文件
-   */
   async list(): Promise<string[]> {
     try {
       const files = await fs.readdir(this.baseDir)
       return files
-        .filter((f: string) => f.endsWith('.jsonl'))
-        .map((f: string) => {
+        .filter((f) => f.endsWith('.jsonl'))
+        .map((f) => {
           try {
             return decodeURIComponent(f.replace('.jsonl', ''))
           } catch {
@@ -315,47 +273,37 @@ export class SessionManager {
 
   private async ensureState(sessionKey: string): Promise<SessionState> {
     const cached = this.states.get(sessionKey)
-    if (cached) {
-      return cached
-    }
+    if (cached) return cached
 
     const filePath = this.getPath(sessionKey)
     const legacyPath = this.getLegacyPath(sessionKey)
     let chosenPath = filePath
     let state: SessionState | undefined = undefined
 
-    try {
-      const loaded = await loadSessionFile(filePath)
-      if (loaded.header) {
-        state = buildStateFromEntries(filePath, loaded.header, loaded.entries)
-      } else if (loaded.legacyMessages) {
-        state = buildStateFromLegacy(filePath, loaded.legacyMessages)
-        if (state.entries.length > 0) {
-          await rewriteSessionFile(state, this.baseDir)
-          state.flushed = true
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    if (!state) {
+    const tryLoad = async (p: string) => {
       try {
-        const loaded = await loadSessionFile(legacyPath)
+        const loaded = await loadSessionFile(p)
         if (loaded.header) {
-          chosenPath = legacyPath
-          state = buildStateFromEntries(legacyPath, loaded.header, loaded.entries)
+          return buildStateFromEntries(p, loaded.header, loaded.entries)
         } else if (loaded.legacyMessages) {
-          chosenPath = legacyPath
-          state = buildStateFromLegacy(legacyPath, loaded.legacyMessages)
-          if (state.entries.length > 0) {
-            await rewriteSessionFile(state, this.baseDir)
-            state.flushed = true
+          const s = buildStateFromLegacy(p, loaded.legacyMessages)
+          if (s.entries.length > 0) {
+            const store = new JsonlStore<SessionFileEntry>(p)
+            await store.writeAll([s.header, ...s.entries])
+            s.flushed = true
           }
+          return s
         }
       } catch {
-        // ignore
+        return undefined
       }
+      return undefined
+    }
+
+    state = await tryLoad(filePath)
+    if (!state) {
+      state = await tryLoad(legacyPath)
+      if (state) chosenPath = legacyPath
     }
 
     if (!state) {
@@ -374,21 +322,6 @@ export class SessionManager {
     this.states.set(sessionKey, state)
     return state
   }
-
-  private async persistEntry(state: SessionState, entry: SessionEntry): Promise<void> {
-    const lock = await acquireSessionWriteLock({ sessionFile: state.filePath })
-    try {
-      if (!state.flushed) {
-        await rewriteSessionFile(state, this.baseDir, { skipLock: true })
-        state.flushed = true
-        return
-      }
-      await fs.mkdir(this.baseDir, { recursive: true })
-      await fs.appendFile(state.filePath, `${JSON.stringify(entry)}\n`)
-    } finally {
-      await lock.release()
-    }
-  }
 }
 
 type SessionState = {
@@ -401,7 +334,7 @@ type SessionState = {
   flushed: boolean
 }
 
-function generateId(byId: { has(id: string): boolean }): string {
+function generateId(byId: Map<string, any>): string {
   for (let i = 0; i < 100; i++) {
     const id = newShortId(8)
     if (!byId.has(id)) return id
@@ -423,44 +356,21 @@ function isLegacyMessage(value: unknown): value is Message {
   return typeof msg.timestamp === 'number'
 }
 
-function parseJsonlLines(content: string): unknown[] {
-  const entries: unknown[] = []
-  const lines = content.split('\n')
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    try {
-      entries.push(JSON.parse(trimmed))
-    } catch {
-      // 跳过损坏行，尽量保留其他记录
-    }
-  }
-  return entries
-}
-
 function buildSessionContext(state: SessionState): Message[] {
-  if (state.entries.length === 0) {
-    return []
-  }
-
-  if (state.leafId === null) {
-    return []
-  }
+  if (state.entries.length === 0) return []
 
   const leaf = state.leafId ? state.byId.get(state.leafId) : state.entries[state.entries.length - 1]
-  if (!leaf) {
-    return []
-  }
+  if (!leaf) return []
 
-  const path: SessionEntry[] = []
+  const pathEntries: SessionEntry[] = []
   let current: SessionEntry | undefined = leaf
   while (current) {
-    path.unshift(current)
+    pathEntries.unshift(current)
     current = current.parentId ? state.byId.get(current.parentId) : undefined
   }
 
   let compaction: CompactionEntry | null = null
-  for (const entry of path) {
+  for (const entry of pathEntries) {
     if (entry.type === 'compaction') {
       compaction = entry
     }
@@ -475,12 +385,12 @@ function buildSessionContext(state: SessionState): Message[] {
 
   if (compaction) {
     messages.push(createCompactionSummaryMessage(compaction.summary, compaction.timestamp))
-    const compactionIdx = path.findIndex(
-      (entry) => entry.type === 'compaction' && entry.id === compaction.id
+    const compactionIdx = pathEntries.findIndex(
+      (entry) => entry.type === 'compaction' && entry.id === compaction!.id
     )
     let foundFirstKept = false
     for (let i = 0; i < compactionIdx; i++) {
-      const entry = path[i]
+      const entry = pathEntries[i]
       if (entry.id === compaction.firstKeptEntryId) {
         foundFirstKept = true
       }
@@ -488,11 +398,11 @@ function buildSessionContext(state: SessionState): Message[] {
         appendMessage(entry)
       }
     }
-    for (let i = compactionIdx + 1; i < path.length; i++) {
-      appendMessage(path[i])
+    for (let i = compactionIdx + 1; i < pathEntries.length; i++) {
+      appendMessage(pathEntries[i])
     }
   } else {
-    for (const entry of path) {
+    for (const entry of pathEntries) {
       appendMessage(entry)
     }
   }
@@ -503,8 +413,8 @@ function buildSessionContext(state: SessionState): Message[] {
 async function loadSessionFile(
   filePath: string
 ): Promise<{ header?: SessionHeaderEntry; entries: SessionEntry[]; legacyMessages?: Message[] }> {
-  const content = await fs.readFile(filePath, 'utf-8')
-  const rawEntries = parseJsonlLines(content)
+  const store = new JsonlStore<any>(filePath)
+  const rawEntries = await store.readAll()
 
   if (rawEntries.length === 0) {
     return { entries: [] }
@@ -586,9 +496,10 @@ function buildStateFromLegacy(filePath: string, messages: Message[]): SessionSta
   for (const rawMessage of messages) {
     const piMessage = normalizeMessage(rawMessage)
 
+    const entryId = newShortId(8)
     const entry: MessageEntry = {
       type: 'message',
-      id: generateId(byId),
+      id: entryId,
       parentId: leafId,
       timestamp: new Date().toISOString(),
       message: piMessage
@@ -607,25 +518,5 @@ function buildStateFromLegacy(filePath: string, messages: Message[]): SessionSta
     messageIdByRef,
     leafId,
     flushed: false
-  }
-}
-
-async function rewriteSessionFile(
-  state: SessionState,
-  baseDir: string,
-  opts?: { skipLock?: boolean }
-): Promise<void> {
-  await fs.mkdir(baseDir, { recursive: true })
-  const lines = [state.header, ...state.entries].map((entry) => JSON.stringify(entry))
-  const content = `${lines.join('\n')}\n`
-  if (opts?.skipLock) {
-    await fs.writeFile(state.filePath, content)
-    return
-  }
-  const lock = await acquireSessionWriteLock({ sessionFile: state.filePath })
-  try {
-    await fs.writeFile(state.filePath, content)
-  } finally {
-    await lock.release()
   }
 }
