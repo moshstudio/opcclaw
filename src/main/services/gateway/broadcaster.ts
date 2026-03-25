@@ -78,32 +78,45 @@ export class Broadcaster {
    * 业务分发核心入口 (BEM)
    */
   public dispatch(event: GatewayBusinessEvent) {
+    const [ns] = event.type.split(':')
+
+    switch (ns) {
+      case 'agent':
+      case 'session':
+        this.handleLifecycleNamespace(event as any) // 借用生命周期处理器
+        break
+
+      case 'models':
+        if (event.type === 'models:list') {
+          this.emit('models', {
+            type: 'models:list',
+            models: event.models,
+            defaultModelId: event.defaultModelId
+          } as ModelsPayload)
+        }
+        break
+
+      case 'system':
+        this.handleSystemNamespace(event)
+        break
+
+      case 'heartbeat':
+        this.emit('heartbeat', event as HeartbeatEventPayload)
+        break
+
+      case 'config':
+        if (event.type === 'config:saved') {
+          this.emit('agent', event as AgentEventPayload)
+        }
+        break
+    }
+  }
+
+  /**
+   * 处理系统命名空间的事件
+   */
+  private handleSystemNamespace(event: GatewayBusinessEvent) {
     switch (event.type) {
-      case 'session:reset':
-      case 'session:deleted':
-        this.resetSession(event.sessionKey)
-        this.emit('session', event as AgentEventPayload)
-        break
-
-      case 'agent:created':
-      case 'agent:updated':
-      case 'agent:deleted':
-      case 'config:saved':
-        this.emit('agent', event as AgentEventPayload)
-        break
-
-      case 'session:created':
-        this.emit('session', event as AgentEventPayload)
-        break
-
-      case 'models:list':
-        this.emit('models', {
-          type: 'models:list',
-          models: event.models,
-          defaultModelId: event.defaultModelId
-        } as ModelsPayload)
-        break
-
       case 'system:tick':
         this.emit('system:tick', { ts: event.ts } as TickPayload, { dropIfSlow: true })
         break
@@ -114,13 +127,6 @@ export class Broadcaster {
           restartExpectedMs: event.restartExpectedMs
         } as ShutdownPayload)
         break
-
-      case 'heartbeat:created':
-      case 'heartbeat:updated':
-      case 'heartbeat:deleted':
-      case 'heartbeat:triggered':
-        this.emit('heartbeat', event as HeartbeatEventPayload)
-        break
     }
   }
 
@@ -129,64 +135,82 @@ export class Broadcaster {
    * 支持 namespace:action 格式自动化分发。
    */
   public handleAgentEvent(event: MiniAgentEvent) {
-    console.log('handleAgentEvent', event)
-
-    const sessionKey = 'sessionKey' in event ? event.sessionKey : 'global'
     const [ns] = event.type.split(':')
 
-    // 1. 聊天频道特殊逻辑 (管理消息 ID 连)
-    if (ns === 'chat') {
-      const payload = mapEventToChatFields(event)
-      if (payload) {
-        const chunkId = `chunk_${Math.random().toString(36).slice(2, 11)}`
-        const parentId = this.lastChunkIdMap.get(sessionKey)
+    switch (ns) {
+      case 'chat':
+        this.handleChatNamespace(event)
+        break
 
-        // 尝试从事件中提取 agentId，若无则使用缓存
-        const agentId =
-          ('agentId' in event ? event.agentId : undefined) ||
-          this.sessionToAgentMap.get(sessionKey) ||
-          ''
-        const runId = ('runId' in event ? event.runId : '') as string
+      case 'agent':
+      case 'session':
+        this.handleLifecycleNamespace(event)
+        break
 
-        this.chat({
-          agentId,
-          runId,
-          sessionKey,
-          chunkId,
-          parentId,
-          ...payload
-        } as ChatPayload)
-
-        if (payload.state === 'final' || payload.state === 'error') {
-          this.lastChunkIdMap.delete(sessionKey)
-        } else {
-          this.lastChunkIdMap.set(sessionKey, chunkId)
-        }
-      }
-      return
+      default:
+        // 通用转发/兜底 (如 future notification 等频道)
+        this.emit((ns || 'system') as GatewayEvent, event)
     }
+  }
 
-    // 2. 智能体生命周期频道
-    if (ns === 'agent' || ns === 'session') {
-      if (event.type === 'agent:run-start') {
+  /**
+   * 处理聊天命名空间的事件
+   */
+  private handleChatNamespace(event: MiniAgentEvent) {
+    const payload = mapEventToChatFields(event)
+    if (!payload) return
+
+    // chat 命名空间下的事件均持有 sessionKey 和 runId
+    const { sessionKey, runId } = event as Extract<
+      MiniAgentEvent,
+      { sessionKey: string; runId: string }
+    >
+
+    const chunkId = `chunk_${Math.random().toString(36).slice(2, 11)}`
+    const parentId = this.lastChunkIdMap.get(sessionKey)
+
+    // 尝试从事件中提取 agentId，若无则使用缓存
+    const agentId =
+      ('agentId' in event ? event.agentId : this.sessionToAgentMap.get(sessionKey)) || ''
+
+    this.chat({
+      agentId,
+      runId,
+      sessionKey,
+      chunkId,
+      parentId,
+      ...payload
+    } as ChatPayload)
+
+    // 状态机管理：结束或错误时重置 ID 链
+    if (payload.state === 'final' || payload.state === 'error') {
+      this.lastChunkIdMap.delete(sessionKey)
+    } else {
+      this.lastChunkIdMap.set(sessionKey, chunkId)
+    }
+  }
+
+  /**
+   * 处理生命周期命名空间的事件 (agent:* / session:*)
+   */
+  private handleLifecycleNamespace(event: MiniAgentEvent) {
+    const [ns] = event.type.split(':')
+
+    // 1. 特殊业务逻辑处理
+    switch (event.type) {
+      case 'agent:run-start':
         this.sessionToAgentMap.set(event.sessionKey, event.agentId)
-        this.emit('agent', event as AgentEventPayload)
-        return
-      }
+        break
 
-      if (event.type === 'session:reset' || event.type === 'session:deleted') {
-        this.resetSession(event.sessionKey)
+      case 'session:reset':
+      case 'session:deleted':
+        this.lastChunkIdMap.delete(event.sessionKey)
         this.sessionToAgentMap.delete(event.sessionKey)
-        this.emit('session', event as AgentEventPayload)
-        return
-      }
-
-      this.emit(ns as GatewayEvent, event as AgentEventPayload)
-      return
+        break
     }
 
-    // 3. 通用转发/兜底 (如 future notification 等频道)
-    this.emit((ns || 'system') as GatewayEvent, event)
+    // 2. 统一广播
+    this.emit(ns as GatewayEvent, event as AgentEventPayload)
   }
 
   /**
@@ -195,13 +219,6 @@ export class Broadcaster {
   public chat(payload: ChatPayload) {
     const isDelta = payload.state === 'delta' || payload.state === 'thinking'
     this.emit('chat', payload, isDelta ? { dropIfSlow: true } : undefined)
-  }
-
-  /**
-   * 重置会话 ID 链
-   */
-  public resetSession(sessionKey: string) {
-    this.lastChunkIdMap.delete(sessionKey)
   }
 
   private emit(

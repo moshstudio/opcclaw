@@ -25,15 +25,15 @@ export const SkillSection: React.FC<SettingsSectionProps & { agentId: string }> 
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
 
+  const skillParams = useMemo(() => ({ agentId }), [agentId])
   const {
     data: skills,
     loading,
     refresh
   } = useGatewayList<SkillInfo>({
     method: 'skills:list',
-    params: { agentId },
-    autoFetch: isOpen,
-    refreshDeps: [agentId, isOpen]
+    params: skillParams,
+    autoFetch: isOpen
   })
 
   const filteredSkills = useMemo(() => {

@@ -52,7 +52,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   updateAgent: async (id, config) => {
     try {
-      await getGatewayClient().request('agent:update', { id, ...config })
+      await getGatewayClient().request('agent:update', { agentId: id, ...config })
       await get().fetchAgents()
     } catch (err) {
       console.error('[AgentStore] Failed to update agent:', err)
@@ -62,7 +62,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   deleteAgent: async (id) => {
     try {
-      await getGatewayClient().request('agent:delete', { id })
+      await getGatewayClient().request('agent:delete', { agentId: id })
       await get().fetchAgents()
       if (get().activeAgentId === id) {
         get().setActiveAgent(null)

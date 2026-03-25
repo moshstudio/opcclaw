@@ -1,111 +1,91 @@
-import React, { useState, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Copy, Check, ChevronDown, Zap, Cpu } from 'lucide-react'
+import React, { useMemo } from 'react'
+import { motion } from 'framer-motion'
+import { LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons'
+import { Think, ThoughtChain } from '@ant-design/x'
 import {
   Message,
   ChatStatus,
+  ContentBlock,
+  AgentThinkingBlock,
   AgentToolCallBlock,
-  AgentPerformance,
   AgentTextBlock,
-  ToolResultMessage,
-  Usage
+  ToolResultMessage
 } from '@shared/types/agent'
 import { useTranslation } from 'react-i18next'
 import MarkdownRenderer from './MarkdownRenderer'
-import ToolBlock from './ToolBlock'
-import { CHAT_TRANSITION, LOADING_DOT_VARIANTS } from './ChatAnimations'
+import { LOADING_DOT_VARIANTS } from './ChatAnimations'
+import { Image } from 'antd'
+import ToolInteraction from './parts/ToolInteraction'
 
 // ============================================================================
-// 1. Auxiliary Internal Components
+// 1. Sub-Components for Different Block Types
 // ============================================================================
 
-/** 思考过程展示组件 */
-const ThinkingBlock: React.FC<{ text: string; isThinking?: boolean }> = ({ text, isThinking }) => {
-  const [isExpanded, setIsExpanded] = useState(true)
+/** 思考过程块 */
+const ThinkingBlockRenderer: React.FC<{
+  block: AgentThinkingBlock
+  isTyping?: boolean
+  isLastBlock?: boolean
+}> = ({ block, isTyping, isLastBlock }) => {
   const { t } = useTranslation()
-
+  const isCurrentlyThinking = isTyping && isLastBlock
   return (
-    <motion.div
-      layout
-      transition={CHAT_TRANSITION}
-      className="my-1 overflow-hidden rounded-[6px] bg-primary/5 border border-primary/5"
+    <Think
+      title={isCurrentlyThinking ? t('chat.thinking') : t('chat.thought_process')}
+      loading={isCurrentlyThinking}
+      blink={isCurrentlyThinking}
+      defaultExpanded={isCurrentlyThinking}
     >
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-2 flex items-center justify-between text-[11px] font-bold uppercase tracking-widest text-primary/40 hover:text-primary transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <span>{isThinking ? t('chat.thinking') : t('chat.thought_process')}</span>
-        </div>
-        <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.3 }}>
-          <ChevronDown className="w-3.5 h-3.5" />
-        </motion.div>
-      </button>
-
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={CHAT_TRANSITION}
-            className="overflow-hidden"
-          >
-            <div className="px-4 pb-4 text-sm text-muted-foreground/70 border-t border-primary/5 pt-3">
-              <MarkdownRenderer content={text} />
-              {isThinking && (
-                <div className="flex gap-1.5 mt-3">
-                  {[0, 1, 2].map((i) => (
-                    <motion.span
-                      key={i}
-                      animate={{ scale: [1, 1.4, 1], opacity: [0.3, 1, 0.3] }}
-                      transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
-                      className="w-1.5 h-1.5 rounded-full bg-primary/40"
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+      <MarkdownRenderer
+        content={block.thinking}
+        className="text-muted-foreground/70 dark:text-zinc-400 text-[14px] leading-6"
+      />
+    </Think>
   )
 }
 
-/** 消耗与性能统计组件 */
-const UsageStats: React.FC<{ usage?: Usage; performance?: AgentPerformance }> = ({
-  usage,
-  performance
-}) => {
+/** 子代理状态块 */
+const SubagentBlockRenderer: React.FC<{
+  block: Extract<ContentBlock, { type: 'subagent' }>['subagent']
+  index: number
+}> = ({ block, index }) => {
   const { t } = useTranslation()
-  if (!usage && !performance) return null
+  const statusIcon =
+    block.status === 'running' ? (
+      <LoadingOutlined />
+    ) : block.status === 'error' ? (
+      <CloseCircleOutlined />
+    ) : (
+      <CheckCircleOutlined />
+    )
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 opacity-0 group-hover/message:opacity-100 transition-opacity duration-300">
-      {usage && (
-        <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-tight">
-          <Zap size={10} className="text-amber-500" />
-          <span>{t('common.tokens_count', { count: usage.totalTokens || 0 })}</span>
-          <span className="opacity-40">
-            ({usage.input || 0} / {usage.output || 0})
-          </span>
-        </div>
-      )}
-      {performance && (
-        <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-tight">
-          <Cpu size={10} className="text-blue-500" />
-          <span>{((performance.totalDurationMs || 0) / 1000).toFixed(2)}s</span>
-          {performance.throughput && (
-            <span className="opacity-40 ml-1">@{performance.throughput.toFixed(1)} T/S</span>
-          )}
-        </div>
-      )}
-    </div>
+    <ThoughtChain
+      items={[
+        {
+          key: block.runId || index.toString(),
+          title: block.label || t('chat.subagent'),
+          description: block.task,
+          status: block.status === 'running' ? 'loading' : (block.status as any),
+          icon: statusIcon,
+          content: block.summary ? (
+            <div className="p-3 bg-muted/30 rounded-md">
+              <MarkdownRenderer
+                content={block.summary}
+                className="text-muted-foreground/70 dark:text-zinc-400 text-[13px] leading-5"
+              />
+            </div>
+          ) : null,
+          collapsible: true
+        }
+      ]}
+      className="my-1"
+      line={false}
+    />
   )
 }
 
-/** 气泡内部专用的加载指示器 */
+/** 气泡内部加载指示点 */
 const BubbleLoadingIndicator: React.FC = () => (
   <motion.div
     initial={{ opacity: 0 }}
@@ -124,50 +104,13 @@ const BubbleLoadingIndicator: React.FC = () => (
   </motion.div>
 )
 
-/** 工具交互组件 (耦合工具调用与结果) */
-const ToolInteraction: React.FC<{
-  block: AgentToolCallBlock
-  allResults?: Map<string, ToolResultMessage>
-  isExecuting: boolean
-}> = ({ block, allResults, isExecuting }) => {
-  const tid = block.id || (block as { toolCallId?: string }).toolCallId
-  const result = tid ? allResults?.get(tid) : undefined
-
-  const resultText = useMemo(() => {
-    if (!result?.content) return undefined
-
-    let text = ''
-    if (Array.isArray(result.content)) {
-      text = result.content
-        .map((c) => {
-          return typeof c === 'string' ? c : (c as { text?: string }).text || JSON.stringify(c)
-        })
-        .join('\n')
-    } else {
-      text = String(result.content)
-    }
-
-    return text || ' '
-  }, [result])
-
-  if (!tid) return null
-
-  return (
-    <ToolBlock
-      name={block.name}
-      input={block.arguments}
-      result={resultText}
-      status={result ? (result.isError ? 'error' : 'success') : isExecuting ? 'loading' : 'success'}
-    />
-  )
-}
-
+// ============================================================================
+// 2. Main Bubble Component
 // ============================================================================
 
 interface MessageBubbleProps {
   message: Message
   isTyping?: boolean
-  isFinished?: boolean
   status?: ChatStatus
   allToolResults?: Map<string, ToolResultMessage>
 }
@@ -178,132 +121,102 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   status,
   allToolResults
 }) => {
-  const { role, content, timestamp, usage, performance } = message
-  const isAssistant = role === 'assistant'
-  const { t } = useTranslation()
-  const [copied, setCopied] = React.useState(false)
+  const { content, role } = message
+  const isAi = role === 'assistant'
 
-  const fullText = useMemo(() => {
-    if (!isAssistant) return ''
+  /** 数据预处理: 确保 content 为 Array */
+  const blocks = useMemo(() => {
     return Array.isArray(content)
-      ? content
-          .filter((b): b is AgentTextBlock => b.type === 'text')
-          .map((b) => b.text || '')
-          .join('\n\n')
-      : String(content)
-  }, [content, isAssistant])
+      ? (content as ContentBlock[])
+      : ([{ type: 'text', text: String(content) }] as AgentTextBlock[])
+  }, [content])
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(fullText)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
+  /** 渲染内容块主函数 */
+  const renderContentBlocks = () => {
+    type BlockGroup =
+      | { type: 'single'; block: ContentBlock; index: number }
+      | { type: 'tools'; blocks: AgentToolCallBlock[]; startIndex: number }
 
-  // ===========================================
-  // 3. Assistant Message (Unified Bubble)
-  // ===========================================
-  if (isAssistant) {
-    const blocks = Array.isArray(content) ? content : [{ type: 'text', text: String(content) }]
+    // 将连续的 ToolCall 归类为一组，按顺序渲染
+    const groups = blocks.reduce<BlockGroup[]>((acc, block, i) => {
+      if (block.type === 'toolCall') {
+        const last = acc[acc.length - 1]
+        if (last?.type === 'tools') {
+          last.blocks.push(block as AgentToolCallBlock)
+        } else {
+          acc.push({ type: 'tools', blocks: [block as AgentToolCallBlock], startIndex: i })
+        }
+      } else {
+        acc.push({ type: 'single', block, index: i })
+      }
+      return acc
+    }, [])
 
-    return (
-      <div className="group/message flex flex-col w-full items-start gap-4">
-        <div className="group relative w-full max-w-[95%] md:max-w-[90%] rounded-[12px] px-6 py-5 bg-secondary/40 text-foreground border border-secondary/20 backdrop-blur-md shadow-sm">
-          <div className="flex flex-col gap-2">
-            {blocks.map((block, i) => {
-              let element: React.ReactNode = null
-              switch (block.type) {
-                case 'text':
-                  element = (
-                    <div className="prose-container">
-                      <MarkdownRenderer content={block.text} />
-                    </div>
-                  )
-                  break
-                case 'thinking':
-                  element = (
-                    <ThinkingBlock
-                      text={block.thinking}
-                      isThinking={isTyping && i === blocks.length - 1}
-                    />
-                  )
-                  break
-                case 'toolCall':
-                  element = (
-                    <ToolInteraction
-                      block={block}
-                      allResults={allToolResults}
-                      isExecuting={status === 'toolExecuting'}
-                    />
-                  )
-                  break
-              }
+    return groups.map((group, groupIdx) => {
+      if (group.type === 'tools') {
+        return (
+          <ToolInteraction
+            key={`tools-${group.startIndex}`}
+            blocks={group.blocks}
+            allResults={allToolResults}
+            isExecuting={status === 'toolExecuting'}
+          />
+        )
+      }
 
-              return <div key={i}>{element}</div>
-            })}
-
-            {/* 加载指示器：当 AI 正在处理时在气泡底部显示 */}
-            {isTyping && <BubbleLoadingIndicator />}
-          </div>
-
-          <div className="absolute top-3 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={handleCopy}
-              className="p-1.5 rounded-lg bg-background/50 backdrop-blur-sm border border-border/50 hover:bg-background transition-colors text-muted-foreground"
-              title={t('common.copy')}
-            >
-              {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-            </button>
-          </div>
-        </div>
-
-        {/* Meta Information - Only show when finished to avoid jitter during growth */}
-        {!isTyping && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex items-center gap-3 px-2 mt-[-2px] text-muted-foreground/30"
-          >
-            <div className="flex items-center gap-1.5 text-[10px] font-medium tracking-tight">
-              <span>
-                {typeof timestamp === 'number'
-                  ? new Date(timestamp).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })
-                  : timestamp}
-              </span>
+      const { block, index } = group
+      switch (block.type) {
+        case 'text':
+          return (
+            <div key={groupIdx} className="prose-container w-full min-w-0">
+              <MarkdownRenderer content={block.text} />
             </div>
-            <UsageStats usage={usage} performance={performance} />
-          </motion.div>
-        )}
-      </div>
-    )
+          )
+        case 'thinking':
+          return (
+            <ThinkingBlockRenderer
+              key={groupIdx}
+              block={block as AgentThinkingBlock}
+              isTyping={isTyping}
+              isLastBlock={index === blocks.length - 1}
+            />
+          )
+        case 'image':
+          return (
+            <div key={groupIdx} className="my-2 rounded-lg overflow-hidden border border-border/50">
+              <Image src={block.data} alt="message-img" className="max-w-full h-auto" />
+            </div>
+          )
+        case 'subagent':
+          return <SubagentBlockRenderer key={groupIdx} block={block.subagent} index={index} />
+        default:
+          return null
+      }
+    })
   }
 
-  // 如果是 User，依然保持气泡设计
-  const userText = Array.isArray(content)
-    ? content
-        .filter((b): b is AgentTextBlock => b.type === 'text')
-        .map((b) => b.text || '')
-        .join('\n')
-    : String(content)
+  // 气泡容器样式
+  const bubbleClass = isAi
+    ? 'w-full max-w-full rounded-2xl px-5 py-4 bg-zinc-100/40 dark:bg-zinc-800/20 backdrop-blur-md border border-zinc-200/50 dark:border-zinc-700/30 shadow-sm hover:shadow-md transition-all duration-500 ring-1 ring-white/20 dark:ring-white/5'
+    : 'max-w-full rounded-2xl px-5 py-4 bg-primary/10 dark:bg-primary/20 backdrop-blur-sm border border-primary/20 dark:border-primary/30 text-foreground dark:text-zinc-100 shadow-sm hover:shadow-md transition-all duration-500'
 
   return (
-    <div className="flex flex-col gap-2 w-full items-end">
-      <div className="group relative max-w-[90%] md:max-w-[85%] rounded-[12px] px-6 py-5 bg-orange-50 dark:bg-orange-500/10 border border-orange-200/50 dark:border-orange-500/20 text-orange-900 dark:text-orange-100 shadow-sm backdrop-blur-sm">
-        <MarkdownRenderer content={userText} />
-      </div>
-      <div className="flex items-center gap-3 px-2 mt-1 text-muted-foreground/40">
-        <div className="flex items-center gap-1.5 text-[10px] font-medium tracking-tight">
-          <span>
-            {typeof timestamp === 'number'
-              ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              : timestamp}
-          </span>
+    <div
+      className={`flex flex-col gap-2 w-full max-w-4xl mx-auto px-6 min-w-0 ${isAi ? '' : 'items-end'}`}
+    >
+      <div className={bubbleClass}>
+        <div className="flex flex-col gap-2">
+          {renderContentBlocks()}
+          {isAi &&
+            isTyping &&
+            (status === 'streaming' ||
+              status === 'waiting' ||
+              status === 'thinking' ||
+              status === 'retrying') && <BubbleLoadingIndicator />}
         </div>
       </div>
     </div>
   )
 }
 
-export default MessageBubble
+export default React.memo(MessageBubble)

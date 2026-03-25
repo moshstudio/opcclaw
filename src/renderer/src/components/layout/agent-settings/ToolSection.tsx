@@ -27,8 +27,7 @@ export const ToolSection: React.FC<SettingsSectionProps> = ({
     refresh
   } = useGatewayList<Tool>({
     method: 'tools:list',
-    autoFetch: isOpen,
-    refreshDeps: [isOpen]
+    autoFetch: isOpen
   })
 
   const isEnabled = (name: string) => {

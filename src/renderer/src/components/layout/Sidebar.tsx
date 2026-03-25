@@ -157,11 +157,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
           </div>
         )}
         {sortedAgents.map((agent) => {
-          const agentName =
-            agent.id === 'main' &&
-            (!agent.config?.name || agent.config?.name === 'Default Assistant')
-              ? t('common.default_assistant')
-              : agent.config?.name || agent.id
+          const agentName = agent.config?.name || agent.id
 
           return (
             <button

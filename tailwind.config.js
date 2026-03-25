@@ -67,6 +67,30 @@ export default {
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out'
+      },
+      fontFamily: {
+        sans: [
+          'Alibaba PuHui Ti',
+          'AlibabaPuHuiTi',
+          'Alibaba PuHui Ti 2.0',
+          'Alibaba PuHui Ti 3.0',
+          'PingFang SC',
+          'SimHei',
+          '黑体',
+          'Microsoft YaHei',
+          '微软雅黑',
+          'Inter',
+          'Hiragino Sans GB',
+          'Heiti SC',
+          'WenQuanYi Micro Hei',
+          'ui-sans-serif',
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'Segoe UI',
+          'Roboto',
+          'sans-serif'
+        ]
       }
     }
   },

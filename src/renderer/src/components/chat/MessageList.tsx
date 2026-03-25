@@ -1,158 +1,243 @@
-import React, { useMemo } from 'react'
-import { Virtuoso } from 'react-virtuoso'
+import React, { useMemo, useCallback } from 'react'
+import { Bubble, Actions } from '@ant-design/x'
 import { useChatStore } from '@renderer/store/useChatStore'
 import { useAgentStore } from '@renderer/store/useAgentStore'
-import { Message, ChatStatus, ToolResultMessage } from '@shared/types/agent'
-import MessageBubble from './MessageBubble'
+import {
+  Message,
+  ChatStatus,
+  ToolResultMessage,
+  ContentBlock,
+  AgentTextBlock
+} from '@shared/types/agent'
 import { Loader2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { CheckOutlined, CopyOutlined } from '@ant-design/icons'
+import MessageBubble from './MessageBubble'
+import UsageStats from './parts/UsageStats'
+import type { BubbleItemType } from '@ant-design/x'
 
-const MessageList: React.FC<{ messages: Message[]; isTyping: boolean; chatStatus: ChatStatus }> = ({
-  messages,
-  isTyping,
-  chatStatus
-}) => {
+// ============================================================================
+// 1. Helpers
+// ============================================================================
+
+/** 格式化消息时间 */
+const formatTime = (ts: number | string) => {
+  if (typeof ts === 'string') return ts
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+interface MessageListProps {
+  messages: Message[]
+  isTyping: boolean
+  isLoading: boolean
+  chatStatus: ChatStatus
+}
+
+// ============================================================================
+// 2. Main List Component
+// ============================================================================
+
+const MessageList: React.FC<MessageListProps> = ({ messages, isTyping, isLoading, chatStatus }) => {
+  const { t } = useTranslation()
+  const [copiedId, setCopiedId] = React.useState<string | null>(null)
   const { activeAgentId } = useAgentStore()
   const { sessionKeys, hasMoreMap, isLoadingHistory, fetchHistory } = useChatStore()
   const activeSessionKey = activeAgentId ? sessionKeys[activeAgentId] : null
 
-  // 1. 业务逻辑：聚合工具结果并构造渲染数据
-  const { data, allToolResults } = useMemo(() => {
-    const toolResults = new Map(
-      messages
-        .filter((m): m is ToolResultMessage => m.role === 'toolResult')
-        .map((m) => [m.toolCallId!, m])
-    )
+  /** 1. 预处理数据: 提取工具结果并合并 Assistant 消息 */
+  const { mergedMessages, toolResults } = useMemo(() => {
+    const resultsMap = new Map<string, ToolResultMessage>()
+    const merged: Message[] = []
 
-    const list = messages.reduce<Message[]>((acc, m) => {
-      if (m.role === 'toolResult') return acc
-      const last = acc[acc.length - 1]
-      // 聚合连续的 Assistant 消息
-      const shouldMerge =
-        last?.role === 'assistant' && m.role === 'assistant' && last.runId === m.runId
-
-      if (shouldMerge) {
-        acc[acc.length - 1] = {
-          ...last,
-          content: [...last.content, ...m.content],
-          id: m.id || last.id
-        }
-      } else {
-        acc.push(m)
+    messages.forEach((m) => {
+      // 记录工具结果以供 Bubble 内联展示
+      if (m.role === 'toolResult' && m.toolCallId) {
+        resultsMap.set(m.toolCallId, m)
+        return
       }
-      return acc
-    }, [])
 
-    // 插入加载状态占位
-    if (isTyping && list[list.length - 1]?.role !== 'assistant') {
-      list.push({ id: 'pending', role: 'assistant', content: [], timestamp: 0 } as any)
+      // 准备渲染内容
+      const content = Array.isArray(m.content)
+        ? [...m.content]
+        : ([{ type: 'text', text: String(m.content) }] as ContentBlock[])
+
+      const last = merged[merged.length - 1]
+      // 连续助手消息合并策略
+      if (m.role === 'assistant' && last?.role === 'assistant') {
+        last.content = [...last.content, ...content]
+        if (m.usage) last.usage = m.usage
+        if (m.performance) last.performance = m.performance
+      } else {
+        merged.push({ ...m, content })
+      }
+    })
+
+    // 如果正在连接且最后一条不是助手消息，注入一个占位助手消息以展示 Loading 气泡
+    const isPending =
+      isTyping &&
+      (chatStatus === 'waiting' || chatStatus === 'thinking' || chatStatus === 'retrying')
+    const lastMessage = merged[merged.length - 1]
+
+    if (isPending && lastMessage?.role !== 'assistant') {
+      merged.push({
+        id: 'pending',
+        role: 'assistant',
+        content: [],
+        timestamp: lastMessage?.timestamp || 0
+      } as any)
     }
 
-    return { data: list, allToolResults: toolResults }
-  }, [messages, isTyping])
+    return { mergedMessages: merged, toolResults: resultsMap }
+  }, [messages, isTyping, chatStatus])
 
-  // 2. 虚拟列表核心配置与状态
-  const virtuosoRef = React.useRef<any>(null)
-  const [firstItemIndex, setFirstItemIndex] = React.useState(10000)
-  const lastDataLength = React.useRef(data.length)
-  const lastFirstId = React.useRef<string | number | undefined>(data[0]?.id)
-  const atBottomThreshold = 150
-
-  // 3. 计算强制滚动触发器：当用户发送新消息时，无视当前滚动位置，强制跳转到底部
-  const forceScrollTrigger = useMemo(() => {
-    const lastMsg = messages[messages.length - 1]
-    if (lastMsg?.role === 'user') {
-      return lastMsg.id || lastMsg.timestamp
-    }
-    return undefined
-  }, [messages])
-
-  // 4. 处理历史记录加载：通过调整索引保持位置稳定
-  React.useEffect(() => {
-    const currentLength = data.length
-    const currentFirstId = data[0]?.id
-    const prevLength = lastDataLength.current
-    const prevFirstId = lastFirstId.current
-
-    // 检测是否是历史加载 (特征：长度增加且第一个 ID 变化)
-    const isHistoryLoad =
-      prevLength > 0 &&
-      currentLength > prevLength &&
-      currentFirstId !== prevFirstId &&
-      currentFirstId !== undefined &&
-      prevFirstId !== undefined
-
-    if (isHistoryLoad) {
-      const diff = currentLength - prevLength
-      setFirstItemIndex((prev) => prev - diff)
+  /** 2. 复制逻辑封装 */
+  const handleCopy = useCallback((m: Message) => {
+    let fullText = ''
+    if (typeof m.content === 'string') {
+      fullText = m.content
+    } else if (Array.isArray(m.content)) {
+      fullText = m.content
+        .filter((b): b is AgentTextBlock => b.type === 'text')
+        .map((b) => b.text || '')
+        .join('\n\n')
     }
 
-    lastDataLength.current = currentLength
-    lastFirstId.current = currentFirstId
-  }, [data])
-
-  // 4. 处理强制跳转：用户发送新消息时无视位置，强制到底
-  React.useEffect(() => {
-    if (forceScrollTrigger !== undefined && virtuosoRef.current) {
-      virtuosoRef.current.scrollToIndex({
-        index: firstItemIndex + data.length - 1,
-        align: 'end',
-        behavior: 'auto'
-      })
+    if (fullText) {
+      navigator.clipboard.writeText(fullText)
+      setCopiedId(m.id || null)
+      setTimeout(() => setCopiedId(null), 2000)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forceScrollTrigger])
+  }, [])
 
-  return (
-    <div className="flex-1 relative bg-background/30 overflow-hidden">
-      <Virtuoso
-        ref={virtuosoRef}
-        data={data}
-        firstItemIndex={firstItemIndex}
-        // 关键：开启底对齐模式。当列表短于容器时，项会位于视口底部
-        alignToBottom
-        // 初始位置：新打开会话时定位到底部
-        initialTopMostItemIndex={data.length > 0 ? firstItemIndex + data.length - 1 : 10000}
-        atBottomThreshold={atBottomThreshold}
-        // 完全利用内置逻辑：如果已经在底部，则新内容加入时自动跟随。
-        // 不再需要外部状态干预，避免抖动。
-        followOutput="auto"
-        increaseViewportBy={500}
-        startReached={() => {
-          if (
-            activeAgentId &&
-            activeSessionKey &&
-            hasMoreMap[activeSessionKey] &&
-            !isLoadingHistory[activeSessionKey]
-          ) {
-            fetchHistory(activeAgentId, activeSessionKey, 'more')
-          }
-        }}
-        components={{
-          Header: () => (
-            <div className="flex justify-center py-4">
-              {activeSessionKey && isLoadingHistory[activeSessionKey] && (
-                <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>加载中...</span>
-                </div>
+  /** 3. 构造基础列表项 (BubbleItemType) */
+  const baseItems = useMemo<BubbleItemType[]>(() => {
+    return mergedMessages.map((m) => {
+      const isAi = m.role === 'assistant'
+      const isLastAi =
+        isAi &&
+        mergedMessages.indexOf(m) === mergedMessages.map((msg) => msg.role).lastIndexOf('assistant')
+
+      return {
+        key: m.id || `${m.role}-${m.timestamp}`,
+        role: isAi ? 'ai' : 'user',
+        content: m.id || ' ', // 占位符，实际渲染由 contentRender 接管
+        footer: (
+          <div className="aaa flex items-center gap-3 px-6 mt-0 max-w-4xl mx-auto w-full">
+            <div
+              className={`bbb flex-1 flex items-center gap-3 ${isAi ? 'justify-start' : 'justify-end'}`}
+            >
+              <span className="text-[10px] text-muted-foreground/30 font-medium">
+                {formatTime(m.timestamp)}
+              </span>
+              {isAi && <UsageStats usage={m.usage} performance={m.performance} />}
+              {isAi && (
+                <Actions
+                  items={[
+                    {
+                      key: 'copy',
+                      icon:
+                        copiedId === m.id ? (
+                          <CheckOutlined style={{ fontSize: 10 }} className="text-green-500/60" />
+                        ) : (
+                          <CopyOutlined
+                            style={{ fontSize: 10 }}
+                            className="text-muted-foreground/40"
+                          />
+                        ),
+                      label: copiedId === m.id ? t('common.copied') : t('common.copy'),
+                      onItemClick: () => handleCopy(m)
+                    }
+                  ]}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-muted-foreground/30 text-[9px] font-bold uppercase tracking-tight"
+                />
               )}
             </div>
-          ),
-          Footer: () => <div className="h-10" />
-        }}
-        itemContent={(index, msg) => (
-          <div className="max-w-4xl mx-auto w-full px-4 mb-8 overflow-hidden">
-            <MessageBubble
-              message={msg}
-              allToolResults={allToolResults}
-              isTyping={isTyping && index === firstItemIndex + data.length - 1}
-              status={chatStatus}
-            />
           </div>
-        )}
-      />
+        ),
+        contentRender: () => (
+          <MessageBubble
+            message={m}
+            allToolResults={toolResults}
+            isTyping={isLastAi && isTyping}
+            status={isLastAi ? chatStatus : undefined}
+          />
+        )
+      }
+    })
+  }, [mergedMessages, toolResults, copiedId, isTyping, chatStatus, t, handleCopy])
+
+  /** 4. 状态修补: 处理 Pending 及错误状态 */
+  const displayItems = useMemo<BubbleItemType[]>(() => {
+    const results = [...baseItems]
+
+    // 处理全局出错
+    if (!isTyping && chatStatus === 'error' && results.length > 0) {
+      const lastAiIdx = results.map((r) => r.role).lastIndexOf('ai')
+      if (lastAiIdx !== -1) results[lastAiIdx].status = 'error'
+    }
+
+    return results
+  }, [baseItems, isTyping, chatStatus])
+
+  /** 5. 渲染配置及回调 */
+  const roles = useMemo(
+    () => ({
+      ai: {
+        placement: 'start' as const,
+        variant: 'borderless' as const,
+        style: { maxWidth: '100%', width: '100%' },
+        className: 'group',
+        footerPlacement: 'outer-start' as const
+      },
+      user: {
+        placement: 'end' as const,
+        variant: 'borderless' as const,
+        style: { maxWidth: '100%' },
+        className: 'group',
+        footerPlacement: 'outer-end' as const
+      }
+    }),
+    []
+  )
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const { scrollTop } = e.currentTarget
+      if (
+        scrollTop < 50 &&
+        activeAgentId &&
+        activeSessionKey &&
+        hasMoreMap[activeSessionKey] &&
+        !isLoadingHistory[activeSessionKey]
+      ) {
+        fetchHistory(activeAgentId, activeSessionKey, 'more')
+      }
+    },
+    [activeAgentId, activeSessionKey, hasMoreMap, isLoadingHistory, fetchHistory]
+  )
+
+  return (
+    <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-transparent relative">
+      <div className="absolute inset-0 bg-gradient-to-b from-background/10 via-background/60 to-background/5 pointer-events-none" />
+
+      {isLoading && (
+        <div className="relative z-10 flex items-center justify-center py-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 gap-2 shrink-0 animate-in fade-in duration-700">
+          <Loader2 className="w-3 h-3 animate-spin text-primary/50" />
+          <span>{t('common.loading_history')}</span>
+        </div>
+      )}
+
+      <div className="flex-1 overflow-hidden relative z-0">
+        <Bubble.List
+          items={displayItems}
+          role={roles}
+          autoScroll
+          onScroll={handleScroll}
+          className="p-0 w-full h-full scroll-smooth custom-scrollbar"
+        />
+      </div>
     </div>
   )
 }
 
-export default MessageList
+export default React.memo(MessageList)

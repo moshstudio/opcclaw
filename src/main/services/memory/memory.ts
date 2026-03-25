@@ -243,7 +243,19 @@ export class MemoryManager {
     await this.load()
 
     const queryTerms = extractQueryTerms(query)
-    if (queryTerms.length === 0) return []
+
+    // 如果没有检索词（包括空字符串），则返回最近的记忆
+    if (queryTerms.length === 0) {
+      return this.entries
+        .slice()
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, limit)
+        .map((entry) => ({
+          entry,
+          score: 1.0,
+          snippet: entry.content.slice(0, 200)
+        }))
+    }
 
     const scored: MemorySearchResult[] = []
 
@@ -307,6 +319,19 @@ export class MemoryManager {
   async getAll(): Promise<MemoryEntry[]> {
     await this.load()
     return this.entries
+  }
+
+  /**
+   * 删除记忆
+   */
+  async delete(id: string): Promise<boolean> {
+    await this.load()
+    const index = this.entries.findIndex((e) => e.id === id)
+    if (index === -1) return false
+
+    this.entries.splice(index, 1)
+    await this.save()
+    return true
   }
 
   /**

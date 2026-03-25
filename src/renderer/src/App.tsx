@@ -12,6 +12,7 @@ import ScheduledTasks from './components/tasks/ScheduledTasks'
 
 import { Toaster } from 'sonner'
 import { ConfirmProvider } from './components/ui/confirm-dialog'
+import { ConfigProvider } from 'antd'
 
 function AppContent(): React.JSX.Element {
   const location = useLocation()
@@ -41,61 +42,70 @@ function AppContent(): React.JSX.Element {
   }, [appSettings.language, i18n])
 
   return (
-    <ThemeProvider>
-      <ConfirmProvider>
-        <OnboardingOverlay />
-        <AnimatePresence mode="wait">
-          <Routes location={location} key={location.pathname}>
-            <Route
-              path="/"
-              element={
-                <motion.div
-                  className="w-full h-full"
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  variants={pageVariants}
-                  transition={pageTransition}
-                >
-                  <MainLayout />
-                </motion.div>
-              }
-            />
-            <Route
-              path="/tasks"
-              element={
-                <motion.div
-                  className="w-full h-full"
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  variants={pageVariants}
-                  transition={pageTransition}
-                >
-                  <ScheduledTasks />
-                </motion.div>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <motion.div
-                  className="w-full h-full"
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  variants={pageVariants}
-                  transition={pageTransition}
-                >
-                  <SettingsPage />
-                </motion.div>
-              }
-            />
-          </Routes>
-        </AnimatePresence>
-        <Toaster position="top-center" richColors closeButton />
-      </ConfirmProvider>
-    </ThemeProvider>
+    <ConfigProvider
+      theme={{
+        token: {
+          fontFamily:
+            "'Alibaba PuHui Ti', 'AlibabaPuHuiTi', 'Alibaba PuHui Ti 2.0', 'Alibaba PuHui Ti 3.0', 'PingFang SC', 'SimHei', '黑体', 'Microsoft YaHei', '微软雅黑', 'Inter', 'Hiragino Sans GB', 'Heiti SC', 'WenQuanYi Micro Hei', sans-serif"
+        }
+      }}
+    >
+      <ThemeProvider>
+        <ConfirmProvider>
+          <OnboardingOverlay />
+          <AnimatePresence mode="wait">
+            <Routes location={location} key={location.pathname}>
+              <Route
+                path="/"
+                element={
+                  <motion.div
+                    className="w-full h-full"
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <MainLayout />
+                  </motion.div>
+                }
+              />
+              <Route
+                path="/tasks"
+                element={
+                  <motion.div
+                    className="w-full h-full"
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <ScheduledTasks />
+                  </motion.div>
+                }
+              />
+              <Route
+                path="/settings"
+                element={
+                  <motion.div
+                    className="w-full h-full"
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                  >
+                    <SettingsPage />
+                  </motion.div>
+                }
+              />
+            </Routes>
+          </AnimatePresence>
+          <Toaster position="top-center" richColors closeButton />
+        </ConfirmProvider>
+      </ThemeProvider>
+    </ConfigProvider>
   )
 }
 

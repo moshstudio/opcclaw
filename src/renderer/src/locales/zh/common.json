@@ -55,8 +55,8 @@
   "history": "历史记录",
   "sessions": "会话列表",
   "loading": "正在加载...",
-  "default_session": "默认会话",
-  "default_assistant": "默认智能体",
+
+
   "default": "默认",
   "base_config": "基础设置",
   "model_config": "模型参数",

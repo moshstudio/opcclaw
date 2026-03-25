@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Settings2, Save, Loader2, Bot, Trash2, Maximize2, Minimize2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -18,6 +18,7 @@ import { useConfirm } from '@renderer/hooks/use-confirm'
 import { getGatewayClient } from '@renderer/services/gateway-client'
 import { UsageStats } from '@shared/types/usage'
 import { Activity, Zap, TrendingUp, Clock, AlertTriangle } from 'lucide-react'
+import { cn } from '@renderer/lib/utils'
 
 interface SettingsPanelProps {
   visible: boolean
@@ -68,10 +69,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
     security: false
   })
 
+  const [initialFormData, setInitialFormData] = useState<AgentSettingsFormData | null>(null)
+
   useEffect(() => {
     if (visible && editingAgent) {
       const config = editingAgent.config || {}
-      setFormData({
+      const initialData: AgentSettingsFormData = {
         name: config.name || '',
         systemPrompt: config.systemPrompt || '',
         modelSelectId: 'default',
@@ -91,9 +94,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
         sandboxAllowWrite: config.sandbox?.allowWrite ?? true,
         isPinned: config.isPinned ?? editingAgent.id === 'main',
         toolPolicy: config.toolPolicy || { allow: [], deny: [] }
-      })
+      }
+      setFormData(initialData)
+      setInitialFormData(initialData)
     }
   }, [visible, editingAgent])
+
+  const isChanged = useMemo(() => {
+    if (!initialFormData) return false
+    return JSON.stringify(initialFormData) !== JSON.stringify(formData)
+  }, [formData, initialFormData])
 
   const fetchUsageStats = useCallback(async () => {
     if (!activeAgentId) return
@@ -124,7 +134,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
   }
 
   const handleSave = async () => {
-    if (!activeAgentId || !formData.name.trim()) return
+    if (!activeAgentId || !formData.name.trim() || !isChanged) return
 
     setLoading(true)
     try {
@@ -162,6 +172,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
       }
 
       await updateAgent(activeAgentId, updates)
+      setInitialFormData({ ...formData })
     } catch (err) {
       console.error('Failed to update agent:', err)
     } finally {
@@ -213,11 +224,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                     {t('common.agent_settings_title')}
                   </h3>
                   <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-tighter truncate max-w-[150px]">
-                    {editingAgent?.id === 'main' &&
-                    (!editingAgent?.config.name ||
-                      editingAgent?.config.name === 'Default Assistant')
-                      ? t('common.default_assistant')
-                      : editingAgent?.config.name || 'Settings'}
+                    {editingAgent?.config.name || 'Settings'}
                   </span>
                 </div>
               </div>
@@ -472,8 +479,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
               <div className="p-6 border-t bg-background/80 backdrop-blur-md sticky bottom-0 z-10 flex flex-col gap-3">
                 <Button
                   onClick={handleSave}
-                  disabled={loading}
-                  className="w-full h-11 font-black shadow-xl shadow-primary/20 rounded-2xl gap-2 transition-all active:scale-[0.98] group relative overflow-hidden"
+                  disabled={loading || !isChanged}
+                  className={cn(
+                    'w-full h-11 font-black rounded-2xl gap-2 transition-all active:scale-[0.98] group relative overflow-hidden',
+                    isChanged ? 'shadow-xl shadow-primary/20 bg-primary' : 'bg-primary/50 text-foreground/40 shadow-none cursor-default'
+                  )}
                 >
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out" />
                   {loading ? (

@@ -96,6 +96,8 @@ export class AgentPromptBuilder {
     if (this.options.sandbox?.enabled) {
       lines.push(...this.buildSandboxSection())
     }
+    console.log(lines);
+
 
     return lines.filter((l) => l !== undefined).join('\n')
   }

@@ -192,15 +192,12 @@ export class AgentRegistry {
         fs.mkdirSync(path.join(agentDir, 'sessions'), { recursive: true })
         fs.mkdirSync(path.join(agentDir, 'memory'), { recursive: true })
         fs.mkdirSync(path.join(agentDir, 'usage'), { recursive: true })
-        fs.writeFileSync(
-          path.join(agentDir, 'agent.md'),
-          '# Identity\n\nYou are a helpful AI assistant.'
-        )
+        fs.writeFileSync(path.join(agentDir, 'agent.md'), '# 身份\n\n你是一个乐于助人的 AI 助手。')
         fs.writeFileSync(
           path.join(agentDir, 'agent.json'),
           JSON.stringify(
             {
-              name: 'Default Assistant'
+              name: '默认智能体'
             },
             null,
             2

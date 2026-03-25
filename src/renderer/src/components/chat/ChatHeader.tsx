@@ -72,10 +72,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
       <div className="flex items-center gap-4">
         <div className="flex flex-col text-left relative" ref={dropdownRef}>
           <h3 className="text-sm font-bold uppercase tracking-tight">
-            {activeAgent?.id === 'main' &&
-            (!activeAgent?.config?.name || activeAgent?.config?.name === 'Default Assistant')
-              ? t('common.default_assistant')
-              : activeAgent?.config?.name || activeAgentId || 'OpcClaw'}
+            {activeAgent?.config?.name || activeAgentId || 'OpcClaw'}
           </h3>
           <button
             onClick={() => setIsSessionsOpen(!isSessionsOpen)}

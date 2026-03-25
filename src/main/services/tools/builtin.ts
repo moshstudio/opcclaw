@@ -521,12 +521,16 @@ async function runRipgrep(params: {
 export const memorySearchTool: Tool<{ query: string; limit?: number }> = {
   name: 'memory_search',
   category: 'memory',
-  description: '检索长期记忆索引，返回相关记忆摘要列表',
+  description:
+    '检索长期记忆索引，返回相关记忆摘要列表。如果 query 为空字符串 ""，则按时间倒序列出最近的所有记忆。',
   inputSchema: {
     type: 'object',
     properties: {
-      query: { type: 'string', description: '检索关键词或问题' },
-      limit: { type: 'number', description: '返回数量，默认 5' }
+      query: {
+        type: 'string',
+        description: '检索关键词或问题。传空字符串 "" 则返回最近记忆列表。'
+      },
+      limit: { type: 'number', description: '返回数量上限，默认 5' }
     },
     required: ['query']
   },
@@ -540,11 +544,13 @@ export const memorySearchTool: Tool<{ query: string; limit?: number }> = {
     if (results.length === 0) {
       return '未找到相关记忆'
     }
+
+    const header = input.query === '' ? '### 最近记忆列表\n' : `### 检索结果: "${input.query}"\n`
     const lines = results.map(
       (r, i) =>
         `${i + 1}. [${r.entry.id}] score=${r.score.toFixed(2)} source=${r.entry.source}\n   ${r.snippet}`
     )
-    return lines.join('\n')
+    return header + lines.join('\n')
   }
 }
 
@@ -613,6 +619,30 @@ export const memorySaveTool: Tool<{
     }
     const id = await memory.add(input.content, 'memory')
     return `已保存到长期记忆: ${id}`
+  }
+}
+
+/**
+ * 记忆删除工具
+ */
+export const memoryDeleteTool: Tool<{ id: string }> = {
+  name: 'memory_delete',
+  category: 'memory',
+  description: '按 ID 删除一条长期记忆。仅当记忆已过时或错误时使用。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: '要删除的记忆 ID' }
+    },
+    required: ['id']
+  },
+  async execute(input, ctx: ToolContext) {
+    const memory = ctx.memory
+    if (!memory) {
+      return '记忆系统未启用'
+    }
+    const success = await memory.delete(input.id)
+    return success ? `已成功删除记忆: ${input.id}` : `错误: 未找到 ID 为 ${input.id} 的记忆`
   }
 }
 
@@ -685,5 +715,6 @@ export const builtinTools: Tool[] = [
   memorySearchTool,
   memoryGetTool,
   memorySaveTool,
+  memoryDeleteTool,
   sessionsSpawnTool
 ]

@@ -51,8 +51,8 @@
   "history": "History",
   "sessions": "Sessions",
   "loading": "Loading...",
-  "default_session": "Default Session",
-  "default_assistant": "Default Assistant",
+
+
   "default": "Default",
   "base_config": "Basic Settings",
   "model_config": "AI Model & Params",

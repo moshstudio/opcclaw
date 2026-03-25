@@ -171,7 +171,7 @@ const ScheduledTasks: React.FC = () => {
   }
 
   return (
-    <div className="flex-1 h-screen overflow-hidden bg-background flex flex-col relative font-sans text-foreground select-none">
+    <div className="flex-1 h-screen overflow-hidden bg-background flex flex-col relative text-foreground select-none">
       {/* Header - Height Aligned with Sidebar (64px) */}
       <div className="h-[64px] px-8 flex items-center justify-between border-b bg-background/50 backdrop-blur-md z-10 shrink-0">
         <div className="flex items-center gap-4">

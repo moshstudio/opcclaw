@@ -95,8 +95,6 @@ export const applyGatewayEvent = (
 
     // 3. 消息流与流式渲染 (Streaming & Content)
     case 'chat': {
-      console.log((payload as ChatPayload).state, payload)
-
       if (isChatPayload(payload) && payload.sessionKey) {
         const sk = payload.sessionKey
         // 构建单次渲染的基准 Patch

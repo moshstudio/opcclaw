@@ -51,6 +51,7 @@ export interface ToolContext {
     search: (query: string, limit?: number) => Promise<MemorySearchResult[]>
     getById: (id: string) => Promise<MemoryEntry | null>
     add: (content: string, source?: MemorySource, filePath?: string) => Promise<string>
+    delete: (id: string) => Promise<boolean>
   }
   onMemorySearch?: (results: MemorySearchResult[]) => void
   spawnSubagent?: (params: {
@@ -168,9 +169,9 @@ export interface SubagentInfo {
 }
 
 /** 分辨率联合类型的内容块定义 */
-export type AgentTextBlock = TextContent & { type: 'text' }
-export type AgentThinkingBlock = ThinkingContent & { type: 'thinking'; thinking_signature?: string }
-export type AgentToolCallBlock = ToolCall & { type: 'toolCall' }
+export type AgentTextBlock = TextContent
+export type AgentThinkingBlock = ThinkingContent
+export type AgentToolCallBlock = ToolCall
 export type AgentToolResultBlock = {
   type: 'toolResult'
   toolCallId: string

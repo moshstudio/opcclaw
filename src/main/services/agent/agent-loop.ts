@@ -19,7 +19,7 @@ import { createMiniAgentStream, type MiniAgentEvent, type MiniAgentResult } from
 // 导入解耦后的子模块
 import { MetricsTracker } from './loop/metrics'
 import { prepareContext } from './loop/context-handler'
-import { executeLlmCall } from './loop/llm-handler'
+import { executeLlmCall, LlmResult } from './loop/llm-handler'
 import { executeToolCalls } from './loop/tool-handler'
 
 // ============== 类型定义 ==============
@@ -138,6 +138,7 @@ export function runAgentLoop(
           if (turns >= maxTurns || abortSignal.aborted) break outerLoop
 
           turns++
+          metrics.startTurn()
           stream.push({ type: 'agent:turn-start', runId, sessionKey, turn: turns })
 
           // 处理待响应消息（Steering 或 Follow-up）
@@ -181,7 +182,7 @@ export function runAgentLoop(
           }
 
           // 2. LLM 流式调用
-          let llmOutput
+          let llmOutput: LlmResult
           try {
             llmOutput = await executeLlmCall(
               {
@@ -226,7 +227,7 @@ export function runAgentLoop(
 
           // 3. 保存 Assistant 消息
           const assistantMsg = llmOutput.assistantMessage as Message
-          assistantMsg.performance = metrics.getPerformance()
+          assistantMsg.performance = metrics.getTurnPerformance(llmOutput.usage?.output)
           if (llmOutput.usage) assistantMsg.usage = llmOutput.usage
           await appendMessage(sessionKey, assistantMsg)
           currentMessages.push(assistantMsg)
@@ -238,7 +239,8 @@ export function runAgentLoop(
               sessionKey,
               message: assistantMsg,
               text: llmOutput.turnText,
-              usage: llmOutput.usage
+              usage: llmOutput.usage,
+              performance: assistantMsg.performance
             })
           }
 
@@ -326,7 +328,8 @@ export function runAgentLoop(
         turns,
         totalToolCalls: metrics.totalToolCalls,
         messages: currentMessages,
-        usage: metrics.accumulatedUsage
+        usage: metrics.accumulatedUsage,
+        performance: metrics.getPerformance()
       })
     }
   })()

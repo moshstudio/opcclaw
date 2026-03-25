@@ -59,8 +59,8 @@
     "history": "历史记录",
     "sessions": "会话列表",
     "loading": "正在加载...",
-    "default_session": "默认会话",
-    "default_assistant": "默认智能体",
+
+
     "default": "默认",
     "base_config": "基础设置",
     "model_config": "模型参数",
@@ -190,7 +190,8 @@
     "execution_logs": "执行记录",
     "recent_runs": "最近执行",
     "no_logs": "暂无执行记录",
-    "refresh": "刷新"
+    "refresh": "刷新",
+    "copied": "已复制"
   },
   "chat": {
     "thinking": "正在思考...",

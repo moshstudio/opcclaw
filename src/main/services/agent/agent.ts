@@ -9,6 +9,8 @@ import { SkillManager } from '@main/services/skills/skills'
 import { HeartbeatManager } from '@main/services/heartbeat/heartbeat'
 import { resolveSessionKey } from '@main/services/session/session-key'
 import { runAgentLoop } from './agent-loop'
+import { ContextLoader } from '@main/services/context/index'
+
 import { UsageManager } from '@main/services/usage/usage-manager'
 import { ConfigService } from '../config/config-service'
 import type { Model, Api, KnownProvider } from '@mariozechner/pi-ai'
@@ -75,6 +77,7 @@ export class Agent {
       baseSystemPrompt: config.systemPrompt || 'You are a helpful assistant.',
       enableMemory: config.enableMemory,
       skills: this.skillManager,
+      context: config.enableContext ? new ContextLoader(this.workspaceDir) : undefined,
       sandbox: config.sandbox
     })
 
@@ -246,18 +249,6 @@ export class Agent {
     const signal = this.stateManager.startRun(sk, runId)
 
     try {
-      // 1. 准备初始消息与上下文压缩
-      const history = await this.sessionManager.load(sk)
-      const currentMessages = [...history.messages]
-      let initialUserMessage: Message | undefined
-
-      if (userInput) {
-        initialUserMessage = { role: 'user', content: userInput, timestamp: Date.now() }
-        // 立即持久化初始消息，确保哪怕运行失败也能保留
-        await this.sessionManager.append(sk, initialUserMessage)
-        currentMessages.push(initialUserMessage)
-      }
-
       const { modelDef, apiKey: resolvedApiKey } = this.resolveModelDef()
 
       if (!modelDef) {
@@ -265,12 +256,14 @@ export class Agent {
           `No model defined for agent ${this.id}. Please configure a model in settings.`
         )
       }
-
-      // 2. 实时同步更新 contextManager 的配置，确保压缩总结可用
       const finalApiKey = this.config.apiKey || resolvedApiKey
       this.contextManager.updateConfig({ modelDef, apiKey: finalApiKey })
 
-      // 3. 发送运行开始事件
+      const history = await this.sessionManager.load(sk)
+      const currentMessages = [...history.messages]
+      const userMessage: Message = { role: 'user', content: userInput, timestamp: Date.now() }
+      currentMessages.push(userMessage)
+
       this.emit({
         type: 'agent:run-start',
         runId,
@@ -279,15 +272,13 @@ export class Agent {
         model: modelDef.id
       })
 
-      // 4. 发送初始用户消息事件 (如有)
-      if (initialUserMessage) {
-        this.emit({
-          type: 'chat:userMessage',
-          runId,
-          sessionKey: sk,
-          message: initialUserMessage
-        })
-      }
+      this.sessionManager.append(sessionKey, userMessage)
+      this.emit({
+        type: 'chat:userMessage',
+        runId,
+        sessionKey: sk,
+        message: userMessage
+      })
 
       // 5. 构建 params 对接 runAgentLoop
       const stream = runAgentLoop({
@@ -339,13 +330,19 @@ export class Agent {
       let toolCalls = 0
 
       for await (const event of stream) {
-        if (event.type === 'agent:turn-start') turns++
-        if (event.type === 'chat:toolCall') toolCalls++
-
-        if (event.type === 'chat:final' || event.type === 'agent:run-error') {
-          lastResult = event
-        }
         this.emit(event)
+        switch (event.type) {
+          case 'agent:turn-start':
+            turns++
+            break
+          case 'chat:toolCall':
+            toolCalls++
+            break
+          case 'chat:final':
+          case 'agent:run-error':
+            lastResult = event
+            break
+        }
       }
 
       if (!lastResult || lastResult.type === 'agent:run-error') {
