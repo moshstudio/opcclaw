@@ -102,7 +102,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
       const res = (await getGatewayClient().request('usage:stats', {
         agentId: activeAgentId
       })) as { stats: UsageStats }
-      
+
       if (res && res.stats) {
         setUsageStats(res.stats)
       }
@@ -181,8 +181,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
             className="fixed inset-0 bg-black/10 dark:bg-black/40 backdrop-blur-[2px] z-[60] cursor-default"
           />
           <motion.div
-            initial={{ 
-              x: '100%', 
+            initial={{
+              x: '100%',
               opacity: 0,
               width: isExpanded ? 800 : 420
             }}
@@ -192,16 +192,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
               width: isExpanded ? 800 : 420
             }}
             exit={{ x: '100%', opacity: 0 }}
-            transition={{ 
-              duration: 0.35, 
-              ease: [0.22, 1, 0.36, 1] 
+            transition={{
+              duration: 0.35,
+              ease: [0.22, 1, 0.36, 1]
             }}
             className="fixed top-0 right-0 h-full bg-background border-l z-[70] flex flex-col shadow-2xl overflow-hidden max-w-full will-change-transform"
           >
             <header className="h-16 flex items-center justify-between px-6 border-b shrink-0 bg-background/80 backdrop-blur-md sticky top-0 z-10">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary shadow-sm">
-                  <motion.div 
+                  <motion.div
                     animate={{ rotate: visible ? 0 : -90 }}
                     transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
                   >
@@ -367,7 +367,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                               </span>
                             </div>
                             <div className="text-xl font-black">
-                              {usageStats?.totalTokens.toLocaleString() ?? 0}
+                              {(usageStats?.totalTokens ?? 0).toLocaleString()}
                             </div>
                           </div>
                         </div>

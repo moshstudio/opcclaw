@@ -13,10 +13,10 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@renderer/components/ui/button'
 import { cn } from '@renderer/lib/utils'
 import { useConfirm } from '@renderer/hooks/use-confirm'
-import { AgentInfo } from '@renderer/store/useAgentStore'
+import { Agent } from '@shared/types/agent'
 
 interface ChatHeaderProps {
-  activeAgent: AgentInfo | undefined
+  activeAgent: Agent | undefined
   activeAgentId: string | null
   isTyping: boolean
   chatStatus: string

@@ -3,6 +3,7 @@ import { useChatStore } from '@renderer/store/useChatStore'
 import { useAgentStore } from '@renderer/store/useAgentStore'
 import { useModelStore } from '@renderer/store/useModelStore'
 import { useSystemStore } from '@renderer/store/useSystemStore'
+import { useHeartbeatStore } from '@renderer/store/useHeartbeatStore'
 import {
   ChatPayload,
   AgentEventPayload,
@@ -28,13 +29,22 @@ export const initGatewaySync = () => {
   const client = getGatewayClient()
 
   // --- 1. 系统与连接事件分发 (Connection Logic) ---
-  client.onConnect(() => {
+  const syncInitialData = () => {
     useSystemStore.getState().handleConnect()
 
     // 连接成功（含重连成功）后，触发各领域的基础数据加载与同步
     useAgentStore.getState().fetchAgents()
+    useHeartbeatStore.getState().fetchHeartbeatTasks()
     useModelStore.getState().fetchModels()
-  })
+
+    // 如果有活跃 Agent，刷新其会话数据
+    const activeAgentId = useAgentStore.getState().activeAgentId
+    if (activeAgentId) {
+      useChatStore.getState().fetchSessions(activeAgentId)
+    }
+  }
+
+  client.onConnect(syncInitialData)
 
   client.onClose(() => {
     useSystemStore.getState().handleDisconnect()
@@ -76,6 +86,11 @@ export const initGatewaySync = () => {
   // C. 模型同步事件
   client.onModels((payload: ModelsPayload) => {
     useModelStore.getState().handleModelsUpdate(payload)
+  })
+
+  // D. 心跳任务事件
+  client.onHeartbeat((payload) => {
+    useHeartbeatStore.getState().handleHeartbeatEvent(payload)
   })
 
   // --- 3. 初始网络建立与激活 (Network Activation) ---

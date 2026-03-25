@@ -1,12 +1,14 @@
-import { normalizeMessage } from '@shared/utils/message.js'
-import type { Message } from '@shared/types/agent.js'
+import { normalizeMessage } from '@shared/utils/message'
+import type { Message } from '@shared/types/agent'
 import type {
   Message as PiMessage,
   AssistantMessage as PiAssistantMessage,
   TextContent as PiTextContent,
   ThinkingContent as PiThinkingContent,
-  ToolCall as PiToolCall
+  ToolCall as PiToolCall,
+  ImageContent as PiImageContent
 } from '@mariozechner/pi-ai'
+import type { ContentBlock, AgentTextBlock } from '@shared/types/agent'
 
 /**
  * 更稳健的 Assistant 消息类型
@@ -44,7 +46,7 @@ export function convertMessagesToPi(
       }
 
       const textParts: PiTextContent[] = []
-      const blocks = msg.content as any[]
+      const blocks = msg.content as ContentBlock[]
       for (const block of blocks) {
         if (block.type === 'text' && block.text) {
           textParts.push({ type: 'text', text: block.text })
@@ -113,7 +115,7 @@ export function convertMessagesToPi(
         role: 'toolResult',
         toolCallId: msg.toolCallId,
         toolName: msg.toolName,
-        content: msg.content as any,
+        content: msg.content as (AgentTextBlock | PiImageContent)[],
         isError: msg.isError,
         timestamp: Number(timestamp)
       })

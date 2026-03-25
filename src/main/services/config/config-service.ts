@@ -1,24 +1,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { newUUID } from '@shared/utils/id.js'
+import { newUUID } from '@shared/utils/id'
 import { completeSimple } from '@mariozechner/pi-ai'
 
 const OPCCLAW_ROOT = path.join(os.homedir(), '.opcclaw')
 
-import { type AIModelConfig } from '../../../shared/types/models.js'
-
-export interface GatewaySettings {
-  port: number
-  token?: string
-  logLevel?: import('./../common/logger.js').LogLevel
-}
-
-export interface AppConfig {
-  models: AIModelConfig[]
-  gateway: GatewaySettings
-  defaultModelId?: string
-}
+import { type AIModelConfig, type ModelTestResult } from '@shared/types/models'
+import { type AppConfig } from '@shared/types/config'
 
 const DEFAULT_CONFIG: AppConfig = {
   models: [],
@@ -142,7 +131,7 @@ export class ConfigService {
     return path.join(OPCCLAW_ROOT, 'skills')
   }
 
-  public async testModel(modelConfig: AIModelConfig): Promise<{ ok: boolean; error?: string }> {
+  public async testModel(modelConfig: AIModelConfig): Promise<ModelTestResult> {
     try {
       // 简单测试连接：发送一个极短的消息
       const provider = modelConfig.provider
@@ -160,7 +149,7 @@ export class ConfigService {
 
       const api = API_FOR_PROVIDER[provider] || 'openai-completions'
 
-      const testModelDef = {
+      const testModelDef: Record<string, unknown> = {
         id: modelId,
         name: modelId,
         api,

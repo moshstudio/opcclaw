@@ -8,7 +8,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { startTelegramChannel } from './telegram.js'
+import { startTelegramChannel } from './telegram'
 
 // ============== .env ==============
 

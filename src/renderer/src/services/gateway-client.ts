@@ -7,6 +7,7 @@ import {
   type ModelsPayload,
   type TickPayload,
   type ShutdownPayload,
+  type HeartbeatEventPayload,
   type GatewayMethod
 } from '@shared/types/gateway'
 
@@ -125,6 +126,13 @@ export class RendererGatewayClient extends BaseGatewayClient {
    */
   onShutdown(callback: (payload: ShutdownPayload) => void) {
     return this.onChannel('system:shutdown', callback)
+  }
+
+  /**
+   * 领域特定事件订阅 - 心跳任务 (对齐 heartbeat 频道)
+   */
+  onHeartbeat(callback: (payload: HeartbeatEventPayload) => void) {
+    return this.onChannel('heartbeat', callback)
   }
 }
 

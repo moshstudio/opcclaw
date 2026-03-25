@@ -8,6 +8,7 @@ import {
   type GatewayMethod,
   type GatewayEvent,
   type GatewayAction,
+  type AgentEventPayload,
   isResponseFrame,
   isEventFrame,
   REQUEST_TIMEOUT_MS,
@@ -20,7 +21,7 @@ import { newId } from '../utils/id'
 type Pending = {
   resolve: (value: unknown) => void
   reject: (err: Error) => void
-  timer: any // Node.js.Timeout or number (browser)
+  timer: ReturnType<typeof setTimeout> | number | null
 }
 
 /**
@@ -31,7 +32,7 @@ type Pending = {
  * 2. 动作分流 (Action): 为 BEM 模型提供业务二次分发，如 'agent:created', 'session:reset'。
  */
 export abstract class BaseGatewayClient implements IGatewayClient {
-  protected ws: any = null
+  protected ws: WebSocket | any = null
   private pending = new Map<string, Pending>()
   private lastSeq: number | null = null
   protected opts: GatewayClientOptions
@@ -39,10 +40,10 @@ export abstract class BaseGatewayClient implements IGatewayClient {
   private onCloseListeners = new Set<(code: number, reason: string) => void>()
 
   /** 频道监听器：按 GatewayEvent 顶层路由，各频道负载类型互异 */
-  private channelListeners = new Map<string, Set<(payload: any) => void>>()
+  private channelListeners = new Map<string, Set<(payload: unknown) => void>>()
 
   /** 动作监听器：按 Action 名业务二次分流，通常归属于 'agent' 或 'models' 频道 */
-  private actionListeners = new Map<string, Set<(payload: any) => void>>()
+  private actionListeners = new Map<string, Set<(payload: unknown) => void>>()
 
   // 指数退避
   private backoffMs = 1000
@@ -51,7 +52,7 @@ export abstract class BaseGatewayClient implements IGatewayClient {
   // Tick 心跳监视
   private tickIntervalMs = TICK_INTERVAL_MS
   private lastTick: number | null = null
-  private tickTimer: any = null
+  private tickTimer: ReturnType<typeof setInterval> | number | null = null
 
   constructor(opts: GatewayClientOptions) {
     this.opts = opts
@@ -80,8 +81,9 @@ export abstract class BaseGatewayClient implements IGatewayClient {
       this.channelListeners.set(event, new Set())
     }
     const listeners = this.channelListeners.get(event)!
-    listeners.add(listener)
-    return () => listeners.delete(listener)
+    const unknownListener = listener as (payload: unknown) => void
+    listeners.add(unknownListener)
+    return () => listeners.delete(unknownListener)
   }
 
   /**
@@ -92,13 +94,17 @@ export abstract class BaseGatewayClient implements IGatewayClient {
    * @param listener 负载处理器 (如果是自定义动作，可通过泛型扩展类型)
    * @returns 取消监听函数
    */
-  public onAction<T = any>(action: GatewayAction | (string & {}), listener: (payload: T) => void) {
+  public onAction<T = unknown>(
+    action: GatewayAction | (string & {}),
+    listener: (payload: T) => void
+  ) {
     if (!this.actionListeners.has(action)) {
       this.actionListeners.set(action, new Set())
     }
     const listeners = this.actionListeners.get(action)!
-    listeners.add(listener)
-    return () => listeners.delete(listener)
+    const unknownListener = listener as (payload: unknown) => void
+    listeners.add(unknownListener)
+    return () => listeners.delete(unknownListener)
   }
 
   /**
@@ -139,7 +145,7 @@ export abstract class BaseGatewayClient implements IGatewayClient {
       this.ws = ws
       let handshakeResolved = false
 
-      const onError = (evt: any) => {
+      const onError = (evt: { message?: string } | any) => {
         const errorMsg = evt?.message || 'Connection failed'
         if (!handshakeResolved) {
           handshakeResolved = true
@@ -147,7 +153,7 @@ export abstract class BaseGatewayClient implements IGatewayClient {
         }
       }
 
-      const onMessage = (data: any) => {
+      const onMessage = (data: string | Buffer | ArrayBuffer | any) => {
         let parsed: unknown
         try {
           parsed = JSON.parse(String(data))
@@ -158,7 +164,7 @@ export abstract class BaseGatewayClient implements IGatewayClient {
           const res = parsed as ResponseFrame
           const p = this.pending.get(res.id)
           if (!p) return
-          clearTimeout(p.timer)
+          if (p.timer) clearTimeout(p.timer as ReturnType<typeof setTimeout>)
           this.pending.delete(res.id)
           if (res.ok) {
             p.resolve(res.payload)
@@ -213,7 +219,7 @@ export abstract class BaseGatewayClient implements IGatewayClient {
           this.channelListeners.get(evt.event)?.forEach((l) => l(evt.payload))
 
           // 2. 动作分发 (针对 payload 中带有 type 的事件)
-          const payload = evt.payload as any
+          const payload = evt.payload as AgentEventPayload
           if (payload && typeof payload.type === 'string') {
             this.actionListeners.get(payload.type)?.forEach((l) => l(payload))
           }
@@ -310,14 +316,14 @@ export abstract class BaseGatewayClient implements IGatewayClient {
 
   private stopTickWatch(): void {
     if (this.tickTimer) {
-      clearInterval(this.tickTimer)
+      clearInterval(this.tickTimer as ReturnType<typeof setInterval>)
       this.tickTimer = null
     }
   }
 
   private flushPendingErrors(err: Error): void {
     for (const [, p] of this.pending) {
-      clearTimeout(p.timer)
+      if (p.timer) clearTimeout(p.timer as ReturnType<typeof setTimeout>)
       p.reject(err)
     }
     this.pending.clear()

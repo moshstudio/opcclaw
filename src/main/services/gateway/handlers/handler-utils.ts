@@ -1,6 +1,6 @@
-import { Agent } from '../../agent/agent.js'
-import { ErrorCodes, errorShape, type ErrorShape } from '../protocol.js'
-import type { HandlerContext } from './types.js'
+import { Agent } from '../../agent/agent'
+import { ErrorCodes, errorShape, type ErrorShape } from '../protocol'
+import type { HandlerContext } from './types'
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: ErrorShape }
 

@@ -1,20 +1,22 @@
-import { create } from 'zustand'
+import { create, StoreApi } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { getGatewayClient } from '../services/gateway-client'
 import { Message, ChatStatus } from '@shared/types/agent'
 import { ChatPayload, AgentEventPayload } from '@shared/types/gateway'
 import { mapHistoryMessage, RESET_TIMEOUT } from './gateway/chat-handler'
-import { applyGatewayEvent } from './gateway/gateway-reducer'
+import { applyGatewayEvent, MinimalChatStore } from './gateway/gateway-reducer'
 
 interface ChatState {
   sessions: Record<string, Message[]> // Key: sessionKey
   chatStatuses: Record<string, ChatStatus> // Key: sessionKey
   errorMessages: Record<string, string | null> // Key: sessionKey
   isLoadingHistory: Record<string, boolean> // Key: sessionKey
+  hasMoreMap: Record<string, boolean> // Key: sessionKey
+  totalMap: Record<string, number> // Key: sessionKey
   sessionKeys: Record<string, string> // agentId -> activeSessionKey
   allSessions: Record<string, string[]> // agentId -> keys[]
   isLoadingSessions: Record<string, boolean> // agentId -> state
-  toolResultsMap: Record<string, Record<string, any>> // sessionKey -> { toolCallId -> result }
+  toolResultsMap: Record<string, Record<string, unknown>> // sessionKey -> { toolCallId -> result }
   initialized: boolean
 
   handleChatEvent: (payload: ChatPayload) => void
@@ -23,7 +25,7 @@ interface ChatState {
   init: () => void
 
   sendMessage: (text: string, agentId: string) => Promise<void>
-  fetchHistory: (agentId: string, sessionKey?: string) => Promise<void>
+  fetchHistory: (agentId: string, sessionKey?: string, mode?: 'initial' | 'more') => Promise<void>
   newSession: (agentId: string) => Promise<void>
   switchSession: (agentId: string, sessionKey: string) => Promise<void>
   fetchSessions: (agentId: string) => Promise<void>
@@ -32,15 +34,7 @@ interface ChatState {
   abortMessage: (agentId: string, sessionKey: string) => Promise<void>
 }
 
-type SetState = {
-  (
-    nextStateOrUpdater:
-      | ChatState
-      | Partial<ChatState>
-      | ((state: ChatState) => ChatState | Partial<ChatState>),
-    shouldReplace?: boolean
-  ): void
-}
+type SetState = StoreApi<ChatState>['setState']
 
 /** 辅助函数：统一处理相关的状态更新 (强类型版本) */
 const updateSubState = <K extends keyof ChatState>(
@@ -61,6 +55,8 @@ export const useChatStore = create<ChatState>()(
       chatStatuses: {},
       errorMessages: {},
       isLoadingHistory: {},
+      hasMoreMap: {},
+      totalMap: {},
       sessionKeys: {},
       allSessions: {},
       isLoadingSessions: {},
@@ -69,44 +65,66 @@ export const useChatStore = create<ChatState>()(
 
       handleChatEvent: (payload) => {
         const sk = payload.sessionKey
-        set((s) => applyGatewayEvent(s as any, payload, 'chat'))
+        set((s) => applyGatewayEvent(s as MinimalChatStore, payload, 'chat'))
 
         // 异步状态复位逻辑 (UI 体验优化)
         if (payload.state === 'final' || payload.state === 'error') {
           const timeout = payload.state === 'final' ? RESET_TIMEOUT.SUCCESS : RESET_TIMEOUT.ERROR
           setTimeout(() => {
             if (get().chatStatuses[sk] === (payload.state === 'final' ? 'completed' : 'error')) {
-              updateSubState(set as any, 'chatStatuses', sk, 'idle')
+              updateSubState(set, 'chatStatuses', sk, 'idle')
             }
           }, timeout)
         }
       },
       handleAgentEvent: (payload) => {
-        set((s) => applyGatewayEvent(s as any, payload, 'agent'))
+        set((s) => applyGatewayEvent(s as MinimalChatStore, payload, 'agent'))
       },
       handleSessionEvent: (payload) => {
-        set((s) => applyGatewayEvent(s as any, payload, 'session'))
+        set((s) => applyGatewayEvent(s as MinimalChatStore, payload, 'session'))
       },
 
       init: () => {
         // Initialization logic if needed
       },
 
-      fetchHistory: async (agentId: string, sk?: string) => {
+      fetchHistory: async (agentId: string, sk?: string, mode: 'initial' | 'more' = 'initial') => {
         const sessionKey = sk || get().sessionKeys[agentId]
-        if (!sessionKey) return // 如果没有 sessionKey，不请求历史
+        if (!sessionKey) return
         if (get().isLoadingHistory[sessionKey]) return
-        updateSubState(set as any, 'isLoadingHistory', sessionKey, true)
+
+        // 缓存策略：如果是初始化且已有内容，除非显式刷新，否则不重取（或改为取增量，此处先做不重复取）
+        if (mode === 'initial' && get().sessions[sessionKey]?.length > 0) {
+          return
+        }
+
+        // 分页参数
+        const limit = 30
+        const offset = mode === 'more' ? get().sessions[sessionKey]?.length || 0 : 0
+
+        updateSubState(set, 'isLoadingHistory', sessionKey, true)
         try {
           const res = (await getGatewayClient().request('chat:history', {
             agentId,
-            sessionKey
-          })) as { messages: any[] }
+            sessionKey,
+            limit,
+            offset
+          })) as { messages: any[]; hasMore: boolean; total: number }
 
           const mapped = (res?.messages || []).map(mapHistoryMessage)
-          updateSubState(set as any, 'sessions', sessionKey, mapped)
+
+          set((s) => {
+            const current = s.sessions[sessionKey] || []
+            // 如果是加载更多，则追加到前面
+            const newMessages = mode === 'more' ? [...mapped, ...current] : mapped
+            return {
+              sessions: { ...s.sessions, [sessionKey]: newMessages },
+              hasMoreMap: { ...s.hasMoreMap, [sessionKey]: !!res.hasMore },
+              totalMap: { ...s.totalMap, [sessionKey]: res.total || 0 }
+            }
+          })
         } finally {
-          updateSubState(set as any, 'isLoadingHistory', sessionKey, false)
+          updateSubState(set, 'isLoadingHistory', sessionKey, false)
         }
       },
 
@@ -137,10 +155,10 @@ export const useChatStore = create<ChatState>()(
             await get().fetchSessions(agentId)
           }
         } catch (err) {
-          updateSubState(set as any, 'chatStatuses', sk, 'error')
-          updateSubState(set as any, 'errorMessages', sk, String(err))
+          updateSubState(set, 'chatStatuses', sk, 'error')
+          updateSubState(set, 'errorMessages', sk, String(err))
           setTimeout(
-            () => updateSubState(set as any, 'chatStatuses', sk, 'idle'),
+            () => updateSubState(set, 'chatStatuses', sk, 'idle'),
             RESET_TIMEOUT.SEND_ERROR
           )
         }
@@ -177,12 +195,12 @@ export const useChatStore = create<ChatState>()(
             [agentId]: Array.from(new Set([sk, ...(s.allSessions[agentId] || [])]))
           }
         }))
-        get().fetchHistory(agentId, sk)
+        get().fetchHistory(agentId, sk, 'initial')
       },
 
       fetchSessions: async (agentId: string) => {
         if (get().isLoadingSessions[agentId]) return
-        updateSubState(set as any, 'isLoadingSessions', agentId, true)
+        updateSubState(set, 'isLoadingSessions', agentId, true)
         try {
           const res = (await getGatewayClient().request('sessions:list', {
             agentId
@@ -202,7 +220,7 @@ export const useChatStore = create<ChatState>()(
             }
           })
         } finally {
-          updateSubState(set as any, 'isLoadingSessions', agentId, false)
+          updateSubState(set, 'isLoadingSessions', agentId, false)
         }
       },
 
@@ -214,7 +232,7 @@ export const useChatStore = create<ChatState>()(
             agentId,
             sessionKey: sk
           })
-          updateSubState(set as any, 'sessions', sk, [])
+          updateSubState(set, 'sessions', sk, [])
           get().fetchSessions(agentId)
         } catch (err) {
           console.error('Reset error:', err)
@@ -228,24 +246,21 @@ export const useChatStore = create<ChatState>()(
         const active = get().sessionKeys[agentId] === sk
         await getGatewayClient().request('sessions:delete', { agentId, sessionKey: sk })
         const newList = list.filter((k) => k !== sk)
-        updateSubState(set as any, 'allSessions', agentId, newList)
+        updateSubState(set, 'allSessions', agentId, newList)
         if (active) {
           const next = newList[Math.min(idx, newList.length - 1)]
           set((s) => ({
             sessionKeys: { ...s.sessionKeys, [agentId]: next }
           }))
-          get().fetchHistory(agentId, next)
+          get().fetchHistory(agentId, next, 'initial')
         }
       },
 
       abortMessage: async (agentId: string, sk: string) => {
         try {
           await getGatewayClient().request('chat:abort', { agentId, sessionKey: sk })
-          updateSubState(set as any, 'chatStatuses', sk, 'aborted')
-          setTimeout(
-            () => updateSubState(set as any, 'chatStatuses', sk, 'idle'),
-            RESET_TIMEOUT.ABORT
-          )
+          updateSubState(set, 'chatStatuses', sk, 'aborted')
+          setTimeout(() => updateSubState(set, 'chatStatuses', sk, 'idle'), RESET_TIMEOUT.ABORT)
         } catch (err) {
           console.error('Abort error:', err)
         }

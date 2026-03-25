@@ -5,7 +5,7 @@ import type {
   ContentBlock,
   AgentToolCallBlock,
   AgentToolResultBlock
-} from '../types/agent.js'
+} from '../types/agent'
 
 /**
  * 规范化内容块：仅进行类型修正，不再兼容旧格式
@@ -43,7 +43,8 @@ export function normalizeContentBlock(block: any): ContentBlock {
  * 消息归一化：补全 ID、时间戳及角色相关的默认字段项，转换内容块
  */
 export function normalizeMessage(m: any): Message {
-  const timestamp = typeof m.timestamp === 'string' ? new Date(m.timestamp).getTime() : m.timestamp || Date.now()
+  const timestamp =
+    typeof m.timestamp === 'string' ? new Date(m.timestamp).getTime() : m.timestamp || Date.now()
 
   const base = {
     ...m,

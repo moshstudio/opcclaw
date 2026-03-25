@@ -1,6 +1,7 @@
-import { ErrorCodes, errorShape } from '../protocol.js'
-import type { Handler } from './types.js'
-import { ensureParams } from './handler-utils.js'
+import { ErrorCodes, errorShape } from '../protocol'
+import type { Handler } from './types'
+import { ensureParams } from './handler-utils'
+import { AgentConfig } from '@shared/types/agent'
 
 /**
  * agent.list
@@ -37,8 +38,13 @@ export const handleAgentCreate: Handler = async (params, _client, ctx) => {
     return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, 'config required') }
   }
 
+  const config: AgentConfig = {
+    name: 'New Agent',
+    ...(params as Partial<AgentConfig>)
+  }
+
   // Registry.createAgent 内部已包含同步创建第一个 session 的逻辑
-  const agentId = await ctx.registry.createAgent(params)
+  const agentId = await ctx.registry.createAgent(config)
   const agent = ctx.registry.getAgent(agentId)
   const sessionKey = (await agent?.listSessions())?.[0]
 
@@ -56,7 +62,7 @@ export const handleAgentUpdate: Handler = async (params, _client, ctx) => {
   if (!check.ok) return check
 
   const { agentId } = check.values
-  const { agentId: _, ...updates } = params as Record<string, any>
+  const { agentId: _, ...updates } = params as Partial<AgentConfig> & { agentId: string }
 
   await ctx.registry.updateAgent(agentId, updates)
 

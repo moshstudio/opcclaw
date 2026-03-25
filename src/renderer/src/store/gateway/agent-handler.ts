@@ -1,8 +1,8 @@
+import { Agent } from '@shared/types/agent'
 import { AgentEventPayload } from '@shared/types/gateway'
-import { AgentInfo } from '../useAgentStore'
 
 export interface AgentPatch {
-  agents: AgentInfo[]
+  agents: Agent[]
   shouldRefetch?: boolean
 }
 
@@ -15,13 +15,13 @@ export interface AgentPatch {
  */
 export const applyAgentLifecycleEvent = (
   payload: AgentEventPayload,
-  currentAgents: AgentInfo[]
+  currentAgents: Agent[]
 ): AgentPatch => {
   const { type, agentId, agent } = payload
   let nextAgents = [...currentAgents]
   let shouldRefetch = false
 
-  const targetAgent = agent as AgentInfo | undefined
+  const targetAgent = agent as Agent | undefined
 
   switch (type) {
     case 'agent:created':

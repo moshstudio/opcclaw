@@ -9,7 +9,7 @@ import {
 } from '@shared/types/agent'
 import { ChatPayload, ChatState as GatewayChatState } from '@shared/types/gateway'
 
-import { normalizeMessage } from '@shared/utils/message.js'
+import { normalizeMessage } from '@shared/utils/message'
 
 // ============================================================================
 // 1. Types & Constants

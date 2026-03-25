@@ -1,5 +1,5 @@
-import type { Handler } from './types.js'
-import { ensureParams, getAgentOrError } from './handler-utils.js'
+import type { Handler } from './types'
+import { ensureParams, getAgentOrError } from './handler-utils'
 
 /**
  * sessions.create
@@ -45,7 +45,7 @@ export const handleSessionsReset: Handler = async (params, _client, ctx) => {
   if (!res.ok) return res
 
   const { agent } = res
-  await agent.reset(sessionKey)
+  await agent.resetSession(sessionKey)
   return { ok: true, payload: { agentId, sessionKey } }
 }
 

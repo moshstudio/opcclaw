@@ -1,4 +1,4 @@
-export { ContextLoader, type ContextFile } from './loader.js'
+export { ContextLoader, type ContextFile } from './loader'
 export {
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_SOUL_FILENAME,
@@ -16,7 +16,7 @@ export {
   resolveBootstrapMaxChars,
   type BootstrapFile,
   type BootstrapFileName
-} from './bootstrap.js'
+} from './bootstrap'
 export {
   DEFAULT_CONTEXT_PRUNING_SETTINGS,
   pruneContextMessages,
@@ -24,7 +24,7 @@ export {
   type ContextPruningSettings,
   type ContextPruningToolMatch,
   type PruneResult
-} from './pruning.js'
+} from './pruning'
 export {
   buildCompactionSummary,
   compactHistoryIfNeeded,
@@ -35,11 +35,11 @@ export {
   DEFAULT_COMPACTION_SETTINGS,
   DEFAULT_SUMMARY_MAX_TOKENS,
   DEFAULT_CONTEXT_WINDOW_TOKENS
-} from './compaction.js'
+} from './compaction'
 export {
   CHARS_PER_TOKEN_ESTIMATE,
   estimateMessageChars,
   estimateMessageTokens,
   estimateMessagesChars,
   estimateMessagesTokens
-} from './tokens.js'
+} from './tokens'

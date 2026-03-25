@@ -24,11 +24,11 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { newUUID, newShortId } from '@shared/utils/id.js'
-import { acquireSessionWriteLock } from './session-write-lock.js'
+import { newUUID, newShortId } from '@shared/utils/id'
+import { acquireSessionWriteLock } from './session-write-lock'
 
-import { type Message, type ContentBlock } from '@shared/types/agent.js'
-import { normalizeMessage } from '@shared/utils/message.js'
+import { type Message, type ContentBlock } from '@shared/types/agent'
+import { normalizeMessage } from '@shared/utils/message'
 export type { Message, ContentBlock }
 
 // ============== Session Entry 结构（对齐 OpenClaw） ==============
@@ -137,9 +137,35 @@ export class SessionManager {
    * 优先从内存缓存读取，缓存未命中时从磁盘加载
    * 这是典型的 Cache-Aside 模式
    */
-  async load(sessionKey: string): Promise<Message[]> {
+  /**
+   * 加载会话历史
+   *
+   * 优先从内存缓存读取，缓存未命中时从磁盘加载
+   * 支持分页读取（从最近的消息开始往前推）
+   */
+  async load(
+    sessionKey: string,
+    options?: { limit?: number; offset?: number }
+  ): Promise<{ messages: Message[]; hasMore: boolean; total: number }> {
     const state = await this.ensureState(sessionKey)
-    return buildSessionContext(state)
+    const allMessages = buildSessionContext(state)
+    const total = allMessages.length
+
+    if (options?.limit !== undefined) {
+      const offset = options.offset || 0
+      // 这里的逻辑是从末尾（最新消息）开始算
+      // 如果 limit=20, offset=0, 返回最新的 20 条
+      // 如果 limit=20, offset=20, 返回倒数第 21-40 条
+      const end = total - offset
+      const start = Math.max(0, end - options.limit)
+      return {
+        messages: allMessages.slice(start, end),
+        hasMore: start > 0,
+        total
+      }
+    }
+
+    return { messages: allMessages, hasMore: false, total }
   }
 
   /**
@@ -389,9 +415,9 @@ function isSessionHeader(value: unknown): value is SessionHeaderEntry {
   return header.type === 'session' && typeof header.id === 'string'
 }
 
-function isLegacyMessage(value: unknown): value is any {
+function isLegacyMessage(value: unknown): value is Message {
   if (!value || typeof value !== 'object') return false
-  const msg = value as any
+  const msg = value as Record<string, unknown>
   if (msg.role !== 'user' && msg.role !== 'assistant' && msg.role !== 'toolResult') return false
   if (!('content' in msg)) return false
   return typeof msg.timestamp === 'number'
@@ -557,7 +583,7 @@ function buildStateFromLegacy(filePath: string, messages: Message[]): SessionSta
   const messageIdByRef = new WeakMap<Message, string>()
   let leafId: string | null = null
 
-  for (const rawMessage of messages as any[]) {
+  for (const rawMessage of messages) {
     const piMessage = normalizeMessage(rawMessage)
 
     const entry: MessageEntry = {

@@ -3,7 +3,7 @@ import { Sparkles, Settings2, Zap, Wrench, Boxes, FileCode } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@renderer/components/ui/switch'
 import { CollapsibleSection } from '@renderer/components/ui/collapsible-section'
-import { SettingsSectionProps } from './types'
+import { SettingsSectionProps, AgentSettingsFormData } from './types'
 import { getGatewayClient } from '@renderer/services/gateway-client'
 
 export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: string }> = ({
@@ -23,8 +23,8 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
         try {
           const client = getGatewayClient()
           const [toolsRes, skillsRes] = await Promise.all([
-            client.request<{ tools: any[] }>('tools:list'),
-            client.request<{ skills: any[] }>('skills:list', { agentId })
+            client.request<{ tools: { name: string; description: string }[] }>('tools:list'),
+            client.request<{ skills: { name: string; path: string }[] }>('skills:list', { agentId })
           ])
           setTools(toolsRes.tools)
           setSkills(skillsRes.skills)
@@ -69,7 +69,7 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
                 </span>
               </div>
               <Switch
-                checked={(formData as any)[cap.id]}
+                checked={!!formData[cap.id as keyof AgentSettingsFormData]}
                 onCheckedChange={(v) => setFormData((prev) => ({ ...prev, [cap.id]: v }))}
               />
             </div>

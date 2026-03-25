@@ -58,8 +58,14 @@ export class AgentSessionService {
   /**
    * 获取会话的历史消息
    */
-  async getHistory(id: string): Promise<Message[]> {
-    return this.options.sessionManager.load(this.resolveKey(id))
+  /**
+   * 获取会话的历史消息
+   */
+  async getHistory(
+    id: string,
+    options?: { limit?: number; offset?: number }
+  ): Promise<{ messages: Message[]; hasMore: boolean; total: number }> {
+    return this.options.sessionManager.load(this.resolveKey(id), options)
   }
 
   /**

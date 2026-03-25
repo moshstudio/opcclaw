@@ -6,18 +6,18 @@ import {
   errorShape,
   newId,
   HANDSHAKE_TIMEOUT_MS
-} from './protocol.js'
-import { handlers, type GwClient, type HandlerContext } from './handlers/index.js'
-import { type EventFrame, type ResponseFrame } from './protocol.js'
-import { formatGatewayDebugData } from './helpers/debug-utils.js'
-import type { Logger } from '@main/services/common/logger.js'
+} from './protocol'
+import { handlers, type GwClient, type HandlerContext } from './handlers/index'
+import { type EventFrame, type ResponseFrame } from './protocol'
+import { formatGatewayDebugData } from './helpers/debug-utils'
+import type { Logger } from '@main/services/common/logger'
 
 /**
  * 设置新的 WebSocket 连接 (对齐 openclaw ws-connection.ts)
  */
 export function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
   const connId = newId()
-  const client: GwClient = { id: connId, socket: socket as any, authed: false }
+  const client: GwClient = { id: connId, socket: socket as GwClient['socket'], authed: false }
   ctx.clients.add(client)
 
   ctx.logger.info(`Client connected: ${connId}`)
@@ -152,5 +152,6 @@ function respond(
   error: import('./protocol.js').ErrorShape | undefined,
   logger: Logger | undefined
 ) {
-  send(socket, { type: 'res', id, ok, payload, error } as any, logger)
+  const frame: ResponseFrame = { type: 'res', id, ok, payload, error }
+  send(socket, frame, logger)
 }

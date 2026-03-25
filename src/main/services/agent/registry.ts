@@ -1,15 +1,15 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { Agent, type AgentConfig } from './agent.js'
-import { ConfigService } from '../config/config-service.js'
-import { MiniAgentEvent } from './agent-events.js'
-import { Logger } from '@main/services/common/logger.js'
-import { newShortId } from '@shared/utils/id.js'
+import { Agent, type AgentConfig } from './agent'
+import { ConfigService } from '../config/config-service'
+import { MiniAgentEvent } from './agent-events'
+import { Logger } from '@main/services/common/logger'
+import { newShortId } from '@shared/utils/id'
 
 export interface RegisteredAgent {
   id: string
   instance: Agent
-  config: any // 来自 agent.json
+  config: AgentConfig // 来自 agent.json
 }
 
 export class AgentRegistry {
@@ -30,7 +30,7 @@ export class AgentRegistry {
     return AgentRegistry.instance
   }
 
-  private globalListeners = new Set<(agentId: string, event: any) => void>()
+  private globalListeners = new Set<(agentId: string, event: MiniAgentEvent) => void>()
 
   /**
    * 订阅所有智能体事件
@@ -47,7 +47,7 @@ export class AgentRegistry {
   /**
    * 手动注册一个智能体实例
    */
-  public registerAgent(agentId: string, instance: Agent, config: any = {}): void {
+  public registerAgent(agentId: string, instance: Agent, config: AgentConfig): void {
     // 为新实例挂载所有全局监听器
     for (const fn of this.globalListeners) {
       instance.subscribe((ev) => fn(agentId, ev))
@@ -106,7 +106,7 @@ export class AgentRegistry {
     const toolsPath = path.join(agentDir, 'tools.json')
 
     // 默认配置
-    let agentJson: any = {}
+    let agentJson: Partial<AgentConfig> = {}
     if (fs.existsSync(configPath)) {
       agentJson = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     }
@@ -118,7 +118,7 @@ export class AgentRegistry {
     }
 
     // 默认工具策略
-    let toolPolicy = agentJson.toolPolicy
+    let toolPolicy = agentJson.toolPolicy as AgentConfig['toolPolicy']
     if (!toolPolicy && fs.existsSync(toolsPath)) {
       toolPolicy = JSON.parse(fs.readFileSync(toolsPath, 'utf8'))
     }
@@ -129,6 +129,7 @@ export class AgentRegistry {
 
     const agentConfig: AgentConfig = {
       agentId,
+      name: agentJson.name || agentId,
       apiKey: agentJson.apiKey || defaultModel?.apiKey,
       provider: agentJson.provider || defaultModel?.provider,
       model: agentJson.model || defaultModel?.model,
@@ -140,6 +141,7 @@ export class AgentRegistry {
       sessionDir: path.join(agentDir, 'sessions'),
       memoryDir: path.join(agentDir, 'memory'),
       workspaceDir: agentJson.workspaceDir || path.join(agentDir, 'workspace'),
+      usageDir: agentJson.usageDir || path.join(agentDir, 'usage'),
       // 功能开关
       enableMemory: agentJson.enableMemory,
       enableSkills: agentJson.enableSkills,
@@ -155,20 +157,22 @@ export class AgentRegistry {
       maxConcurrentRuns: agentJson.maxConcurrentRuns,
       supportsVision: agentJson.supportsVision ?? defaultModel?.supportsVision,
       // 沙箱配置
-      sandbox: agentJson.sandbox
+      sandbox: agentJson.sandbox,
+      isPinned: agentJson.isPinned
     }
 
     const instance = new Agent(agentConfig)
-    this.registerAgent(agentId, instance, {
-      ...agentJson,
-      systemPrompt,
-      // 传递解析后的关键路径和设置，方便前端显示完整路径
-      workspaceDir: agentConfig.workspaceDir,
-      sessionDir: agentConfig.sessionDir,
-      memoryDir: agentConfig.memoryDir
-    })
 
-    this.logger.info(`Loaded agent: ${agentId}`)
+    // 如果配置中启用了心跳，则自动启动
+    if (agentConfig.enableHeartbeat) {
+      instance.startHeartbeat()
+    }
+
+    this.registerAgent(agentId, instance, agentConfig)
+
+    this.logger.info(
+      `Loaded agent: ${agentId} (Heartbeat: ${agentConfig.enableHeartbeat ? 'on' : 'off'})`
+    )
   }
 
   public async createDefaultAgent(agentId: string): Promise<void> {
@@ -185,6 +189,9 @@ export class AgentRegistry {
       if (!fs.existsSync(agentDir)) {
         fs.mkdirSync(agentDir, { recursive: true })
         fs.mkdirSync(path.join(agentDir, 'workspace'), { recursive: true })
+        fs.mkdirSync(path.join(agentDir, 'sessions'), { recursive: true })
+        fs.mkdirSync(path.join(agentDir, 'memory'), { recursive: true })
+        fs.mkdirSync(path.join(agentDir, 'usage'), { recursive: true })
         fs.writeFileSync(
           path.join(agentDir, 'agent.md'),
           '# Identity\n\nYou are a helpful AI assistant.'
@@ -225,7 +232,7 @@ export class AgentRegistry {
     return this.agents.get(agentId)?.instance
   }
 
-  public async createAgent(config: any): Promise<string> {
+  public async createAgent(config: AgentConfig & { id?: string }): Promise<string> {
     const agentId = config.id || `agent-${newShortId(8)}`
     const configService = ConfigService.getInstance()
     const agentDir = configService.getAgentDir(agentId)
@@ -237,6 +244,7 @@ export class AgentRegistry {
     fs.mkdirSync(agentDir, { recursive: true })
     fs.mkdirSync(path.join(agentDir, 'workspace'), { recursive: true })
     fs.mkdirSync(path.join(agentDir, 'sessions'), { recursive: true })
+    fs.mkdirSync(path.join(agentDir, 'usage'), { recursive: true })
 
     const { systemPrompt, ...agentJson } = config
 
@@ -279,7 +287,7 @@ export class AgentRegistry {
     }
   }
 
-  public async updateAgent(agentId: string, updates: any): Promise<void> {
+  public async updateAgent(agentId: string, updates: Partial<AgentConfig>): Promise<void> {
     const agentData = this.agents.get(agentId)
     if (!agentData) {
       throw new Error(`Agent ${agentId} not found`)
@@ -313,9 +321,32 @@ export class AgentRegistry {
     for (const agent of this.agents.values()) {
       try {
         agent.instance.abort()
+        agent.instance.stopHeartbeat() // 停止所有心跳
       } catch (err) {
-        this.logger.error(`Failed to abort agent ${agent.id}:`, err)
+        this.logger.error(`Failed to stop agent ${agent.id}:`, err)
       }
     }
+  }
+
+  /**
+   * 获取所有存有 heartbeat.md 文件的 Agent 定时任务列表
+   */
+  public listHeartbeatTasks() {
+    const tasks: Array<{
+      agentId: string
+      agentName: string
+      status: ReturnType<Agent['getHeartbeatStatus']>
+    }> = []
+    for (const [id, agent] of this.agents) {
+      if (agent.instance.hasHeartbeatFile()) {
+        const status = agent.instance.getHeartbeatStatus()
+        tasks.push({
+          agentId: id,
+          agentName: agent.config.name || id,
+          status: status
+        })
+      }
+    }
+    return tasks
   }
 }

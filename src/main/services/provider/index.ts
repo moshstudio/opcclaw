@@ -65,4 +65,4 @@ export {
   isAuthError,
   classifyFailoverReason,
   describeError
-} from './errors.js'
+} from './errors'

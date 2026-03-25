@@ -2,17 +2,17 @@ import {
   compactHistoryIfNeeded,
   type PruneResult,
   type SummarizeFn
-} from '@main/services/context/index.js'
+} from '@main/services/context/index'
 import { completeSimple } from '@mariozechner/pi-ai'
 import type { SessionManager, Message } from '@main/services/session/session'
-import { estimateMessagesTokens } from '@main/services/context/index.js'
-import type { Model } from '@mariozechner/pi-ai'
+import { estimateMessagesTokens } from '@main/services/context/index'
+import type { Model, Api } from '@mariozechner/pi-ai'
 import type { MiniAgentEvent } from '../agent-events'
 
 export interface ContextManagerOptions {
   sessionManager: SessionManager
   contextTokens: number
-  modelDef?: Model<any>
+  modelDef?: Model<Api>
   apiKey?: string
   emit: (event: MiniAgentEvent) => void
 }

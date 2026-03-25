@@ -1,10 +1,16 @@
 import React, { useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Settings as SettingsIcon, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Plus, Settings as SettingsIcon, PanelLeftClose, PanelLeftOpen, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
 import { Button } from '@renderer/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@renderer/components/ui/dropdown-menu'
 import { useAgentStore } from '@renderer/store/useAgentStore'
 import { useChatStore } from '@renderer/store/useChatStore'
 import { useSystemStore } from '@renderer/store/useSystemStore'
@@ -37,8 +43,8 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
   }
 
   const sortedAgents = [...agents].sort((a, b) => {
-    const aPinned = a.config.isPinned ?? a.id === 'main'
-    const bPinned = b.config.isPinned ?? b.id === 'main'
+    const aPinned = a.config?.isPinned ?? a.id === 'main'
+    const bPinned = b.config?.isPinned ?? b.id === 'main'
     if (aPinned && !bPinned) return -1
     if (!aPinned && bPinned) return 1
     if (aPinned && bPinned) {
@@ -70,7 +76,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
           transition={linearTransition}
           className="flex flex-col whitespace-nowrap overflow-hidden shrink-0"
         >
-          <h1 className="text-[20px] leading-[28px] font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
+          <h1 className="text-[18px] leading-[26px] font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
             OpcClaw
           </h1>
           <div className="flex items-center gap-[6px] mt-[2px] ml-[2px]">
@@ -131,7 +137,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
               x: collapsed ? -5 : 0
             }}
             transition={linearTransition}
-            className="text-[14px] font-bold text-muted-foreground whitespace-nowrap overflow-hidden"
+            className="text-[13px] font-semibold text-muted-foreground whitespace-nowrap overflow-hidden"
           >
             {t('common.new_agent')}
           </motion.span>
@@ -142,11 +148,20 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
 
       {/* 3. Agent List */}
       <div className="flex-1 overflow-y-auto space-y-[4px] custom-scrollbar">
+        {sortedAgents.length === 0 && (
+          <div className="px-6 py-10 text-center opacity-30 flex flex-col items-center gap-2">
+            <Plus className="w-8 h-8 text-muted-foreground animate-pulse" />
+            <p className="text-[10px] uppercase font-black tracking-widest leading-loose">
+              {t('common.no_content')}
+            </p>
+          </div>
+        )}
         {sortedAgents.map((agent) => {
           const agentName =
-            agent.id === 'main' && (!agent.config.name || agent.config.name === 'Default Assistant')
+            agent.id === 'main' &&
+            (!agent.config?.name || agent.config?.name === 'Default Assistant')
               ? t('common.default_assistant')
-              : agent.config.name || agent.id
+              : agent.config?.name || agent.id
 
           return (
             <button
@@ -159,7 +174,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
             >
               <div
                 className={cn(
-                  'w-[40px] h-[40px] rounded-full flex items-center justify-center text-[14px] font-bold shrink-0 shadow-sm transition-all duration-300 ease-linear uppercase',
+                  'w-[40px] h-[40px] rounded-full flex items-center justify-center shrink-0 transition-all duration-300 ease-linear',
                   activeAgentId === agent.id
                     ? 'bg-primary text-primary-foreground scale-105'
                     : 'bg-muted text-muted-foreground'
@@ -179,7 +194,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
               >
                 <p
                   className={cn(
-                    'text-[14px] font-bold truncate transition-colors duration-300 ease-linear',
+                    'text-[13px] font-semibold truncate transition-colors duration-300 ease-linear',
                     activeAgentId === agent.id
                       ? 'text-foreground'
                       : 'text-muted-foreground group-hover:text-foreground'
@@ -209,7 +224,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
             <div className="w-[32px] h-[32px] rounded-full bg-gradient-to-tr from-orange-400 to-pink-500 shadow-md shrink-0" />
           </div>
           <div className="flex flex-col overflow-hidden">
-            <p className="text-[12px] font-bold text-foreground truncate leading-tight">
+            <p className="text-[11px] font-bold text-foreground truncate leading-tight">
               {t('common.user_account')}
             </p>
             <p className="text-[10px] text-muted-foreground/60 truncate font-bold uppercase tracking-tighter leading-none">
@@ -224,16 +239,36 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
         <motion.div
           layout
           transition={linearTransition}
-          className="w-[40px] h-[40px] flex items-center justify-center shrink-0"
+          className="flex items-center gap-[4px] h-[40px] shrink-0"
         >
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate('/settings')}
-            className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-300 ease-linear"
-          >
-            <SettingsIcon className="w-[16px] h-[16px]" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-300 ease-linear"
+                title={t('common.settings')}
+              >
+                <SettingsIcon className="w-[18px] h-[18px]" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top" className="w-[180px]">
+              <DropdownMenuItem
+                onClick={() => navigate('/tasks')}
+                className="flex items-center gap-[10px] cursor-pointer"
+              >
+                <Clock className="w-[16px] h-[16px] text-muted-foreground" />
+                <span className="font-medium">{t('common.scheduled_tasks')}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => navigate('/settings')}
+                className="flex items-center gap-[10px] cursor-pointer"
+              >
+                <SettingsIcon className="w-[16px] h-[16px] text-muted-foreground" />
+                <span className="font-medium">{t('common.settings')}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </motion.div>
       </div>
     </motion.aside>

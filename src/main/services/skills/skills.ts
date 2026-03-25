@@ -13,14 +13,14 @@
  *   OpenClaw workspace.ts:1-5 →
  *     import { formatSkillsForPrompt, loadSkillsFromDir, type Skill } from "@mariozechner/pi-coding-agent"
  *   Mini skills.ts:下方 →
- *     import { type Skill, loadSkillsFromDir, formatSkillsForPrompt } from "./skill-primitives.js"
+ *     import { type Skill, loadSkillsFromDir, formatSkillsForPrompt } from "./skill-primitives"
  *
  * 即: SDK 提供原语，编排层做策略。
  */
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { ConfigService } from '../config/config-service.js'
+import { ConfigService } from '../config/config-service'
 
 /**
  * 底层原语来自 skill-primitives（对应 pi-coding-agent SDK）
@@ -33,7 +33,7 @@ import {
   formatSkillsForPrompt,
   extractFrontmatter,
   parseBool
-} from './skill-primitives.js'
+} from './skill-primitives'
 
 // Re-export SDK 类型供外部使用
 export type { Skill }

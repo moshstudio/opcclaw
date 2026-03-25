@@ -1,18 +1,19 @@
-import type { AIModelConfig } from '@shared/types/models.js'
-import type { MiniAgentEvent } from '../agent/agent-events.js'
-import { mapEventToChatFields } from './handlers/chat-bridge.js'
+import type { AIModelConfig } from '@shared/types/models'
+import type { MiniAgentEvent } from '../agent/agent-events'
+import { mapEventToChatFields } from './handlers/chat-bridge'
 import type {
   ChatPayload,
   AgentEventPayload,
   GatewayEvent,
   ModelsPayload,
   TickPayload,
-  ShutdownPayload
+  ShutdownPayload,
+  HeartbeatEventPayload
 } from '@shared/types/gateway'
-import type { GwClient } from './handlers/types.js'
-import { type EventFrame, MAX_BUFFERED_BYTES } from './protocol.js'
-import { formatGatewayDebugData } from './helpers/debug-utils.js'
-import type { Logger } from '@main/services/common/logger.js'
+import type { GwClient } from './handlers/types'
+import { type EventFrame, MAX_BUFFERED_BYTES } from './protocol'
+import { formatGatewayDebugData } from './helpers/debug-utils'
+import type { Logger } from '@main/services/common/logger'
 
 /**
  * 下一代网关业务事件模型 (BEM)
@@ -29,6 +30,10 @@ export type GatewayBusinessEvent =
   | { type: 'models:list'; models: AIModelConfig[]; defaultModelId: string | null }
   | { type: 'system:tick'; ts: number }
   | { type: 'system:shutdown'; reason: string; restartExpectedMs: number | null }
+  | { type: 'heartbeat:created'; agentId: string; status: any }
+  | { type: 'heartbeat:updated'; agentId: string; status: any }
+  | { type: 'heartbeat:deleted'; agentId: string }
+  | { type: 'heartbeat:triggered'; agentId: string }
 
 /**
  * 广播器发送选项
@@ -46,6 +51,7 @@ export type BroadcastPayload =
   | ModelsPayload
   | TickPayload
   | ShutdownPayload
+  | HeartbeatEventPayload
   | MiniAgentEvent // 用于转发原始事件时
 
 /**
@@ -108,6 +114,13 @@ export class Broadcaster {
           restartExpectedMs: event.restartExpectedMs
         } as ShutdownPayload)
         break
+
+      case 'heartbeat:created':
+      case 'heartbeat:updated':
+      case 'heartbeat:deleted':
+      case 'heartbeat:triggered':
+        this.emit('heartbeat', event as HeartbeatEventPayload)
+        break
     }
   }
 
@@ -116,6 +129,8 @@ export class Broadcaster {
    * 支持 namespace:action 格式自动化分发。
    */
   public handleAgentEvent(event: MiniAgentEvent) {
+    console.log('handleAgentEvent', event)
+
     const sessionKey = 'sessionKey' in event ? event.sessionKey : 'global'
     const [ns] = event.type.split(':')
 
@@ -166,7 +181,7 @@ export class Broadcaster {
         return
       }
 
-      this.emit(ns as any, event as AgentEventPayload)
+      this.emit(ns as GatewayEvent, event as AgentEventPayload)
       return
     }
 

@@ -9,14 +9,15 @@ import {
   TICK_INTERVAL_MS,
   MAX_PAYLOAD_BYTES,
   type HelloOk
-} from '../protocol.js'
-import { builtinTools } from '../../tools/builtin.js'
-import { loadWorkspaceBootstrapFiles } from '../../context/bootstrap.js'
-import { ConfigService } from '../../config/config-service.js'
-import { AgentRegistry } from '../../agent/registry.js'
-import { GatewayManager } from '../manager.js'
-import { type Handler, safeEqual } from './types.js'
-import { GATEWAY_EVENTS_DOC } from '@shared/metadata/events.js'
+} from '../protocol'
+import { builtinTools } from '../../tools/builtin'
+import { loadWorkspaceBootstrapFiles } from '../../context/bootstrap'
+import { ConfigService } from '../../config/config-service'
+import { AgentRegistry } from '../../agent/registry'
+import { GatewayManager } from '../manager'
+import { type AppConfig } from '@shared/types/config'
+import { type Handler, safeEqual } from './types'
+import { GATEWAY_EVENTS_DOC } from '@shared/metadata/events'
 
 /**
  * system:events-doc
@@ -158,7 +159,7 @@ export const handleUsageStats: Handler = async (params, _client, ctx) => {
     return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `agent not found: ${agentId}`) }
   }
 
-  const stats = await agent.usage.getStats(p?.sessionKey)
+  const stats = await agent.getUsageManager().getStats(p?.sessionKey)
   return { ok: true, payload: { stats } }
 }
 
@@ -173,7 +174,7 @@ export const handleConfigGet: Handler = async (_params, _client, _ctx) => {
  * config:save
  */
 export const handleConfigSave: Handler = async (params, _client, ctx) => {
-  const config = params as any
+  const config = params as Partial<AppConfig>
   if (!config) {
     return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, 'config required') }
   }

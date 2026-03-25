@@ -13,8 +13,8 @@ import type { EventStream, Api, Usage } from '@mariozechner/pi-ai'
 import type { Tool, ToolContext } from '@main/services/tools/types'
 import type { Message, AgentPerformance } from '@main/services/agent/agent-events'
 import type { Model, StreamFunction, ThinkingLevel } from '@mariozechner/pi-ai'
-import { describeError, isContextOverflowError } from '@main/services/provider/errors.js'
-import { createMiniAgentStream, type MiniAgentEvent, type MiniAgentResult } from './agent-events.js'
+import { describeError, isContextOverflowError } from '@main/services/provider/errors'
+import { createMiniAgentStream, type MiniAgentEvent, type MiniAgentResult } from './agent-events'
 
 // 导入解耦后的子模块
 import { MetricsTracker } from './loop/metrics'

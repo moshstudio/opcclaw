@@ -1,6 +1,6 @@
-import { ErrorCodes, errorShape } from '../protocol.js'
-import type { Handler } from './types.js'
-import { ensureParams, getAgentOrError } from './handler-utils.js'
+import { ErrorCodes, errorShape } from '../protocol'
+import type { Handler } from './types'
+import { ensureParams, getAgentOrError } from './handler-utils'
 
 /**
  * chat.send
@@ -47,10 +47,16 @@ export const handleChatHistory: Handler = async (params, _client, ctx) => {
   if (!check.ok) return check
 
   const { agentId, sessionKey } = check.values
+  const p = params as Record<string, unknown>
+  const limit = p.limit
+  const offset = p.offset
   const res = getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
   const { agent } = res
-  const messages = await agent.getHistory(sessionKey)
-  return { ok: true, payload: { agentId, sessionKey, messages } }
+  const { messages, hasMore, total } = await agent.getSessionHistory(sessionKey, {
+    limit: limit ? parseInt(String(limit), 10) : undefined,
+    offset: offset ? parseInt(String(offset), 10) : undefined
+  })
+  return { ok: true, payload: { agentId, sessionKey, messages, hasMore, total } }
 }

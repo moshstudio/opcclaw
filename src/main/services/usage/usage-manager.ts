@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import type { RunUsageRecord, UsageStats } from './types.js'
+import type { RunUsageRecord, UsageStats } from './types'
 
 /**
  * 用量统计管理器 (Usage Manager)
@@ -10,6 +10,7 @@ export class UsageManager {
   private baseDir: string
   private runsPath: string
   private totalsPath: string
+  private updateLock: Promise<void> = Promise.resolve()
 
   constructor(baseDir: string) {
     this.baseDir = baseDir
@@ -72,49 +73,65 @@ export class UsageManager {
    * 增量更新局部汇总文件
    */
   private async updateTotals(record: RunUsageRecord): Promise<void> {
-    let totals: UsageStats
-    try {
-      const content = await fs.readFile(this.totalsPath, 'utf8')
-      totals = JSON.parse(content)
-    } catch {
-      // 如果没有缓存，则执行一次全量扫描来初始化
-      await this.rebuildTotals()
-      return
+    const task = async () => {
+      let totals: UsageStats
+      try {
+        const content = await fs.readFile(this.totalsPath, 'utf8')
+        totals = JSON.parse(content)
+      } catch {
+        await this.rebuildTotalsInner()
+        return
+      }
+
+      const count = totals.runCount || 0
+      const nextCount = count + 1
+
+      totals.runCount = nextCount
+      totals.totalTokens += record.usage.totalTokens || 0
+      totals.promptTokens += record.usage.input || 0
+      totals.completionTokens += record.usage.output || 0
+      totals.cacheReadTokens += record.usage.cacheRead || 0
+      totals.cacheWriteTokens += record.usage.cacheWrite || 0
+      totals.totalCost += record.usage.cost?.total || 0
+
+      if (record.performance?.throughput) {
+        totals.avgThroughput =
+          ((totals.avgThroughput || 0) * count + record.performance.throughput) / nextCount
+      }
+      if (record.performance?.totalDurationMs) {
+        totals.avgLatencyMs =
+          ((totals.avgLatencyMs || 0) * count + record.performance.totalDurationMs) / nextCount
+      }
+
+      await fs.writeFile(this.totalsPath, JSON.stringify(totals, null, 2), 'utf8')
     }
 
-    // 执行增量累加
-    const count = totals.runCount || 0
-    const nextCount = count + 1
-
-    totals.runCount = nextCount
-    totals.totalTokens += record.usage.totalTokens || 0
-    totals.promptTokens += record.usage.input || 0
-    totals.completionTokens += record.usage.output || 0
-    totals.cacheReadTokens += record.usage.cacheRead || 0
-    totals.cacheWriteTokens += record.usage.cacheWrite || 0
-    totals.totalCost += record.usage.cost?.total || 0
-
-    // 计算滚动的性能平均值: (OldAvg * OldCount + NewVal) / NewCount
-    if (record.performance?.throughput) {
-      totals.avgThroughput =
-        ((totals.avgThroughput || 0) * count + record.performance.throughput) / nextCount
-    }
-    if (record.performance?.totalDurationMs) {
-      totals.avgLatencyMs =
-        ((totals.avgLatencyMs || 0) * count + record.performance.totalDurationMs) / nextCount
-    }
-
-    await fs.writeFile(this.totalsPath, JSON.stringify(totals, null, 2), 'utf8')
+    this.updateLock = this.updateLock.then(task).catch((err) => {
+      console.error('[UsageManager] updateTotals failed:', err)
+    })
+    return this.updateLock
   }
 
   /**
-   * 重建全量汇总信息 (回滚机制)
+   * 重建全量汇总信息 (内部非锁版本)
    */
-  private async rebuildTotals(): Promise<UsageStats> {
+  private async rebuildTotalsInner(): Promise<UsageStats> {
     const stats = await this.scanAndAggregate({})
     await fs.writeFile(this.totalsPath, JSON.stringify(stats, null, 2), 'utf8')
     console.log(`[UsageManager] Totals cache rebuilt: runs=${stats.runCount}`)
     return stats
+  }
+
+  /**
+   * 重建全量汇总信息 (回滚机制 - 公开带锁)
+   */
+  async rebuildTotals(): Promise<UsageStats> {
+    const promise = this.updateLock.then(() => this.rebuildTotalsInner())
+    this.updateLock = promise.then(
+      () => {},
+      () => {}
+    )
+    return promise
   }
 
   /**
@@ -159,7 +176,8 @@ export class UsageManager {
           stats.totalCost += record.usage.cost?.total || 0
 
           if (record.performance?.throughput) totalThroughput += record.performance.throughput
-          if (record.performance?.totalDurationMs) totalLatency += record.performance.totalDurationMs
+          if (record.performance?.totalDurationMs)
+            totalLatency += record.performance.totalDurationMs
 
           count++
         } catch (e) {

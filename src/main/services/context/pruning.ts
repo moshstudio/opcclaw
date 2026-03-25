@@ -2,8 +2,8 @@
  * 上下文修剪 (Context Pruning)
  */
 
-import type { ContentBlock, Message, AgentToolResultBlock } from '@shared/types/agent.js'
-import { CHARS_PER_TOKEN_ESTIMATE, estimateMessageChars, estimateMessagesChars } from './tokens.js'
+import type { ContentBlock, Message, AgentToolResultBlock } from '@shared/types/agent'
+import { CHARS_PER_TOKEN_ESTIMATE, estimateMessageChars, estimateMessagesChars } from './tokens'
 
 // ============== 工具可修剪性判定 ==============
 
@@ -83,7 +83,9 @@ export type PruneResult = {
   budgetChars: number
 }
 
-export function resolvePruningSettings(raw?: Partial<ContextPruningSettings>): ContextPruningSettings {
+export function resolvePruningSettings(
+  raw?: Partial<ContextPruningSettings>
+): ContextPruningSettings {
   if (!raw) return DEFAULT_CONTEXT_PRUNING_SETTINGS
   const d = DEFAULT_CONTEXT_PRUNING_SETTINGS
   return {
@@ -115,7 +117,10 @@ function isBlockProtected(block: ContentBlock): boolean {
 function getContentText(content: any): string {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
-    return content.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n')
+    return content
+      .filter((b) => b.type === 'text')
+      .map((b) => b.text || '')
+      .join('\n')
   }
   return ''
 }
@@ -159,18 +164,21 @@ function applySoftTrim(
       }
       return res.block
     })
-    return didChange ? cloneMessage(msg, nextBlocks as any) : msg
+    return didChange ? cloneMessage(msg, nextBlocks as ContentBlock[]) : msg
   })
   return { messages: output, trimmedToolResults }
 }
 
 // ============== Layer 2: Hard Clear ==============
 
-function countPrunableToolChars(messages: Message[], isPrunable: (toolName: string) => boolean): number {
+function countPrunableToolChars(
+  messages: Message[],
+  isPrunable: (toolName: string) => boolean
+): number {
   let total = 0
   for (const msg of messages) {
     if (!Array.isArray(msg.content)) continue
-    for (const block of (msg.content as any[])) {
+    for (const block of msg.content as ContentBlock[]) {
       if (block.type === 'toolResult' && !isBlockProtected(block)) {
         if (!block.toolName || isPrunable(block.toolName)) {
           total += getContentText(block.content).length
@@ -189,14 +197,16 @@ function applyHardClear(
 ): { messages: Message[]; hardClearedToolResults: number } {
   if (!settings.hardClear.enabled) return { messages, hardClearedToolResults: 0 }
   let totalChars = estimateMessagesChars(messages)
-  if (totalChars / charWindow < settings.hardClearRatio) return { messages, hardClearedToolResults: 0 }
-  if (countPrunableToolChars(messages, isPrunable) < settings.minPrunableToolChars) return { messages, hardClearedToolResults: 0 }
+  if (totalChars / charWindow < settings.hardClearRatio)
+    return { messages, hardClearedToolResults: 0 }
+  if (countPrunableToolChars(messages, isPrunable) < settings.minPrunableToolChars)
+    return { messages, hardClearedToolResults: 0 }
 
   let hardClearedToolResults = 0
   const output = messages.map((msg) => {
     if (!Array.isArray(msg.content)) return msg
     let didChange = false
-    const nextBlocks = msg.content.map((block: any) => {
+    const nextBlocks = msg.content.map((block: ContentBlock) => {
       if (block.type === 'toolResult' && !isBlockProtected(block)) {
         const textLen = getContentText(block.content).length
         if ((!block.toolName || isPrunable(block.toolName)) && textLen > 0) {
@@ -210,7 +220,7 @@ function applyHardClear(
       }
       return block
     })
-    return didChange ? cloneMessage(msg, nextBlocks as any) : msg
+    return didChange ? cloneMessage(msg, nextBlocks as ContentBlock[]) : msg
   })
   return { messages: output, hardClearedToolResults }
 }

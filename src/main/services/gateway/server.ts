@@ -13,23 +13,20 @@
 import http from 'node:http'
 import { WebSocketServer } from 'ws'
 import type { AgentRegistry } from '@main/services/agent/registry'
-import type { MiniAgentEvent } from '@main/services/agent/agent-events.js'
-import { TICK_INTERVAL_MS } from './protocol.js'
-import { type GwClient, type HandlerContext } from './handlers/index.js'
-import { Broadcaster, createBroadcastFn } from './broadcaster.js'
+import type { MiniAgentEvent } from '@main/services/agent/agent-events'
+import { TICK_INTERVAL_MS } from './protocol'
+import { type GwClient, type HandlerContext } from './handlers/index'
+import { Broadcaster, createBroadcastFn } from './broadcaster'
 import { setupConnectionHandler } from './connection-handler'
 import { renderGatewayDoc } from './doc-renderer'
-import { GATEWAY_EVENTS_DOC } from '@shared/metadata/events.js'
-
-import { Logger, type LogLevel, setGlobalLogLevel } from '@main/services/common/logger.js'
+import { GATEWAY_EVENTS_DOC } from '@shared/metadata/events'
+import { Logger, setGlobalLogLevel } from '@main/services/common/logger'
+import { type GatewaySettings } from '@shared/types/config'
 
 // ============== 类型 ==============
 
-export type GatewayServerOptions = {
-  port?: number
-  token?: string
+export type GatewayServerOptions = GatewaySettings & {
   registry: AgentRegistry
-  logLevel?: LogLevel
 }
 
 export type GatewayServer = {

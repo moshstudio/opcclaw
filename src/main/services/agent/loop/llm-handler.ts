@@ -12,7 +12,7 @@ import type {
 import type { EventStream } from '@mariozechner/pi-ai'
 
 import type { MiniAgentEvent, MiniAgentResult } from '../agent-events'
-import { retryAsync, describeError, isRateLimitError } from '@main/services/provider/errors.js'
+import { retryAsync, describeError, isRateLimitError } from '@main/services/provider/errors'
 import { abortable } from '@main/services/tools/abort'
 import type { MetricsTracker } from './metrics'
 
@@ -164,5 +164,3 @@ export async function executeLlmCall(
     usage: lastUsage
   }
 }
-
-

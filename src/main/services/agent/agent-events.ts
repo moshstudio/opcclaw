@@ -7,7 +7,7 @@
  */
 
 import { EventStream, type Usage } from '@mariozechner/pi-ai'
-import { type Message, type AgentPerformance } from '@shared/types/agent.js'
+import { type Message, type AgentPerformance, type ContentBlock } from '@shared/types/agent'
 
 export type { Message, AgentPerformance }
 
@@ -70,7 +70,7 @@ export type MiniAgentEvent =
       sessionKey: string
       toolCallId: string
       toolName: string
-      content: any[] // 对应 pi-ai 的 ToolResultMessage.content
+      content: ContentBlock[] // 对应 pi-ai 的 ToolResultMessage.content
       isError: boolean
     }
 
@@ -79,8 +79,9 @@ export type MiniAgentEvent =
       type: 'chat:notice'
       runId: string
       sessionKey: string
-      summaryChars: number
-      droppedMessages: number
+      text?: string
+      summaryChars?: number
+      droppedMessages?: number
       firstKeptEntryId?: string
     }
   | { type: 'agent:context-overflow'; runId: string; sessionKey: string; error: string }

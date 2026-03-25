@@ -10,7 +10,7 @@
  *   import { Skill, loadSkillsFromDir, formatSkillsForPrompt } from "@mariozechner/pi-coding-agent"
  *
  * Mini 因为不依赖 SDK，所以在此自行实现。上层 skills.ts 通过
- *   import { type Skill, loadSkillsFromDir, formatSkillsForPrompt } from "./skill-primitives.js"
+ *   import { type Skill, loadSkillsFromDir, formatSkillsForPrompt } from "./skill-primitives"
  * 复用这些原语，与 OpenClaw 的分层结构一一对应。
  */
 

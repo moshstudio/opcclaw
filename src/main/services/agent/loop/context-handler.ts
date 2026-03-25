@@ -1,8 +1,8 @@
 import type { Context as PiContext, Model } from '@mariozechner/pi-ai'
 import type { Message } from '@main/services/session/session'
 import type { Tool } from '@main/services/tools/types'
-import { pruneContextMessages } from '@main/services/context/index.js'
-import { convertMessagesToPi } from '../message-convert.js'
+import { pruneContextMessages } from '@main/services/context/index'
+import { convertMessagesToPi } from '../message-convert'
 
 export interface PrepareContextParams {
   currentMessages: Message[]

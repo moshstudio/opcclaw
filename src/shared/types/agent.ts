@@ -7,13 +7,146 @@ import {
   ThinkingContent,
   ToolCall,
   ImageContent,
-  StopReason
+  StopReason,
+  ThinkingLevel,
+  StreamFunction,
+  Model,
+  Api
 } from '@mariozechner/pi-ai'
-export type { Usage, StopReason }
+
+export type { Usage, StopReason, ThinkingLevel, StreamFunction, Model, Api }
+
+export type MemorySource = 'memory' | 'sessions'
+
+/**
+ * 记忆条目 (Shared)
+ */
+export interface MemoryEntry {
+  id: string
+  content: string
+  source: MemorySource
+  path?: string
+  hash: string
+  createdAt: number
+}
+
+/**
+ * 记忆搜索结果 (Shared)
+ */
+export interface MemorySearchResult {
+  entry: MemoryEntry
+  score: number
+  snippet: string
+}
+
+/**
+ * 工具执行上下文接口 (主进程运行时注入)
+ */
+export interface ToolContext {
+  workspaceDir: string
+  sessionKey: string
+  sessionId?: string
+  agentId?: string
+  memory?: {
+    search: (query: string, limit?: number) => Promise<MemorySearchResult[]>
+    getById: (id: string) => Promise<MemoryEntry | null>
+    add: (content: string, source?: MemorySource, filePath?: string) => Promise<string>
+  }
+  onMemorySearch?: (results: MemorySearchResult[]) => void
+  spawnSubagent?: (params: {
+    task: string
+    label?: string
+    cleanup?: 'keep' | 'delete'
+  }) => Promise<{ runId: string; sessionKey: string }>
+  abortSignal?: AbortSignal
+}
+
+/**
+ * 核心工具接口
+ */
+export interface Tool<TInput = any> {
+  name: string
+  description: string
+  category: 'file' | 'runtime' | 'network' | 'memory' | 'session'
+  inputSchema: {
+    type: 'object'
+    properties: Record<string, unknown>
+    required?: string[]
+  }
+  execute: (input: TInput, ctx: ToolContext) => Promise<string>
+}
 
 /**
  * Agent 相关通用类型定义 (Shared)
  */
+
+export interface AgentConfig {
+  // --- 核心标识与描述 ---
+  agentId?: string
+  name: string
+  description?: string
+  isPinned?: boolean
+
+  // --- 模型与 API 配置 ---
+  apiKey?: string
+  provider?: string
+  model?: string
+  baseUrl?: string
+  headers?: Record<string, string | null>
+  temperature?: number
+  reasoning?: ThinkingLevel
+  maxTurns?: number
+  maxTokens?: number
+  contextTokens?: number
+
+  // --- 运行时对象 (主要用于主进程) ---
+  streamFn?: StreamFunction
+  modelDef?: Model<Api>
+  tools?: Tool<any>[]
+
+  // --- 提示词与策略 ---
+  systemPrompt?: string
+  toolPolicy?: {
+    allow?: string[]
+    deny?: string[]
+  }
+  sandbox?: {
+    enabled?: boolean
+    allowExec?: boolean
+    allowWrite?: boolean
+  }
+
+  // --- 功能开关 ---
+  enableMemory?: boolean
+  enableContext?: boolean
+  enableSkills?: boolean
+  enableHeartbeat?: boolean
+  heartbeatInterval?: number
+  supportsVision?: boolean
+
+  // --- 目录与路径配置 ---
+  workspaceDir?: string
+  sessionDir?: string
+  memoryDir?: string
+  usageDir?: string
+
+  // --- 并发与限制 ---
+  maxConcurrentRuns?: number
+}
+
+export interface RunResult {
+  runId?: string
+  text: string
+  turns: number
+  toolCalls: number
+  skillTriggered?: string
+  memoriesUsed?: number
+}
+
+export interface Agent {
+  id: string
+  config: AgentConfig
+}
 
 export interface SubagentInfo {
   /** 任务详情 */

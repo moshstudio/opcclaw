@@ -1,4 +1,4 @@
-import type { Handler } from './types.js'
+import type { Handler } from './types'
 import {
   handleConnect,
   handleHealth,
@@ -10,20 +10,29 @@ import {
   handleConfigGet,
   handleConfigSave,
   handleEventsDoc
-} from './system-handler.js'
+} from './system-handler'
+import {
+  handleHeartbeatList,
+  handleHeartbeatUpdate,
+  handleHeartbeatTrigger,
+  handleHeartbeatSaveFile,
+  handleHeartbeatDeleteFile,
+  handleHeartbeatGetFile,
+  handleHeartbeatLogs
+} from './heartbeat-handler'
 import {
   handleAgentList,
   handleAgentCreate,
   handleAgentUpdate,
   handleAgentDelete
-} from './agent-handler.js'
-import { handleChatSend, handleChatAbort, handleChatHistory } from './chat-handler.js'
+} from './agent-handler'
+import { handleChatSend, handleChatAbort, handleChatHistory } from './chat-handler'
 import {
   handleSessionsCreate,
   handleSessionsList,
   handleSessionsReset,
   handleSessionsDelete
-} from './session-handler.js'
+} from './session-handler'
 import {
   handleModelsFetch,
   handleModelsAdd,
@@ -31,9 +40,9 @@ import {
   handleModelsDelete,
   handleModelsSetDefault,
   handleModelsTest
-} from './model-handler.js'
+} from './model-handler'
 
-export * from './types.js'
+export * from './types'
 
 export const handlers: Record<string, Handler> = {
   connect: handleConnect,
@@ -62,5 +71,12 @@ export const handlers: Record<string, Handler> = {
   'models:delete': handleModelsDelete,
   'models:setDefault': handleModelsSetDefault,
   'models:test': handleModelsTest,
+  'heartbeat:list': handleHeartbeatList,
+  'heartbeat:update': handleHeartbeatUpdate,
+  'heartbeat:trigger': handleHeartbeatTrigger,
+  'heartbeat:save-file': handleHeartbeatSaveFile,
+  'heartbeat:delete-file': handleHeartbeatDeleteFile,
+  'heartbeat:get-file': handleHeartbeatGetFile,
+  'heartbeat:logs': handleHeartbeatLogs,
   health: handleHealth
 }

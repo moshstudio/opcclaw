@@ -1,8 +1,8 @@
-import { startGatewayServer, type GatewayServer } from './server.js'
-import { GatewayClient } from './client.js'
-import { ConfigService } from '@main/services/config/config-service.js'
-import { AgentRegistry } from '@main/services/agent/registry.js'
-import { Logger, LogLevel, setGlobalLogLevel } from '@main/services/common/logger.js'
+import { startGatewayServer, type GatewayServer } from './server'
+import { GatewayClient } from './client'
+import { ConfigService } from '@main/services/config/config-service'
+import { AgentRegistry } from '@main/services/agent/registry'
+import { Logger, LogLevel, setGlobalLogLevel } from '@main/services/common/logger'
 
 export class GatewayManager {
   private static instance: GatewayManager

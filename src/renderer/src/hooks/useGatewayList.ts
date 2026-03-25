@@ -6,10 +6,10 @@ interface UseGatewayListOptions<P> {
   method: GatewayMethod
   params?: P
   autoFetch?: boolean
-  refreshDeps?: any[]
+  refreshDeps?: unknown[]
 }
 
-export function useGatewayList<T, P = any>(options: UseGatewayListOptions<P>) {
+export function useGatewayList<T, P = Record<string, unknown>>(options: UseGatewayListOptions<P>) {
   const { method, params, autoFetch = true, refreshDeps = [] } = options
   const [data, setData] = useState<T[]>([])
   const [loading, setLoading] = useState(false)
@@ -20,7 +20,7 @@ export function useGatewayList<T, P = any>(options: UseGatewayListOptions<P>) {
     setError(null)
     try {
       const client = getGatewayClient()
-      const res = await client.request<any>(method as any, params)
+      const res = await client.request<Record<string, T[]>>(method as GatewayMethod, params)
       // Standardize response extraction (e.g., res.skills or res.tools)
       const key = method.split(':')[0]
       setData(res[key] || [])
@@ -30,13 +30,13 @@ export function useGatewayList<T, P = any>(options: UseGatewayListOptions<P>) {
     } finally {
       setLoading(false)
     }
-  }, [method, JSON.stringify(params)])
+  }, [method, params])
 
   useEffect(() => {
     if (autoFetch) {
       fetchData()
     }
-  }, [fetchData, autoFetch, ...refreshDeps]) // Only re-fetch if method or deps change
+  }, [fetchData, autoFetch, refreshDeps]) // Removed spread operator to satisfy eslint
 
   return { data, setData, loading, error, refresh: fetchData }
 }

@@ -1,4 +1,4 @@
-import { newShortId } from '@shared/utils/id.js'
+import { newShortId } from '@shared/utils/id'
 import type { SessionManager } from '@main/services/session/session'
 import { normalizeAgentId } from '@main/services/session/session-key'
 import type { MiniAgentEvent } from '../agent-events'

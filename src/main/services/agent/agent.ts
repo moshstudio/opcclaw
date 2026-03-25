@@ -1,607 +1,465 @@
+import fs from 'node:fs'
 import path from 'node:path'
-import { newShortId } from '@shared/utils/id.js'
-import type { Tool, ToolContext } from '@main/services/tools/types.js'
+import { newShortId } from '@shared/utils/id'
+import type { Tool } from '@main/services/tools/types'
 import { builtinTools } from '@main/services/tools/builtin'
-import { wrapToolWithAbortSignal } from '@main/services/tools/abort'
-import {
-  SessionManager,
-  type Message,
-  type ContentBlock,
-  COMPACTION_SUMMARY_PREFIX
-} from '@main/services/session/session'
+import { SessionManager } from '@main/services/session/session'
 import { MemoryManager } from '@main/services/memory/memory'
-import { ContextLoader, DEFAULT_CONTEXT_WINDOW_TOKENS } from '@main/services/context/index.js'
-import {
-  CONTEXT_WINDOW_HARD_MIN_TOKENS,
-  CONTEXT_WINDOW_WARN_BELOW_TOKENS,
-  evaluateContextWindowGuard,
-  resolveContextWindowInfo
-} from './context-window-guard.js'
 import { SkillManager } from '@main/services/skills/skills'
 import { HeartbeatManager } from '@main/services/heartbeat/heartbeat'
-import { normalizeAgentId, resolveSessionKey } from '@main/services/session/session-key'
-import {
-  enqueueInLane,
-  resolveGlobalLane,
-  resolveSessionLane,
-  setLaneConcurrency
-} from './command-queue.js'
-import { filterToolsByPolicy, type ToolPolicy } from './tool-policy.js'
-import type { MiniAgentEvent } from './agent-events.js'
-import { runAgentLoop } from './agent-loop.js'
-import { UsageManager } from '@main/services/usage/usage-manager.js'
-import type { Model, StreamFunction, ThinkingLevel } from '@mariozechner/pi-ai'
-import { streamSimple, getModel, getEnvApiKey } from '@mariozechner/pi-ai'
-import { ConfigService } from '@main/services/config/config-service.js'
+import { resolveSessionKey } from '@main/services/session/session-key'
+import { runAgentLoop } from './agent-loop'
+import { UsageManager } from '@main/services/usage/usage-manager'
+import { ConfigService } from '../config/config-service'
+import type { Model, Api, KnownProvider } from '@mariozechner/pi-ai'
+import { streamSimple } from '@mariozechner/pi-ai'
+import type { AIModelConfig } from '@shared/types/models'
+import type { MiniAgentEvent } from './agent-events'
+import type { AgentConfig, RunResult, Message } from '@shared/types/agent'
+export type { AgentConfig, RunResult, Message }
 
-// 导入核心服务
-import { AgentStateManager } from './core/state-manager.js'
-import { AgentPromptBuilder } from './core/prompt-builder.js'
-import { SubagentService } from './core/subagent-service.js'
-import { AgentContextManager } from './core/context-manager.js'
-import { AgentSessionService } from './core/session-service.js'
+// 导入核心子服务
+import { AgentStateManager } from './core/state-manager'
+import { AgentPromptBuilder } from './core/prompt-builder'
+import { AgentContextManager } from './core/context-manager'
+import { AgentSessionService } from './core/session-service'
+import { SubagentService } from './core/subagent-service'
 
 // ============== 类型定义 ==============
-
-export interface AgentConfig {
-  apiKey?: string
-  provider?: string
-  model?: string
-  baseUrl?: string
-  headers?: Record<string, string | null>
-  streamFn?: StreamFunction
-  modelDef?: Model<any>
-  agentId?: string
-  systemPrompt?: string
-  tools?: Tool[]
-  toolPolicy?: ToolPolicy
-  sandbox?: {
-    enabled?: boolean
-    allowExec?: boolean
-    allowWrite?: boolean
-  }
-  temperature?: number
-  reasoning?: ThinkingLevel
-  maxTurns?: number
-  sessionDir?: string
-  workspaceDir?: string
-  memoryDir?: string
-  usageDir?: string
-  enableMemory?: boolean
-  enableContext?: boolean
-  enableSkills?: boolean
-  enableHeartbeat?: boolean
-  heartbeatInterval?: number
-  contextTokens?: number
-  maxTokens?: number
-  maxConcurrentRuns?: number
-  supportsVision?: boolean
-}
-
-export interface RunResult {
-  runId?: string
-  text: string
-  turns: number
-  toolCalls: number
-  skillTriggered?: string
-  memoriesUsed?: number
-}
-
-const DEFAULT_SYSTEM_PROMPT = `你是一个编程助手 Agent。
-
-## 可用工具
-- read: 读取文件内容
-- write: 写入文件
-- edit: 编辑文件 (字符串替换)
-- exec: 执行 shell 命令
-- list: 列出目录
-- grep: 搜索文件内容
-
-## 原则
-1. 修改代码前必须先读取文件
-2. 使用 edit 进行 small 范围修改
-3. 保持简洁，不要过度解释
-4. 遇到错误时分析原因并重试
-
-## 输出格式
-- 简洁的语言
-- 代码使用 markdown 格式`
 
 // ============== Agent 核心类 ==============
 
 /**
- * Agent 核心类
- *
- * 采用 Orchestrator 模式，集成并调度多个核心子服务：
- * - StateManager: 任务状态与中断管理
- * - SessionService: 会话业务逻辑
- * - PromptBuilder: 提示词工程
- * - ContextManager: 上下文裁剪与窗口保护
- * - SubagentService: 子智能体生命周期
+ * Agent 核心类 (Architecture Orchestrator)
  */
 export class Agent {
-  public streamFn: StreamFunction
-  public usage: UsageManager
-  private modelDef?: Model<any>
-  private apiKey?: string
-  private temperature?: number
-  private reasoning?: ThinkingLevel
-  private agentId: string
-  private tools: Tool[]
-  private maxTurns: number
-  private workspaceDir: string
-  private toolPolicy?: ToolPolicy
-  private contextTokens: number
-  private maxTokens?: number
-  private sandbox?: {
-    enabled: boolean
-    allowExec: boolean
-    allowWrite: boolean
-  }
+  public readonly id: string
+  public readonly config: AgentConfig
+  public readonly workspaceDir: string
 
-  // 组件及服务
-  private sessions: SessionManager
-  private memory: MemoryManager
-  private context: ContextLoader
-  private skills: SkillManager
-  private heartbeat: HeartbeatManager
+  private readonly sessionManager: SessionManager
+  private readonly memoryManager: MemoryManager
+  private readonly skillManager: SkillManager
+  private readonly heartbeat: HeartbeatManager
+  private readonly usageManager: UsageManager
 
-  private stateManager: AgentStateManager
-  private promptBuilder: AgentPromptBuilder
-  private subagentService: SubagentService
-  private contextManager: AgentContextManager
-  private sessionService: AgentSessionService
+  // 子服务实例
+  private readonly stateManager: AgentStateManager
+  private readonly promptBuilder: AgentPromptBuilder
+  private readonly contextManager: AgentContextManager
+  private readonly sessionService: AgentSessionService
+  private readonly subagentService: SubagentService
 
-  private enableMemory: boolean
-  private enableContext: boolean
-  private enableSkills: boolean
-
-  private listeners = new Set<(event: MiniAgentEvent) => void>()
+  private eventsListeners = new Set<(event: MiniAgentEvent) => void>()
 
   constructor(config: AgentConfig) {
-    const provider = config.provider ?? 'anthropic'
-    const modelId =
-      config.model ?? (provider === 'anthropic' ? 'claude-sonnet-4-20250514' : undefined)
+    this.id = config.agentId || newShortId()
+    this.config = { ...config, agentId: this.id }
+    this.workspaceDir = config.workspaceDir || path.join(process.cwd(), 'agents', this.id)
 
-    this.resolveModelDefinition(config, provider, modelId)
-
-    this.streamFn = config.streamFn ?? streamSimple
-    this.agentId = normalizeAgentId(config.agentId ?? 'main')
-    this.tools = config.tools ?? builtinTools
-    this.maxTurns = config.maxTurns ?? 20
-    this.maxTokens = config.maxTokens
-    this.workspaceDir = config.workspaceDir ?? process.cwd()
-    this.apiKey = config.apiKey ?? getEnvApiKey(provider)
-    this.temperature = config.temperature
-    this.reasoning = config.reasoning ?? 'medium'
-    this.toolPolicy = config.toolPolicy
-    this.contextTokens = Math.max(
-      1,
-      Math.floor(config.contextTokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS)
-    )
-    this.sandbox = {
-      enabled: config.sandbox?.enabled ?? false,
-      allowExec: config.sandbox?.allowExec ?? false,
-      allowWrite: config.sandbox?.allowWrite ?? true
-    }
-
-    // 初始化基础组件
-    const agentDataDir = ConfigService.getInstance().getAgentDir(this.agentId)
-    this.sessions = new SessionManager(config.sessionDir ?? path.join(agentDataDir, 'sessions'))
-    this.memory = new MemoryManager(config.memoryDir ?? path.join(agentDataDir, 'memory'))
-    this.context = new ContextLoader(this.workspaceDir)
-    this.skills = new SkillManager(this.workspaceDir)
+    // 1. 初始化基础管理器
+    this.sessionManager = new SessionManager(config.sessionDir!)
+    this.memoryManager = new MemoryManager(config.memoryDir!)
+    this.skillManager = new SkillManager(this.workspaceDir)
+    this.usageManager = new UsageManager(config.usageDir!)
     this.heartbeat = new HeartbeatManager(this.workspaceDir, {
-      intervalMs: config.heartbeatInterval
+      enabled: config.enableHeartbeat,
+      intervalMs: config.heartbeatInterval,
+      heartbeatPath: 'HEARTBEAT.md'
     })
-    this.usage = new UsageManager(config.usageDir ?? path.join(agentDataDir, 'usage'))
 
-    // 功能开关
-    this.enableMemory = config.enableMemory ?? true
-    this.enableContext = config.enableContext ?? true
-    this.enableSkills = config.enableSkills ?? true
+    // 2. 初始化子服务
+    this.stateManager = new AgentStateManager(this.sessionManager)
 
-    // 初始化解耦的核心服务
-    const emit = (e: MiniAgentEvent) => this.emit(e)
-
-    this.stateManager = new AgentStateManager(this.sessions)
-    this.sessionService = new AgentSessionService({
-      agentId: this.agentId,
-      sessionManager: this.sessions,
-      emit
-    })
     this.promptBuilder = new AgentPromptBuilder({
-      baseSystemPrompt: config.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
-      context: this.enableContext ? this.context : undefined,
-      skills: this.enableSkills ? this.skills : undefined,
-      enableMemory: this.enableMemory,
-      sandbox: this.sandbox
+      baseSystemPrompt: config.systemPrompt || 'You are a helpful assistant.',
+      enableMemory: config.enableMemory,
+      skills: this.skillManager,
+      sandbox: config.sandbox
     })
+
+    const { modelDef, apiKey: resolvedApiKey } = this.resolveModelDef()
     this.contextManager = new AgentContextManager({
-      sessionManager: this.sessions,
-      contextTokens: this.contextTokens,
-      modelDef: this.modelDef,
-      apiKey: this.apiKey,
-      emit
+      sessionManager: this.sessionManager,
+      contextTokens: config.contextTokens || 4000,
+      modelDef,
+      apiKey: resolvedApiKey || config.apiKey,
+      emit: (ev) => this.emit(ev)
     })
+
+    this.sessionService = new AgentSessionService({
+      agentId: this.id,
+      sessionManager: this.sessionManager,
+      emit: (ev) => this.emit(ev)
+    })
+
     this.subagentService = new SubagentService(
-      this.agentId,
-      this.sessions,
-      (sk, msg) => this.run(sk, msg),
-      emit,
-      (sk, txt) => this.stateManager.steer(sk, txt),
-      (parentSk) => {
-        if (!this.stateManager.isSessionActive(parentSk)) {
-          this.run(parentSk).catch((err) => console.error(`[Agent] Subagent auto-run fail:`, err))
-        }
+      this.id,
+      this.sessionManager,
+      (sk, msg) => this.run(sk, msg || ''),
+      (ev) => this.emit(ev),
+      (sk, txt) => this.steer(sk, txt),
+      (_psk) => {
+        // 子代理任务完成后的回调，目前为空
       }
     )
-
-    setLaneConcurrency(resolveGlobalLane(), config.maxConcurrentRuns ?? 4)
   }
 
-  // ============== 公共 API (委托模式) ==============
+  /**
+   * 解析模型定义。
+   * 优先级：Agent 自身配置 > 系统默认模型 > 模型库第一个模型
+   */
+  private resolveModelConfig(): AIModelConfig | undefined {
+    const configService = ConfigService.getInstance()
+    const appConfig = configService.getConfig()
 
-  public subscribe(fn: (event: MiniAgentEvent) => void) {
-    this.listeners.add(fn)
-    return () => this.listeners.delete(fn)
+    // 1. 尝试获取模型配置的对象
+    let modelConfig: AIModelConfig | undefined
+
+    // 优先级 1: Agent 绑定了特定模型 ID
+    if (this.config.model) {
+      modelConfig = configService.getModel(this.config.model)
+    }
+
+    // 优先级 2: 使用系统默认模型
+    if (!modelConfig && appConfig.defaultModelId) {
+      modelConfig = configService.getModel(appConfig.defaultModelId)
+    }
+
+    // 优先级 3: 实在没有，拿第一个
+    if (!modelConfig && appConfig.models.length > 0) {
+      modelConfig = appConfig.models[0]
+    }
+
+    return modelConfig
   }
 
-  public async createSession() {
+  private resolveModelDef(): { modelDef: Model<Api> | undefined; apiKey?: string } {
+    // 如果 config 中直接注入了 runtime 的 modelDef，优先使用
+    if (this.config.modelDef) {
+      return { modelDef: this.config.modelDef, apiKey: this.config.apiKey }
+    }
+
+    const modelConfig = this.resolveModelConfig()
+    if (!modelConfig) return { modelDef: undefined }
+
+    const provider = this.config.provider || modelConfig.provider
+    const modelId = modelConfig.model // 真正的模型标识符
+
+    const API_FOR_PROVIDER: Record<string, string> = {
+      openai: 'openai-completions',
+      anthropic: 'anthropic-messages',
+      google: 'google-generative-ai',
+      groq: 'openai-completions'
+    }
+    const api = API_FOR_PROVIDER[provider] || 'openai-completions'
+
+    const def: any = {
+      id: modelId,
+      name: modelConfig.name || modelId,
+      api: api as Api,
+      provider: provider as KnownProvider,
+      baseUrl: this.config.baseUrl || modelConfig.baseUrl || '',
+      reasoning: this.config.reasoning !== undefined,
+      input: ['text'],
+      contextWindow: this.config.contextTokens || 128000,
+      maxTokens: 4096,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+    }
+
+    return { modelDef: def as Model<Api>, apiKey: modelConfig.apiKey }
+  }
+
+  // --- 基础 Getter ---
+
+  public getSessionManager() {
+    return this.sessionManager
+  }
+  public getMemoryManager() {
+    return this.memoryManager
+  }
+  public getSkillManager() {
+    return this.skillManager
+  }
+  public getHeartbeatManager() {
+    return this.heartbeat
+  }
+  public getUsageManager() {
+    return this.usageManager
+  }
+  public getPromptBuilder() {
+    return this.promptBuilder
+  }
+  public getContextManager() {
+    return this.contextManager
+  }
+  public getSessionService() {
+    return this.sessionService
+  }
+  public getStateManager() {
+    return this.stateManager
+  }
+
+  // --- 会话管理代理 ---
+
+  public async listSessions(): Promise<string[]> {
+    return this.sessionService.list()
+  }
+
+  public async createSession(): Promise<string> {
     return this.sessionService.create()
   }
-  public async reset(sessionKey: string) {
-    await this.sessions.reset(sessionKey)
-    this.emit({ type: 'session:reset', sessionKey })
+
+  public async resetSession(sessionKey: string) {
+    return this.sessionService.reset(sessionKey)
   }
 
   public async deleteSession(sessionKey: string) {
-    await this.sessions.delete(sessionKey)
-    this.emit({ type: 'session:deleted', sessionKey })
+    return this.sessionService.delete(sessionKey)
   }
-  public async getHistory(id: string) {
-    return this.sessionService.getHistory(id)
+
+  public async getSessionHistory(
+    sessionKey: string,
+    options?: { limit?: number; offset?: number }
+  ) {
+    return this.sessionService.getHistory(sessionKey, options)
   }
-  public async listSessions() {
-    return this.sessionService.list()
+
+  // --- 事件系统 ---
+
+  public subscribe(fn: (event: MiniAgentEvent) => void) {
+    this.eventsListeners.add(fn)
+    return () => this.eventsListeners.delete(fn)
+  }
+
+  private emit(event: MiniAgentEvent) {
+    for (const fn of this.eventsListeners) fn(event)
+  }
+
+  // --- 核心业务方法 (Run / Abort / Steer) ---
+
+  public async run(sessionKey: string, userInput: string): Promise<RunResult> {
+    const sk = resolveSessionKey({ sessionKey })
+    const runId = newShortId()
+
+    // 监听 Abort
+    const signal = this.stateManager.startRun(sk, runId)
+
+    try {
+      // 1. 准备初始消息与上下文压缩
+      const history = await this.sessionManager.load(sk)
+      const currentMessages = [...history.messages]
+      let initialUserMessage: Message | undefined
+
+      if (userInput) {
+        initialUserMessage = { role: 'user', content: userInput, timestamp: Date.now() }
+        // 立即持久化初始消息，确保哪怕运行失败也能保留
+        await this.sessionManager.append(sk, initialUserMessage)
+        currentMessages.push(initialUserMessage)
+      }
+
+      const { modelDef, apiKey: resolvedApiKey } = this.resolveModelDef()
+
+      if (!modelDef) {
+        throw new Error(
+          `No model defined for agent ${this.id}. Please configure a model in settings.`
+        )
+      }
+
+      // 2. 实时同步更新 contextManager 的配置，确保压缩总结可用
+      const finalApiKey = this.config.apiKey || resolvedApiKey
+      this.contextManager.updateConfig({ modelDef, apiKey: finalApiKey })
+
+      // 3. 发送运行开始事件
+      this.emit({
+        type: 'agent:run-start',
+        runId,
+        sessionKey: sk,
+        agentId: this.id,
+        model: modelDef.id
+      })
+
+      // 4. 发送初始用户消息事件 (如有)
+      if (initialUserMessage) {
+        this.emit({
+          type: 'chat:userMessage',
+          runId,
+          sessionKey: sk,
+          message: initialUserMessage
+        })
+      }
+
+      // 5. 构建 params 对接 runAgentLoop
+      const stream = runAgentLoop({
+        runId,
+        sessionKey: sk,
+        agentId: this.id,
+        currentMessages,
+        compactionSummary: undefined, // 初始为空
+        systemPrompt: await this.promptBuilder.build({
+          sessionKey: sk,
+          availableTools: this.getAvailableTools(),
+          runtime: { agentId: this.id, workspaceDir: this.workspaceDir }
+        }),
+        toolsForRun: this.getAvailableTools(),
+        toolCtx: {
+          agentId: this.id,
+          sessionKey: sk,
+          workspaceDir: this.workspaceDir,
+          abortSignal: signal,
+          memory: this.memoryManager,
+          spawnSubagent: async (params) => {
+            return this.subagentService.spawn({
+              parentSessionKey: sk,
+              task: params.task,
+              label: params.label,
+              cleanup: params.cleanup
+            })
+          }
+        },
+        modelDef: modelDef,
+        streamFn: this.config.streamFn || streamSimple,
+        apiKey: finalApiKey,
+        temperature: this.config.temperature,
+        reasoning: this.config.reasoning,
+        maxTurns: this.config.maxTurns || 10,
+        contextTokens: this.config.contextTokens || 4000,
+        abortSignal: signal,
+
+        // 回调
+        getSteeringMessages: () => this.stateManager.drainSteering(sk),
+        appendMessage: (key, msg) => this.sessionManager.append(key, msg),
+        prepareCompaction: (params) => this.contextManager.prepareMessages(params),
+        recordUsage: (record) => this.usageManager.recordRun(record)
+      })
+
+      // 3. 消费输出流与事件转发
+      let lastResult: MiniAgentEvent | null = null
+      let turns = 0
+      let toolCalls = 0
+
+      for await (const event of stream) {
+        if (event.type === 'agent:turn-start') turns++
+        if (event.type === 'chat:toolCall') toolCalls++
+
+        if (event.type === 'chat:final' || event.type === 'agent:run-error') {
+          lastResult = event
+        }
+        this.emit(event)
+      }
+
+      if (!lastResult || lastResult.type === 'agent:run-error') {
+        throw new Error(
+          lastResult && 'error' in lastResult ? lastResult.error : 'Unknown error during agent run'
+        )
+      }
+
+      return {
+        runId,
+        text: lastResult.type === 'chat:final' ? lastResult.text : '',
+        turns,
+        toolCalls
+      }
+    } finally {
+      await this.stateManager.endRun(sk, runId)
+    }
   }
 
   public abort(runId?: string) {
     this.stateManager.abort(runId)
   }
+
   public abortSession(sessionKey: string) {
     this.stateManager.abortSession(sessionKey)
   }
+
   public steer(sessionKey: string, text: string) {
     this.stateManager.steer(sessionKey, text)
-  }
-  public isSessionActive(sessionKey: string) {
-    return this.stateManager.isSessionActive(sessionKey)
+    this.emit({ type: 'chat:notice', sessionKey, runId: 'steer', text: '指令已注入' })
   }
 
-  async run(sessionIdOrKey: string, userMessage?: string | ContentBlock[]): Promise<RunResult> {
-    if (!this.modelDef || !this.apiKey) {
-      this.refreshModelConfig()
-      if (!this.modelDef || !this.apiKey) {
-        throw new Error('未检测到可用的 AI 模型配置。请前往“设置 -> AI 模型库”添加模型。')
-      }
+  // --- 辅助工具方法 ---
+
+  public getAvailableTools(): Tool[] {
+    return [...builtinTools, ...(this.config.tools || [])]
+  }
+
+  // --- 心跳管理相关 ---
+
+  public getHeartbeatStatus() {
+    const status = this.heartbeat.getStatus()
+    return {
+      enabled: status.enabled,
+      started: status.started,
+      lastRunMs: status.lastRunMs || 0,
+      nextDueMs: status.nextDueMs,
+      intervalMs: status.intervalMs,
+      activeHours: status.activeHours || { start: '00:00', end: '23:59' },
+      isWithinActiveHours: status.isWithinActiveHours
     }
-
-    const sessionKey = resolveSessionKey({
-      agentId: this.agentId,
-      sessionId: sessionIdOrKey,
-      sessionKey: sessionIdOrKey
-    })
-    const sessionLane = resolveSessionLane(sessionKey)
-    const globalLane = resolveGlobalLane()
-
-    return enqueueInLane(sessionLane, () =>
-      enqueueInLane(globalLane, async () => {
-        const runId = newShortId(6)
-        const signal = this.stateManager.startRun(sessionKey, runId)
-
-        if (userMessage) {
-          const m: Message = {
-            id: `msg_${newShortId(8)}`,
-            role: 'user',
-            content: userMessage,
-            timestamp: Date.now()
-          }
-          await this.sessions.append(sessionKey, m)
-          this.emit({ type: 'chat:userMessage', runId, sessionKey, message: m })
-        }
-
-        this.emit({
-          type: 'agent:run-start',
-          runId,
-          sessionKey,
-          agentId: this.agentId,
-          model: this.modelDef?.id || 'none'
-        })
-
-        let agentFinished = false
-        let loopError: string | undefined
-
-        try {
-          this.checkContextWindow()
-
-          const history = await this.sessions.load(sessionKey)
-          const currentMessages = [...history]
-
-          let skillTriggered: string | undefined
-          const processedMessage = await this.interceptSkills(userMessage)
-          if (processedMessage !== userMessage) {
-            skillTriggered = 'matched'
-            const userMsg: Message = {
-              role: 'user',
-              content: processedMessage || '',
-              timestamp: Date.now(),
-              runId
-            }
-            await this.sessions.append(sessionKey, userMsg)
-            this.emit({ type: 'chat:userMessage', runId, message: userMsg, sessionKey })
-            currentMessages.push(userMsg)
-          }
-
-          const compactionParams = { messages: currentMessages, sessionKey, runId }
-          const { summaryMessage, pruned } =
-            await this.contextManager.prepareMessages(compactionParams)
-
-          const isSummaryMessage = (m: Message) =>
-            typeof m.content === 'string' && m.content.startsWith(COMPACTION_SUMMARY_PREFIX)
-
-          let activeSummary = summaryMessage
-          let loopMessages = pruned.messages
-
-          if (!activeSummary) {
-            const first = pruned.messages[0]
-            if (first && isSummaryMessage(first)) {
-              activeSummary = first
-              loopMessages = pruned.messages.slice(1)
-            }
-          } else {
-            loopMessages = pruned.messages.filter((m) => !isSummaryMessage(m))
-          }
-
-          const availableTools = this.resolveToolsForRun()
-          const systemPrompt = await this.promptBuilder.build({ sessionKey, availableTools })
-          const toolsForRun = availableTools.map((t) => wrapToolWithAbortSignal(t, signal))
-
-          let memoriesUsed = 0
-          const toolCtx: ToolContext = {
-            workspaceDir: this.workspaceDir,
-            sessionKey,
-            sessionId: sessionIdOrKey,
-            agentId: this.agentId,
-            memory: this.enableMemory ? this.memory : undefined,
-            abortSignal: signal,
-            onMemorySearch: (res) => {
-              memoriesUsed += res.length
-            },
-            spawnSubagent: (params) =>
-              this.subagentService.spawn({ ...params, parentSessionKey: sessionKey })
-          }
-
-          const stream = runAgentLoop({
-            runId,
-            sessionKey,
-            agentId: this.agentId,
-            currentMessages: loopMessages,
-            compactionSummary: activeSummary,
-            systemPrompt,
-            toolsForRun,
-            toolCtx,
-            modelDef: this.modelDef!,
-            streamFn: this.streamFn,
-            apiKey: this.apiKey,
-            temperature: this.temperature,
-            reasoning: this.reasoning,
-            maxTurns: this.maxTurns,
-            maxTokens: this.maxTokens,
-            contextTokens: this.contextTokens,
-            getSteeringMessages: () => this.stateManager.drainSteering(sessionKey),
-            appendMessage: (sk, msg) => this.sessions.append(sk, msg),
-            prepareCompaction: (p) => this.contextManager.prepareMessages(p),
-            recordUsage: (record) => this.usage.recordRun(record),
-            abortSignal: signal
-          })
-
-          for await (const event of stream) {
-            if (event.type === 'agent:run-end' || event.type === 'agent:run-error') {
-              agentFinished = true
-            }
-            this.emit(event)
-            if (event.type === 'agent:run-error') {
-              loopError = event.error
-            }
-          }
-
-          const loopResult = await stream.result()
-          if (loopError) throw new Error(loopError)
-
-          return {
-            runId,
-            text: loopResult.finalText,
-            turns: loopResult.turns,
-            toolCalls: loopResult.totalToolCalls,
-            skillTriggered,
-            memoriesUsed
-          }
-        } catch (err) {
-          if (!loopError)
-            this.emit({
-              type: 'agent:run-error',
-              runId,
-              sessionKey,
-              error: err instanceof Error ? err.message : String(err)
-            })
-          throw err
-        } finally {
-          if (!agentFinished) this.emit({ type: 'agent:run-end', runId, sessionKey, messages: [] })
-          await this.stateManager.endRun(sessionKey, runId)
-        }
-      })
-    )
   }
 
-  // ============== 私有辅助方法 ==============
+  public hasHeartbeatFile(): boolean {
+    return fs.existsSync(this.getHeartbeatFilePath())
+  }
 
-  private emit(event: MiniAgentEvent): void {
-    for (const listener of this.listeners) {
+  public async getHeartbeatFileContent(): Promise<string> {
+    const filePath = this.getHeartbeatFilePath()
+    if (!fs.existsSync(filePath)) return ''
+    return fs.promises.readFile(filePath, 'utf-8')
+  }
+
+  public async saveHeartbeatFile(content: string): Promise<void> {
+    const filePath = this.getHeartbeatFilePath()
+    const dir = path.dirname(filePath)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    await fs.promises.writeFile(filePath, content, 'utf-8')
+  }
+
+  public async deleteHeartbeatFile(): Promise<void> {
+    const filePath = this.getHeartbeatFilePath()
+    if (fs.existsSync(filePath)) await fs.promises.unlink(filePath)
+    this.stopHeartbeat()
+  }
+
+  public startHeartbeat() {
+    this.heartbeat.onHeartbeat(async (o) => {
+      const sk = resolveSessionKey({ agentId: this.id, sessionKey: 'heartbeat' })
       try {
-        listener(event)
+        await this.run(sk, `[Heartbeat Wake] Reason: ${o.reason}\n\nContext:\n${o.content}`)
+        return { text: 'Executed heartbeat task' }
       } catch (err) {
-        console.error(`[Agent] Listener Error:`, err)
-      }
-    }
-  }
-
-  private resolveToolsForRun(): Tool[] {
-    let tools = [...this.tools]
-    if (!this.enableMemory) tools = tools.filter((t) => !t.name.startsWith('memory_'))
-    const deny: string[] = []
-    if (this.sandbox?.enabled) {
-      if (!this.sandbox.allowExec) deny.push('exec')
-      if (!this.sandbox.allowWrite) deny.push('write', 'edit')
-    }
-    let filtered = filterToolsByPolicy(tools, this.toolPolicy)
-    if (deny.length > 0) filtered = filterToolsByPolicy(filtered, { deny })
-    return filtered
-  }
-
-  private async interceptSkills(
-    userMessage?: string | ContentBlock[]
-  ): Promise<string | ContentBlock[] | undefined> {
-    if (!this.enableSkills || !userMessage) return userMessage
-    const text =
-      typeof userMessage === 'string'
-        ? userMessage
-        : userMessage.map((b) => ('text' in b ? b.text : '')).join('')
-    const match = await this.skills.match(text)
-    if (match)
-      return `Use the "${match.command.skillName}" skill for this request.\n\nUser input:\n${match.args ?? ''}`
-    return userMessage
-  }
-
-  private checkContextWindow(): void {
-    const info = resolveContextWindowInfo({
-      contextTokens: this.contextTokens,
-      defaultTokens: DEFAULT_CONTEXT_WINDOW_TOKENS
-    })
-    const guard = evaluateContextWindowGuard({
-      info,
-      warnBelowTokens: CONTEXT_WINDOW_WARN_BELOW_TOKENS,
-      hardMinTokens: CONTEXT_WINDOW_HARD_MIN_TOKENS
-    })
-    if (guard.shouldWarn) console.warn(`[Agent] 上下文窗口偏小: ${guard.tokens} tokens.`)
-    if (guard.shouldBlock)
-      throw new Error(
-        `上下文窗口过小 (${guard.tokens} tokens)，最低要求 ${CONTEXT_WINDOW_HARD_MIN_TOKENS} tokens。`
-      )
-  }
-
-  private resolveModelDefinition(config: AgentConfig, provider: string, modelId?: string) {
-    const API_FOR_PROVIDER: Record<string, string> = {
-      anthropic: 'anthropic-messages',
-      openai: 'openai-completions',
-      google: 'google-generative-ai'
-    }
-    let md = config.modelDef ?? getModel(provider as any, modelId as any)
-    if (!md && modelId) {
-      const api = API_FOR_PROVIDER[provider]
-      if (api)
-        md = {
-          id: modelId,
-          name: modelId,
-          api,
-          provider,
-          baseUrl: config.baseUrl ?? '',
-          reasoning: true,
-          input: config.supportsVision ? ['text', 'image'] : ['text'],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 200_000,
-          maxTokens: 8192
-        }
-    }
-    if (config.baseUrl && md) {
-      md = {
-        ...md,
-        baseUrl: config.baseUrl,
-        headers: {
-          'User-Agent': null,
-          'X-Stainless-Lang': null,
-          'X-Stainless-Package-Version': null,
-          'X-Stainless-OS': null,
-          'X-Stainless-Arch': null,
-          'X-Stainless-Runtime': null,
-          'X-Stainless-Runtime-Version': null,
-          'anthropic-dangerous-direct-browser-access': null,
-          'anthropic-beta': null,
-          ...config.headers
-        } as any
-      }
-    } else if (config.headers && md) {
-      md = { ...md, headers: { ...md.headers, ...config.headers } as any }
-    }
-    this.modelDef = md
-  }
-
-  private refreshModelConfig(): void {
-    try {
-      const cs = ConfigService.getInstance()
-      const app = cs.getConfig()
-      const m = cs.getModel(app.defaultModelId || '')
-      if (m) {
-        const p = m.provider || 'anthropic'
-        const apis: Record<string, string> = {
-          anthropic: 'anthropic-messages',
-          openai: 'openai-completions',
-          google: 'google-generative-ai'
-        }
-        this.modelDef = {
-          id: m.model || 'claude-sonnet-4.5',
-          name: m.model,
-          api: apis[p] || 'openai-completions',
-          provider: p,
-          baseUrl: m.baseUrl ?? '',
-          reasoning: true,
-          input: m.supportsVision ? ['text', 'image'] : ['text'],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 200_000,
-          maxTokens: 8192
-        }
-        this.apiKey = m.apiKey
-        this.contextManager.updateConfig({ modelDef: this.modelDef, apiKey: this.apiKey })
-      }
-    } catch (err) {
-      console.warn('[Agent] Runtime config refresh fail:', err)
-    }
-  }
-
-  public getMemory() {
-    return this.memory
-  }
-  public getContext() {
-    return this.context
-  }
-  public getSkills() {
-    return this.skills
-  }
-  public getHeartbeat() {
-    return this.heartbeat
-  }
-  public startHeartbeat(cb?: any) {
-    if (cb)
-      this.heartbeat.onHeartbeat(async (o: any) => {
-        cb(o.content, o.reason)
+        console.error(`[Agent ${this.id}] Heartbeat execution failed:`, err)
         return null
-      })
+      }
+    })
     this.heartbeat.start()
   }
+
   public stopHeartbeat() {
     this.heartbeat.stop()
   }
+
   public async triggerHeartbeat() {
     return this.heartbeat.trigger()
+  }
+
+  public updateHeartbeatConfig(config: {
+    intervalMs?: number
+    enabled?: boolean
+    activeHours?: { start: string; end: string }
+  }) {
+    this.heartbeat.updateConfig(config)
+  }
+
+  public getHeartbeatLogs() {
+    return this.heartbeat.getLogs()
+  }
+
+  private getHeartbeatFilePath(): string {
+    const status = this.heartbeat.getStatus()
+    return path.isAbsolute(status.heartbeatPath)
+      ? status.heartbeatPath
+      : path.join(this.workspaceDir, status.heartbeatPath)
   }
 }

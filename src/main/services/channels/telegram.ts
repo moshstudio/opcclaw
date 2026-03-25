@@ -17,9 +17,9 @@
  */
 
 import { Bot } from 'grammy'
-import { GatewayClient } from '../gateway/client.js'
-import type { EventFrame } from '../gateway/protocol.js'
-import { Logger } from '@main/services/common/logger.js'
+import { GatewayClient } from '../gateway/client'
+import type { EventFrame } from '../gateway/protocol'
+import { Logger } from '@main/services/common/logger'
 
 // ============== 类型 ==============
 
@@ -103,7 +103,8 @@ export async function startTelegramChannel(opts: TelegramChannelOptions) {
 
       if (p.state === 'final') {
         stopTyping(chatId)
-        if (p.text) sendLongMessage(chatId, p.text).catch((err) => logger.error('Send failed:', err))
+        if (p.text)
+          sendLongMessage(chatId, p.text).catch((err) => logger.error('Send failed:', err))
       } else if (p.state === 'error') {
         stopTyping(chatId)
         bot.api

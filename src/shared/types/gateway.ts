@@ -3,10 +3,10 @@
  */
 
 import type { Usage } from '@mariozechner/pi-ai'
-import type { Message, AgentPerformance, SubagentInfo } from './agent.js'
+import type { Agent, Message, AgentPerformance, SubagentInfo } from './agent'
 export type { Message, Usage, AgentPerformance, SubagentInfo }
 
-import type { AIModelConfig } from './models.js'
+import type { AIModelConfig } from './models'
 
 // ============== 协议版本 ==============
 
@@ -41,7 +41,14 @@ export const GATEWAY_METHODS = [
   'models:setDefault',
   'models:test',
   'health',
-  'system:events-doc'
+  'system:events-doc',
+  'heartbeat:list',
+  'heartbeat:update',
+  'heartbeat:trigger',
+  'heartbeat:save-file',
+  'heartbeat:delete-file',
+  'heartbeat:get-file',
+  'heartbeat:logs'
 ] as const
 
 export const GATEWAY_EVENTS = [
@@ -51,6 +58,7 @@ export const GATEWAY_EVENTS = [
   'session',
   'chat',
   'models',
+  'heartbeat',
   'system:shutdown'
 ] as const
 
@@ -98,6 +106,7 @@ export type EventFrame =
   | { type: 'event'; event: 'chat'; payload: ChatPayload; seq: number }
   | { type: 'event'; event: 'agent'; payload: AgentEventPayload; seq: number }
   | { type: 'event'; event: 'models'; payload: ModelsPayload; seq: number }
+  | { type: 'event'; event: 'heartbeat'; payload: HeartbeatEventPayload; seq: number }
   | { type: 'event'; event: 'system:tick'; payload: TickPayload; seq: number }
   | { type: 'event'; event: 'system:shutdown'; payload: ShutdownPayload; seq: number }
   | {
@@ -167,7 +176,11 @@ export function isResponseFrame(f: unknown): f is ResponseFrame {
 }
 
 export function isEventFrame(f: unknown): f is EventFrame {
-  return isObject(f) && f.type === 'event' && GATEWAY_EVENTS.includes(f.event as any)
+  return (
+    isObject(f) &&
+    f.type === 'event' &&
+    (GATEWAY_EVENTS as readonly string[]).includes(f.event as string)
+  )
 }
 
 // ============== 常量 ==============
@@ -269,14 +282,14 @@ export interface ChatPayload {
   toolCall?: {
     id: string
     name: string
-    arguments: Record<string, any>
+    arguments: Record<string, unknown>
   }
 
   /** 工具执行结果 (对齐 pi-ai.ToolResultMessage) */
   toolResult?: {
     toolCallId: string
     toolName: string
-    content: any // (TextContent | ImageContent)[]
+    content: unknown // (TextContent | ImageContent)[]
     isError: boolean
   }
 
@@ -304,6 +317,8 @@ export interface AgentEventPayload {
   agentId?: string
   sessionKey?: string
   runId?: string
+  /** 完整的智能体对象 (可选，仅在 created/updated 事件提供) */
+  agent?: Agent
   [key: string]: unknown
 }
 
@@ -323,4 +338,41 @@ export interface TickPayload {
 export interface ShutdownPayload {
   reason: string
   restartExpectedMs: number | null
+}
+
+/** 心跳任务实时状态接口 */
+export interface HeartbeatTaskStatus {
+  enabled: boolean
+  started: boolean
+  lastRunMs: number
+  nextDueMs: number
+  intervalMs: number
+  activeHours: { start: string; end: string }
+  isWithinActiveHours: boolean
+}
+
+/** heartbeat 频道负载：心跳任务动态更新 */
+export interface HeartbeatEventPayload {
+  type: 'heartbeat:updated' | 'heartbeat:triggered' | 'heartbeat:created' | 'heartbeat:deleted'
+  agentId: string
+  status?: HeartbeatTaskStatus
+}
+
+/** 心跳执行状态 */
+export type HeartbeatLogStatus = 'success' | 'skipped' | 'failed'
+
+/** 原始心跳执行记录 (后端存储) */
+export interface HeartbeatLogEntry {
+  id: string
+  timestamp: number
+  reason: string
+  status: HeartbeatLogStatus
+  message?: string
+  durationMs?: number
+}
+
+/** 完整心跳执行记录 (接口返回) */
+export interface HeartbeatLog extends HeartbeatLogEntry {
+  agentId: string
+  agentName: string
 }

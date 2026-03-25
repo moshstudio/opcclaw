@@ -106,7 +106,6 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  -webkit-text-stroke: 0.15px;
 }
 
 /* Custom scrollbar */
@@ -139,10 +138,10 @@ body {
 }
 
 /* Optimize transitions to prevent global text blurriness */
-button, 
-a, 
-input, 
-textarea, 
+button,
+a,
+input,
+textarea,
 .transition-all {
   transition:
     background-color 0.2s ease,

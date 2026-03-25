@@ -2,8 +2,8 @@
  * Gateway 模块导出
  */
 
-export { startGatewayServer, type GatewayServer, type GatewayServerOptions } from './server.js'
-export { GatewayClient } from './client.js'
+export { startGatewayServer, type GatewayServer, type GatewayServerOptions } from './server'
+export { GatewayClient } from './client'
 export {
   type RequestFrame,
   type ResponseFrame,
@@ -18,5 +18,5 @@ export {
   PROTOCOL_VERSION,
   GATEWAY_METHODS,
   GATEWAY_EVENTS
-} from './protocol.js'
-export { handlers, type Handler, type HandlerContext } from './handlers/index.js'
+} from './protocol'
+export { handlers, type Handler, type HandlerContext } from './handlers/index'

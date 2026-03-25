@@ -1,6 +1,6 @@
-import { normalizeMessage } from '../../../../shared/utils/message.js'
-import type { MiniAgentEvent } from '../../agent/agent-events.js'
-import type { ChatPayload, ChatState } from '@shared/types/gateway.js'
+import { normalizeMessage } from '../../../../shared/utils/message'
+import type { MiniAgentEvent } from '../../agent/agent-events'
+import type { ChatPayload, ChatState } from '@shared/types/gateway'
 
 /**
  * 转换事件类型前缀为网关状态名
@@ -8,7 +8,7 @@ import type { ChatPayload, ChatState } from '@shared/types/gateway.js'
 function toChatState(type: string): ChatState {
   if (type === 'agent:run-end') return 'final'
   if (type === 'agent:run-error') return 'error'
-  
+
   // 提取后缀并规范化为状态名 (e.g. chat:toolCall -> toolCall)
   const state = type.split(':')[1] || type
   return state as ChatState

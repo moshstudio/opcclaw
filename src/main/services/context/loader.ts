@@ -6,7 +6,7 @@ import {
   DEFAULT_SOUL_FILENAME,
   type BootstrapFile,
   type ContextFile
-} from './bootstrap.js'
+} from './bootstrap'
 
 export class ContextLoader {
   private workspaceDir: string

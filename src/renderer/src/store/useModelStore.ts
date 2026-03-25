@@ -1,20 +1,7 @@
 import { create } from 'zustand'
 import { getGatewayClient } from '../services/gateway-client'
 
-export interface AIModelConfig {
-  id: string
-  name: string
-  provider: string
-  model: string
-  apiKey: string
-  baseUrl?: string
-  supportsVision?: boolean
-}
-
-interface ModelTestResult {
-  ok: boolean
-  error?: string
-}
+import { type AIModelConfig, type ModelTestResult } from '@shared/types/models'
 
 interface ModelState {
   models: AIModelConfig[]

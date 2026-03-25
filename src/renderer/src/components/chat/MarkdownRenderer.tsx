@@ -1,5 +1,5 @@
 import React, { memo, useState, useCallback, useEffect } from 'react'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus, prism } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -73,7 +73,7 @@ const CopyButton = ({ text }: { text: string }) => {
  * Markdown 渲染组件
  * 深度优化流式渲染性能
  */
-const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(({ content, className }) => {
+const MarkdownRenderer = memo(({ content, className }: MarkdownRendererProps) => {
   const { theme } = useTheme()
   const [isDark, setIsDark] = useState(false)
 
@@ -95,15 +95,16 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(({ content, class
   }, [theme])
 
   // 记忆化所有的渲染组件配置，这是保证“打字机”输出流畅的关键
-  const markdownComponents = React.useMemo(
+  const markdownComponents = React.useMemo<Components>(
     () => ({
-      pre: ({ children }: any) => children,
-      code({ inline, className, children, ...props }: any) {
+      pre: ({ children }) => <>{children}</>,
+      code({ className, children, ...props }) {
         const match = /language-(\w+)/.exec(className || '')
         const language = match ? match[1] : ''
         const codeString = String(children).replace(/\n$/, '')
+        const isInline = !match
 
-        if (!inline && language) {
+        if (!isInline && language) {
           return (
             <div className="my-6 group relative rounded-xl overflow-hidden border border-border/50 bg-zinc-50 dark:bg-zinc-900/50 shadow-sm transition-all hover:shadow-md">
               <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-100/60 dark:bg-zinc-800/60 border-b border-border/40 backdrop-blur-sm">
@@ -118,7 +119,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(({ content, class
                 PreTag="div"
                 customStyle={commonHighlightStyle}
                 wrapLines={true}
-                {...props}
+                {...(props as any)}
               >
                 {codeString}
               </SyntaxHighlighter>
@@ -132,28 +133,28 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(({ content, class
               'bg-indigo-50/80 dark:bg-indigo-400/10 px-1.5 py-0.5 rounded-md text-[0.88em] font-mono text-indigo-700 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-400/20 align-baseline',
               className
             )}
-            {...props}
+            {...(props as any)}
           >
             {children}
           </code>
         )
       },
-      p: ({ children }: any) => (
+      p: ({ children }) => (
         <p className="mb-4 last:mb-0 leading-relaxed text-slate-700 dark:text-zinc-300">
           {children}
         </p>
       ),
-      ul: ({ children }: any) => (
+      ul: ({ children }) => (
         <ul className="list-disc pl-5 mb-4 space-y-2 text-slate-700 dark:text-zinc-300">
           {children}
         </ul>
       ),
-      ol: ({ children }: any) => (
+      ol: ({ children }) => (
         <ol className="list-decimal pl-5 mb-4 space-y-2 text-slate-700 dark:text-zinc-300">
           {children}
         </ol>
       ),
-      a: ({ children, href }: any) => (
+      a: ({ children, href }) => (
         <a
           href={href}
           target="_blank"
@@ -164,41 +165,39 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(({ content, class
           <ExternalLink className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100 transition-opacity" />
         </a>
       ),
-      blockquote: ({ children }: any) => (
+      blockquote: ({ children }) => (
         <blockquote className="border-l-4 border-indigo-500/40 dark:border-indigo-500/20 pl-4 py-1 italic text-slate-600 dark:text-slate-400 bg-indigo-50/20 dark:bg-indigo-500/5 rounded-r-lg mb-4">
           {children}
         </blockquote>
       ),
-      table: ({ children }: any) => (
+      table: ({ children }) => (
         <div className="overflow-x-auto my-6 rounded-xl border border-border shadow-sm">
           <table className="w-full text-left text-xs border-collapse divide-y divide-border/50">
             {children}
           </table>
         </div>
       ),
-      th: ({ children }: any) => (
+      th: ({ children }) => (
         <th className="p-3 bg-zinc-50/50 dark:bg-zinc-800/50 font-bold text-zinc-700 dark:text-zinc-200 uppercase tracking-tight">
           {children}
         </th>
       ),
-      td: ({ children }: any) => (
+      td: ({ children }) => (
         <td className="p-3 border-b border-border/30 text-zinc-600 dark:text-zinc-400">
           {children}
         </td>
       ),
-      h1: ({ children }: any) => (
-        <h1 className="text-2xl font-black mt-10 mb-5 border-b pb-2 tracking-tight">
-          {children}
-        </h1>
+      h1: ({ children }) => (
+        <h1 className="text-2xl font-black mt-10 mb-5 border-b pb-2 tracking-tight">{children}</h1>
       ),
-      h2: ({ children }: any) => (
+      h2: ({ children }) => (
         <h2 className="text-xl font-bold mt-8 mb-4 tracking-tight">{children}</h2>
       ),
-      h3: ({ children }: any) => (
+      h3: ({ children }) => (
         <h3 className="text-lg font-bold mt-6 mb-3 tracking-tight">{children}</h3>
       )
     }),
-    [isDark] // 只有主题变化时才重新声明组件映射
+    [isDark]
   )
 
   return (
@@ -210,7 +209,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(({ content, class
         className
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents as any}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
         {content}
       </ReactMarkdown>
     </div>

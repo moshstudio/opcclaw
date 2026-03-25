@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import type { AgentRegistry } from '@main/services/agent/registry'
-import { Broadcaster, type BroadcastFn } from '../broadcaster.js'
-import { type ErrorShape } from '../protocol.js'
+import { Broadcaster, type BroadcastFn } from '../broadcaster'
+import { type ErrorShape } from '../protocol'
 
 export type GwClient = {
   id: string
@@ -13,7 +13,7 @@ export type GwClient = {
   authed: boolean
 }
 
-import { type Logger } from '@main/services/common/logger.js'
+import { type Logger } from '@main/services/common/logger'
 
 export type HandlerContext = {
   registry: AgentRegistry

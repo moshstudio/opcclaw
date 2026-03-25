@@ -11,3 +11,8 @@ export interface AIModelConfig {
   baseUrl?: string
   supportsVision?: boolean
 }
+
+export interface ModelTestResult {
+  ok: boolean
+  error?: string
+}

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { isSubagentSessionKey } from '@main/services/session/session-key.js'
+import { isSubagentSessionKey } from '@main/services/session/session-key'
 
 export const DEFAULT_AGENTS_FILENAME = 'AGENTS.md'
 export const DEFAULT_SOUL_FILENAME = 'SOUL.md'

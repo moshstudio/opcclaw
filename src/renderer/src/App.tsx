@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react'
-import { HashRouter as Router, Routes, Route } from 'react-router-dom'
+import { HashRouter as Router, Routes, Route, useLocation } from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import MainLayout from './components/layout/MainLayout'
 import SettingsPage from './components/settings/SettingsPage'
@@ -7,13 +8,27 @@ import { useSettingsStore } from './store/useSettingsStore'
 import { OnboardingOverlay } from './components/layout/OnboardingOverlay'
 import { ThemeProvider } from './components/ThemeProvider'
 import { initGatewaySync } from './store/gateway/gateway-sync'
+import ScheduledTasks from './components/tasks/ScheduledTasks'
 
 import { Toaster } from 'sonner'
 import { ConfirmProvider } from './components/ui/confirm-dialog'
 
 function AppContent(): React.JSX.Element {
+  const location = useLocation()
   const { i18n } = useTranslation()
   const { appSettings } = useSettingsStore()
+
+  const pageVariants = {
+    initial: { opacity: 0, y: 8, filter: 'blur(4px)' },
+    animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
+    exit: { opacity: 0, y: -8, filter: 'blur(4px)' }
+  }
+
+  const pageTransition = {
+    type: 'tween' as const,
+    ease: 'easeInOut' as const,
+    duration: 0.2
+  }
 
   useEffect(() => {
     initGatewaySync()
@@ -29,10 +44,55 @@ function AppContent(): React.JSX.Element {
     <ThemeProvider>
       <ConfirmProvider>
         <OnboardingOverlay />
-        <Routes>
-          <Route path="/" element={<MainLayout />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
+        <AnimatePresence mode="wait">
+          <Routes location={location} key={location.pathname}>
+            <Route
+              path="/"
+              element={
+                <motion.div
+                  className="w-full h-full"
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  variants={pageVariants}
+                  transition={pageTransition}
+                >
+                  <MainLayout />
+                </motion.div>
+              }
+            />
+            <Route
+              path="/tasks"
+              element={
+                <motion.div
+                  className="w-full h-full"
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  variants={pageVariants}
+                  transition={pageTransition}
+                >
+                  <ScheduledTasks />
+                </motion.div>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <motion.div
+                  className="w-full h-full"
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  variants={pageVariants}
+                  transition={pageTransition}
+                >
+                  <SettingsPage />
+                </motion.div>
+              }
+            />
+          </Routes>
+        </AnimatePresence>
         <Toaster position="top-center" richColors closeButton />
       </ConfirmProvider>
     </ThemeProvider>

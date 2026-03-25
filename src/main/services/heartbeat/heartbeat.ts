@@ -26,6 +26,7 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import type { HeartbeatLogEntry, HeartbeatLogStatus } from '@shared/types/gateway'
 
 // ============== 类型定义 ==============
 
@@ -258,6 +259,8 @@ interface RunnerState {
   lastText: string | null
   /** 上次发送文本的时间戳 */
   lastTextAt: number | null
+  /** 执行记录 (最近 100 条) */
+  logs: HeartbeatLogEntry[]
 }
 
 /**
@@ -282,7 +285,8 @@ export class HeartbeatManager {
     timer: null,
     lastRunMs: null,
     lastText: null,
-    lastTextAt: null
+    lastTextAt: null,
+    logs: []
   }
 
   private wake: HeartbeatWake
@@ -371,6 +375,33 @@ export class HeartbeatManager {
   }
 
   /**
+   * 获取执行记录
+   */
+  getLogs(): HeartbeatLogEntry[] {
+    return [...this.state.logs]
+  }
+
+  /**
+   * 记录日志
+   */
+  private recordLog(log: {
+    reason: string
+    status: HeartbeatLogStatus
+    message?: string
+    durationMs?: number
+  }) {
+    const entry: HeartbeatLogEntry = {
+      id: Math.random().toString(36).substring(2, 9),
+      timestamp: Date.now(),
+      ...log
+    }
+    this.state.logs.unshift(entry)
+    if (this.state.logs.length > 100) {
+      this.state.logs.pop()
+    }
+  }
+
+  /**
    * 更新配置 (热加载)
    */
   updateConfig(config: Partial<HeartbeatConfig>): void {
@@ -399,7 +430,7 @@ export class HeartbeatManager {
   }
 
   /**
-   * 获取状态信息 (调试用)
+   * 获取状态信息 (调试与管理用)
    */
   getStatus(): {
     enabled: boolean
@@ -408,6 +439,9 @@ export class HeartbeatManager {
     lastRunMs: number | null
     intervalMs: number
     activeHours?: ActiveHours
+    isWithinActiveHours: boolean
+    hasPending: boolean
+    heartbeatPath: string
   } {
     return {
       enabled: this.config.enabled,
@@ -415,7 +449,10 @@ export class HeartbeatManager {
       nextDueMs: this.state.nextDueMs,
       lastRunMs: this.state.lastRunMs,
       intervalMs: this.config.intervalMs,
-      activeHours: this.config.activeHours
+      activeHours: this.config.activeHours,
+      isWithinActiveHours: this.isWithinActiveHours(Date.now()),
+      hasPending: this.wake.hasPending(),
+      heartbeatPath: this.config.heartbeatPath
     }
   }
 
@@ -426,13 +463,19 @@ export class HeartbeatManager {
    *
    * 对应 OpenClaw heartbeat-runner.ts: scheduleNext()
    * 使用 setTimeout 精确调度，每次运行后重新计算延迟
+   * 增加随机偏移 (Jitter)，防止多个 Agent 同时触发
    */
   private scheduleNext(): void {
     if (!this.started) return
 
     const now = Date.now()
     const lastRun = this.state.lastRunMs ?? now
-    const nextDue = lastRun + this.config.intervalMs
+
+    // 基础间隔 + 随机偏移 (最大 30秒 或 间隔的 5%)
+    const maxJitter = Math.min(30000, this.config.intervalMs * 0.05)
+    const jitter = Math.floor(Math.random() * maxJitter)
+
+    const nextDue = lastRun + this.config.intervalMs + jitter
     this.state.nextDueMs = nextDue
 
     const delay = Math.max(0, nextDue - now)
@@ -462,6 +505,7 @@ export class HeartbeatManager {
     // 1. 活跃时间窗口检查
     if (!this.isWithinActiveHours(startMs)) {
       this.state.lastRunMs = startMs
+      this.recordLog({ reason: wakeReason, status: 'skipped', message: 'outside-active-hours' })
       this.scheduleNext()
       return { status: 'skipped', reason: 'outside-active-hours' }
     }
@@ -472,6 +516,7 @@ export class HeartbeatManager {
     // 3. 空内容检测 — exec 事件豁免（对齐 openclaw: EXEC_EVENT_PROMPT 例外）
     if ((!content || isContentEffectivelyEmpty(content)) && wakeReason !== 'exec') {
       this.state.lastRunMs = startMs
+      this.recordLog({ reason: wakeReason, status: 'skipped', message: 'empty-content' })
       this.scheduleNext()
       return { status: 'skipped', reason: 'empty-content' }
     }
@@ -479,6 +524,7 @@ export class HeartbeatManager {
     // 4. 调用回调获取回复
     if (!this.callback) {
       this.state.lastRunMs = startMs
+      this.recordLog({ reason: wakeReason, status: 'failed', message: 'no-callback' })
       this.scheduleNext()
       return { status: 'skipped', reason: 'no-callback' }
     }
@@ -502,9 +548,22 @@ export class HeartbeatManager {
       // 5. 重复消息抑制
       if (this.isDuplicateMessage(replyText, startMs)) {
         this.state.lastRunMs = startMs
+        this.recordLog({
+          reason: wakeReason,
+          status: 'skipped',
+          message: 'duplicate-message',
+          durationMs
+        })
         this.scheduleNext()
         return { status: 'skipped', durationMs, reason: 'duplicate-message' }
       }
+
+      this.recordLog({
+        reason: wakeReason,
+        status: 'success',
+        message: replyText.substring(0, 100) + (replyText.length > 100 ? '...' : ''),
+        durationMs
+      })
 
       // 6. 更新状态
       this.state.lastRunMs = startMs
@@ -513,8 +572,13 @@ export class HeartbeatManager {
       this.scheduleNext()
 
       return { status: 'ran', durationMs }
-    } catch {
+    } catch (err: any) {
       this.state.lastRunMs = startMs
+      this.recordLog({
+        reason: wakeReason,
+        status: 'failed',
+        message: err?.message || 'callback-error'
+      })
       this.scheduleNext()
       return { status: 'failed', reason: 'callback-error' }
     }

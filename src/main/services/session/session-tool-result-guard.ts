@@ -1,5 +1,5 @@
-import { type SessionManager } from './session.js'
-import { type Message, type ToolResultMessage } from '@shared/types/agent.js'
+import { type SessionManager } from './session'
+import { type Message, type ToolResultMessage } from '@shared/types/agent'
 
 type ToolCall = { id: string; name?: string }
 
@@ -60,15 +60,19 @@ function makeMissingToolResult(toolCallId: string, toolName?: string): ToolResul
 
 export { makeMissingToolResult }
 
+type ToolResultGuard = {
+  flushPendingToolResults: (sessionKey: string) => Promise<void>
+  getPendingIds: (sessionKey: string) => string[]
+}
+
+const guardState = new WeakMap<SessionManager, ToolResultGuard>()
+
 /**
  * 安装 tool result guard
  */
-export function installSessionToolResultGuard(sessionManager: SessionManager): {
-  flushPendingToolResults: (sessionKey: string) => Promise<void>
-  getPendingIds: (sessionKey: string) => string[]
-} {
-  const sm = sessionManager as any
-  if (sm.__toolResultGuardInstalled) return sm.__toolResultGuard
+export function installSessionToolResultGuard(sessionManager: SessionManager): ToolResultGuard {
+  const existing = guardState.get(sessionManager)
+  if (existing) return existing
 
   const originalAppend = sessionManager.append.bind(sessionManager)
   const pendingBySession = new Map<string, Map<string, string | undefined>>()
@@ -117,12 +121,11 @@ export function installSessionToolResultGuard(sessionManager: SessionManager): {
     }
   }
 
-  const guard = {
+  const guard: ToolResultGuard = {
     flushPendingToolResults,
     getPendingIds: (sessionKey: string) => Array.from(getPending(sessionKey).keys())
   }
+  guardState.set(sessionManager, guard)
 
-  sm.__toolResultGuardInstalled = true
-  sm.__toolResultGuard = guard
   return guard
 }

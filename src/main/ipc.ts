@@ -1,8 +1,8 @@
 import { ipcMain, app, session } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import { ConfigService } from './services/config/config-service.js'
-import { GatewayManager } from './services/gateway/manager.js'
+import { ConfigService } from './services/config/config-service'
+import { GatewayManager } from './services/gateway/manager'
 
 export function initIpcServices(): void {
   // 1. 配置读写 IPC

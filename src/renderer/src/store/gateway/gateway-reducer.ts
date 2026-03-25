@@ -66,7 +66,6 @@ export const applyGatewayEvent = (
   event: 'chat' | 'agent' | 'session' | 'models' | 'system:tick' | 'system:shutdown'
 ): Partial<MinimalChatStore> => {
   // 核心元数据提取
-  const sk = (payload as any).sessionKey
   let updates: Partial<MinimalChatStore> = {}
 
   // --- 区域 I: 领域驱动调度 (Domain-Driven Dispatch) ---
@@ -98,7 +97,8 @@ export const applyGatewayEvent = (
     case 'chat': {
       console.log((payload as ChatPayload).state, payload)
 
-      if (isChatPayload(payload) && sk) {
+      if (isChatPayload(payload) && payload.sessionKey) {
+        const sk = payload.sessionKey
         // 构建单次渲染的基准 Patch
         const basePatch: SessionPatch = {
           messages: (updates.sessions?.[sk] || state.sessions[sk] || []) as Message[],
@@ -117,7 +117,7 @@ export const applyGatewayEvent = (
         updates.errorMessages = {
           ...state.errorMessages,
           ...updates.errorMessages,
-          [sk]: next.errorMessage
+          [sk]: next.errorMessage ?? null
         }
         updates.toolResultsMap = {
           ...state.toolResultsMap,

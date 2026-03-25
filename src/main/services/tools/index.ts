@@ -1,4 +1,9 @@
-export type { Tool, ToolContext, ToolCallRecord as ToolCall, ToolResultPreview as ToolResult } from './types.js'
+export type {
+  Tool,
+  ToolContext,
+  ToolCallRecord as ToolCall,
+  ToolResultPreview as ToolResult
+} from './types'
 export {
   builtinTools,
   readTool,
@@ -11,5 +16,5 @@ export {
   memoryGetTool,
   memorySaveTool,
   sessionsSpawnTool
-} from './builtin.js'
-export { combineAbortSignals, wrapToolWithAbortSignal, abortable } from './abort.js'
+} from './builtin'
+export { combineAbortSignals, wrapToolWithAbortSignal, abortable } from './abort'

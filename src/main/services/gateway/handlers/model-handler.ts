@@ -1,7 +1,8 @@
-import { ConfigService } from '../../config/config-service.js'
-import { AgentRegistry } from '../../agent/registry.js'
-import { ErrorCodes, errorShape } from '../protocol.js'
-import type { Handler } from './types.js'
+import { ConfigService } from '../../config/config-service'
+import { AgentRegistry } from '../../agent/registry'
+import { ErrorCodes, errorShape } from '../protocol'
+import type { Handler } from './types'
+import type { AIModelConfig } from '@shared/types/models'
 
 /**
  * models.fetch
@@ -21,7 +22,7 @@ export const handleModelsFetch: Handler = async (_params, _client, ctx) => {
  * models.add
  */
 export const handleModelsAdd: Handler = async (params, _client, ctx) => {
-  const model = params as any
+  const model = params as AIModelConfig
   if (!model) {
     return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, 'model config required') }
   }
@@ -44,7 +45,7 @@ export const handleModelsAdd: Handler = async (params, _client, ctx) => {
  * models.update
  */
 export const handleModelsUpdate: Handler = async (params, _client, ctx) => {
-  const p = params as { id: string; updates: any } | undefined
+  const p = params as { id: string; updates: Partial<AIModelConfig> } | undefined
   if (!p?.id || !p.updates) {
     return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, 'id and updates required') }
   }
@@ -113,7 +114,7 @@ export const handleModelsSetDefault: Handler = async (params, _client, ctx) => {
  * models.test
  */
 export const handleModelsTest: Handler = async (params, _client, _ctx) => {
-  const model = params as any
+  const model = params as AIModelConfig
   if (!model) {
     return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, 'model config required') }
   }

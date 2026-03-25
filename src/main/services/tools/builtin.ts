@@ -24,8 +24,30 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
-import type { Tool } from './types.js'
-import { assertSandboxPath } from '@main/services/sandbox-paths.js'
+import type { Tool, ToolContext } from './types'
+import { assertSandboxPath } from '@main/services/sandbox-paths'
+
+// ============== 辅助函数 ==============
+
+/**
+ * 确保路径在沙箱内并返回解析后的绝对路径
+ * 封装了重复的 try-catch 及 assertSandboxPath 调用
+ */
+async function resolveAndVerifyPath(
+  ctx: ToolContext,
+  rawPath: string
+): Promise<{ resolved: string; error?: string }> {
+  try {
+    const res = await assertSandboxPath({
+      filePath: rawPath,
+      cwd: ctx.workspaceDir,
+      root: ctx.workspaceDir
+    })
+    return { resolved: res.resolved }
+  } catch (err) {
+    return { resolved: '', error: (err as Error).message }
+  }
+}
 
 // ============== 文件读取 ==============
 
@@ -54,19 +76,10 @@ export const readTool: Tool<{ file_path: string; limit?: number }> = {
     },
     required: ['file_path']
   },
-  async execute(input, ctx) {
+  async execute(input, ctx: ToolContext) {
     // 安全: 确保路径在 workspaceDir 内，并拒绝符号链接逃逸
-    let filePath: string
-    try {
-      const resolved = await assertSandboxPath({
-        filePath: input.file_path,
-        cwd: ctx.workspaceDir,
-        root: ctx.workspaceDir
-      })
-      filePath = resolved.resolved
-    } catch (err) {
-      return `错误: ${(err as Error).message}`
-    }
+    const { resolved: filePath, error } = await resolveAndVerifyPath(ctx, input.file_path)
+    if (error) return `错误: ${error}`
     const limit = input.limit ?? 500
 
     try {
@@ -106,18 +119,9 @@ export const writeTool: Tool<{ file_path: string; content: string }> = {
     },
     required: ['file_path', 'content']
   },
-  async execute(input, ctx) {
-    let filePath: string
-    try {
-      const resolved = await assertSandboxPath({
-        filePath: input.file_path,
-        cwd: ctx.workspaceDir,
-        root: ctx.workspaceDir
-      })
-      filePath = resolved.resolved
-    } catch (err) {
-      return `错误: ${(err as Error).message}`
-    }
+  async execute(input, ctx: ToolContext) {
+    const { resolved: filePath, error } = await resolveAndVerifyPath(ctx, input.file_path)
+    if (error) return `错误: ${error}`
 
     try {
       // 自动创建父目录
@@ -165,18 +169,9 @@ export const editTool: Tool<{
     },
     required: ['file_path', 'old_string', 'new_string']
   },
-  async execute(input, ctx) {
-    let filePath: string
-    try {
-      const resolved = await assertSandboxPath({
-        filePath: input.file_path,
-        cwd: ctx.workspaceDir,
-        root: ctx.workspaceDir
-      })
-      filePath = resolved.resolved
-    } catch (err) {
-      return `错误: ${(err as Error).message}`
-    }
+  async execute(input, ctx: ToolContext) {
+    const { resolved: filePath, error } = await resolveAndVerifyPath(ctx, input.file_path)
+    if (error) return `错误: ${error}`
 
     try {
       const content = await fs.readFile(filePath, 'utf-8')
@@ -239,13 +234,19 @@ export const execTool: Tool<{ command: string; timeout?: number }> = {
     },
     required: ['command']
   },
-  async execute(input, ctx) {
+  async execute(input, ctx: ToolContext) {
     const timeout = input.timeout ?? 30000
 
     try {
-      const child = spawn('sh', ['-c', input.command], {
+      const isWin = process.platform === 'win32'
+      const shell = isWin ? 'cmd.exe' : 'sh'
+      const args = isWin ? ['/c', input.command] : ['-c', input.command]
+
+      const child = spawn(shell, args, {
         cwd: ctx.workspaceDir,
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe'],
+        // Windows 下 cmd.exe 需要 windowsVerbatimArguments: true 才能正确处理复杂转义
+        windowsVerbatimArguments: isWin
       })
 
       // AbortSignal → 杀进程
@@ -303,7 +304,11 @@ export const execTool: Tool<{ command: string; timeout?: number }> = {
 
       const exitCode = await new Promise<number | null>((resolve) => {
         child.on('close', (code) => resolve(code))
-        child.on('error', () => resolve(null))
+        child.on('error', (err) => {
+          // 捕获系统级错误，如命令找不到
+          stderr += `\n系统错误: ${err.message}`
+          resolve(null)
+        })
       })
 
       clearTimeout(timer)
@@ -347,18 +352,9 @@ export const listTool: Tool<{ path?: string; limit?: number }> = {
       limit: { type: 'number', description: '最大条目数，默认 500' }
     }
   },
-  async execute(input, ctx) {
-    let dirPath: string
-    try {
-      const resolved = await assertSandboxPath({
-        filePath: input.path ?? '.',
-        cwd: ctx.workspaceDir,
-        root: ctx.workspaceDir
-      })
-      dirPath = resolved.resolved
-    } catch (err) {
-      return `错误: ${(err as Error).message}`
-    }
+  async execute(input, ctx: ToolContext) {
+    const { resolved: dirPath, error } = await resolveAndVerifyPath(ctx, input.path ?? '.')
+    if (error) return `错误: ${error}`
 
     const limit = input.limit ?? 500
 
@@ -420,15 +416,11 @@ export const grepTool: Tool<{ pattern: string; path?: string }> = {
     },
     required: ['pattern']
   },
-  async execute(input, ctx) {
-    try {
-      const resolved = await assertSandboxPath({
-        filePath: input.path ?? '.',
-        cwd: ctx.workspaceDir,
-        root: ctx.workspaceDir
-      })
-      const searchPath = resolved.resolved
+  async execute(input, ctx: ToolContext) {
+    const { resolved: searchPath, error } = await resolveAndVerifyPath(ctx, input.path ?? '.')
+    if (error) return `错误: ${error}`
 
+    try {
       const output = await runRipgrep({
         cwd: ctx.workspaceDir,
         pattern: input.pattern,
@@ -436,10 +428,13 @@ export const grepTool: Tool<{ pattern: string; path?: string }> = {
         timeoutMs: 10000,
         limit: 100
       })
-
       return output || '未找到匹配'
     } catch (err) {
-      return `错误: ${(err as Error).message}`
+      const message = (err as Error).message
+      if (message.includes('ENOENT')) {
+        return '错误: 未找到 ripgrep (rg) 命令。请先安装 ripgrep (例如: brew install ripgrep 或 choco install ripgrep)'
+      }
+      return `错误: ${message}`
     }
   }
 }
@@ -489,6 +484,7 @@ async function runRipgrep(params: {
 
     child.on('error', (error) => {
       clearTimeout(timer)
+      // 如果报错是命令找不到，直接返回
       settle(() => reject(error))
     })
 
@@ -534,7 +530,7 @@ export const memorySearchTool: Tool<{ query: string; limit?: number }> = {
     },
     required: ['query']
   },
-  async execute(input, ctx) {
+  async execute(input, ctx: ToolContext) {
     const memory = ctx.memory
     if (!memory) {
       return '记忆系统未启用'
@@ -568,7 +564,7 @@ export const memoryGetTool: Tool<{ id: string }> = {
     },
     required: ['id']
   },
-  async execute(input, ctx) {
+  async execute(input, ctx: ToolContext) {
     const memory = ctx.memory
     if (!memory) {
       return '记忆系统未启用'
@@ -610,7 +606,7 @@ export const memorySaveTool: Tool<{
     },
     required: ['content']
   },
-  async execute(input, ctx) {
+  async execute(input, ctx: ToolContext) {
     const memory = ctx.memory
     if (!memory) {
       return '记忆系统未启用'
@@ -646,7 +642,7 @@ export const sessionsSpawnTool: Tool<{
     },
     required: ['task']
   },
-  async execute(input, ctx) {
+  async execute(input, ctx: ToolContext) {
     if (!ctx.spawnSubagent) {
       return '子代理系统未启用'
     }

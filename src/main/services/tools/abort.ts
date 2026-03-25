@@ -12,7 +12,7 @@
  * 4. abortable() 包装 LLM 调用 Promise，使其可被 abort 中断
  */
 
-import type { Tool, ToolContext } from './types.js'
+import type { Tool, ToolContext } from './types'
 
 /**
  * 合并两个 AbortSignal，任一触发即中止

@@ -16,10 +16,12 @@ import path from 'node:path'
 import readline from 'node:readline'
 import { Agent } from '@main/services/agent/agent'
 import { getEnvApiKey } from '@mariozechner/pi-ai'
-import { startGatewayServer } from './server.js'
-import { GatewayClient } from './client.js'
-import { AgentRegistry } from '@main/services/agent/registry.js'
-import type { EventFrame } from './protocol.js'
+import { startGatewayServer } from './server'
+import { GatewayClient } from './client'
+import { AgentRegistry } from '@main/services/agent/registry'
+import type { EventFrame } from './protocol'
+import { AgentConfig } from '@shared/types/agent'
+import { LogLevel } from '@shared/types/logger'
 
 // ============== .env ==============
 
@@ -71,18 +73,20 @@ async function serve() {
     process.exit(1)
   }
 
-  const agent = new Agent({
+  const config: AgentConfig = {
+    name: 'Main Agent',
     apiKey,
     provider,
     agentId: 'main',
     ...(model ? { model } : {}),
     ...(baseUrl ? { baseUrl } : {})
-  })
+  }
+  const agent = new Agent(config)
 
   const registry = AgentRegistry.getInstance()
-  registry.registerAgent('main', agent)
+  registry.registerAgent('main', agent, config)
 
-  const logLevel = (flag(args, '--log-level') as any) || 'info'
+  const logLevel = (flag(args, '--log-level') as LogLevel) || 'info'
 
   const gw = await startGatewayServer({ port, token, registry, logLevel })
 
@@ -179,6 +183,23 @@ async function connect() {
       if (trimmed === '/sessions') {
         const s = await client.request('sessions:list')
         console.log(s)
+        prompt()
+        return
+      }
+      if (trimmed === '/tools') {
+        const toolsRes = await client.request<{ tools: { name: string; description: string }[] }>(
+          'tools:list'
+        )
+        console.log(toolsRes.tools)
+        prompt()
+        return
+      }
+      if (trimmed === '/skills') {
+        const skillsRes = await client.request<{ skills: { name: string; path: string }[] }>(
+          'skills:list',
+          { agentId: sessionKey }
+        )
+        console.log(skillsRes.skills)
         prompt()
         return
       }

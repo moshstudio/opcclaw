@@ -3,7 +3,9 @@ import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent'
+import { LogLevel } from '@shared/types/logger'
+
+export type { LogLevel }
 
 // 1. 获取临时目录并确保其存在
 const LOG_DIR = path.join(os.tmpdir(), 'opcclaw-logs')

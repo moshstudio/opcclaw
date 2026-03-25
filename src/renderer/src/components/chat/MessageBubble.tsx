@@ -5,13 +5,15 @@ import {
   Message,
   ChatStatus,
   AgentToolCallBlock,
-  AgentToolResultBlock,
-  AgentPerformance
+  AgentPerformance,
+  AgentTextBlock,
+  ToolResultMessage,
+  Usage
 } from '@shared/types/agent'
 import { useTranslation } from 'react-i18next'
 import MarkdownRenderer from './MarkdownRenderer'
 import ToolBlock from './ToolBlock'
-import { MESSAGE_BLOCK_VARIANTS, CHAT_TRANSITION, LOADING_DOT_VARIANTS } from './ChatAnimations'
+import { CHAT_TRANSITION, LOADING_DOT_VARIANTS } from './ChatAnimations'
 
 // ============================================================================
 // 1. Auxiliary Internal Components
@@ -72,7 +74,7 @@ const ThinkingBlock: React.FC<{ text: string; isThinking?: boolean }> = ({ text,
 }
 
 /** 消耗与性能统计组件 */
-const UsageStats: React.FC<{ usage?: any; performance?: AgentPerformance }> = ({
+const UsageStats: React.FC<{ usage?: Usage; performance?: AgentPerformance }> = ({
   usage,
   performance
 }) => {
@@ -125,7 +127,7 @@ const BubbleLoadingIndicator: React.FC = () => (
 /** 工具交互组件 (耦合工具调用与结果) */
 const ToolInteraction: React.FC<{
   block: AgentToolCallBlock
-  allResults?: Map<string, AgentToolResultBlock>
+  allResults?: Map<string, ToolResultMessage>
   isExecuting: boolean
 }> = ({ block, allResults, isExecuting }) => {
   const tid = block.id || (block as { toolCallId?: string }).toolCallId
@@ -137,7 +139,7 @@ const ToolInteraction: React.FC<{
     let text = ''
     if (Array.isArray(result.content)) {
       text = result.content
-        .map((c: any) => {
+        .map((c) => {
           return typeof c === 'string' ? c : (c as { text?: string }).text || JSON.stringify(c)
         })
         .join('\n')
@@ -167,7 +169,7 @@ interface MessageBubbleProps {
   isTyping?: boolean
   isFinished?: boolean
   status?: ChatStatus
-  allToolResults?: Map<string, any>
+  allToolResults?: Map<string, ToolResultMessage>
 }
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({
@@ -185,8 +187,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     if (!isAssistant) return ''
     return Array.isArray(content)
       ? content
-          .filter((b) => b.type === 'text')
-          .map((b) => (b as any).text || '')
+          .filter((b): b is AgentTextBlock => b.type === 'text')
+          .map((b) => b.text || '')
           .join('\n\n')
       : String(content)
   }, [content, isAssistant])
@@ -205,12 +207,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
     return (
       <div className="group/message flex flex-col w-full items-start gap-4">
-        <motion.div
-          initial="initial"
-          animate="animate"
-          variants={MESSAGE_BLOCK_VARIANTS}
-          className="group relative w-full max-w-[95%] md:max-w-[90%] rounded-[12px] px-6 py-5 bg-secondary/40 text-foreground border border-secondary/20 backdrop-blur-md shadow-sm"
-        >
+        <div className="group relative w-full max-w-[95%] md:max-w-[90%] rounded-[12px] px-6 py-5 bg-secondary/40 text-foreground border border-secondary/20 backdrop-blur-md shadow-sm">
           <div className="flex flex-col gap-2">
             {blocks.map((block, i) => {
               let element: React.ReactNode = null
@@ -241,13 +238,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
                   break
               }
 
-              return (
-                <motion.div key={i} variants={MESSAGE_BLOCK_VARIANTS}>
-                  {element}
-                </motion.div>
-              )
+              return <div key={i}>{element}</div>
             })}
-            
+
             {/* 加载指示器：当 AI 正在处理时在气泡底部显示 */}
             {isTyping && <BubbleLoadingIndicator />}
           </div>
@@ -261,7 +254,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
               {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
             </button>
           </div>
-        </motion.div>
+        </div>
 
         {/* Meta Information - Only show when finished to avoid jitter during growth */}
         {!isTyping && (
@@ -289,20 +282,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   // 如果是 User，依然保持气泡设计
   const userText = Array.isArray(content)
-    ? content.map((c) => (c as any).text || '').join('\n')
+    ? content
+        .filter((b): b is AgentTextBlock => b.type === 'text')
+        .map((b) => b.text || '')
+        .join('\n')
     : String(content)
 
   return (
     <div className="flex flex-col gap-2 w-full items-end">
-      <motion.div
-        layout
-        initial="initial"
-        animate="animate"
-        variants={MESSAGE_BLOCK_VARIANTS}
-        className="group relative max-w-[90%] md:max-w-[85%] rounded-[12px] px-6 py-5 bg-orange-50 dark:bg-orange-500/10 border border-orange-200/50 dark:border-orange-500/20 text-orange-900 dark:text-orange-100 shadow-sm backdrop-blur-sm"
-      >
+      <div className="group relative max-w-[90%] md:max-w-[85%] rounded-[12px] px-6 py-5 bg-orange-50 dark:bg-orange-500/10 border border-orange-200/50 dark:border-orange-500/20 text-orange-900 dark:text-orange-100 shadow-sm backdrop-blur-sm">
         <MarkdownRenderer content={userText} />
-      </motion.div>
+      </div>
       <div className="flex items-center gap-3 px-2 mt-1 text-muted-foreground/40">
         <div className="flex items-center gap-1.5 text-[10px] font-medium tracking-tight">
           <span>

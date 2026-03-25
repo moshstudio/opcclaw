@@ -1,4 +1,4 @@
-import type { ContentBlock, Message } from '@shared/types/agent.js'
+import type { ContentBlock, Message } from '@shared/types/agent'
 
 export const CHARS_PER_TOKEN_ESTIMATE = 4
 

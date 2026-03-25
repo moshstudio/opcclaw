@@ -15,7 +15,7 @@
  *   效果: 用户输入的 . ( ) 等被当作字面量，只有 * 作为通配符
  */
 
-import type { Tool } from '@main/services/tools/types.js'
+import type { Tool } from '@main/services/tools/types'
 
 export type ToolPolicy = {
   allow?: string[]
