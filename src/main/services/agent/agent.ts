@@ -51,6 +51,10 @@ export class Agent {
   private readonly contextManager: AgentContextManager
   private readonly sessionService: AgentSessionService
   private readonly subagentService: SubagentService
+  private interactionCallbacks = new Map<
+    string,
+    { resolve: (res: boolean) => void; timer: NodeJS.Timeout }
+  >()
 
   private eventsListeners = new Set<(event: MiniAgentEvent) => void>()
 
@@ -102,15 +106,42 @@ export class Agent {
       (sk, msg) => this.run(sk, msg || ''),
       (ev) => this.emit(ev),
       (sk, txt) => this.steer(sk, txt),
-      (_psk) => {
-        // 子代理任务完成后的回调，目前为空
+      (psk) => {
+        // 子代理任务完成后的回调
+        // 如果宿主 Session 当前没有在运行的任务，则自动触发一次运行以消费 Steering 指令
+        if (!this.stateManager.isSessionActive(psk)) {
+          this.run(psk, '').catch((err) => {
+            console.error(`[Agent:${this.id}] Auto-wake run failed for session ${psk}:`, err)
+          })
+        }
       }
     )
     // 3. 注册心跳回调 (始终注册，确保手动触发可用)
+    this.heartbeat.onStatusChange(() => {
+      this.emit({
+        type: 'heartbeat:updated',
+        agentId: this.id,
+        status: this.getHeartbeatStatus()
+      })
+    })
+
     this.heartbeat.onHeartbeat(async (o) => {
       const sk = resolveSessionKey({ agentId: this.id, sessionKey: 'heartbeat' })
       try {
-        await this.run(sk, `[Heartbeat Wake] Reason: ${o.reason}\n\nContext:\n${o.content}`)
+        // [Auto-Create] 如果是首次运行心跳任务且 Session 不存在，则显式创建并广播通知前端
+        if (!(await this.sessionManager.getMetadata(sk))) {
+          await this.sessionManager.create(sk)
+          this.emit({
+            type: 'session:created',
+            sessionKey: sk,
+            agentId: this.id
+          })
+        }
+
+        await this.run(
+          sk,
+          `[心跳唤醒] 当前时间: ${new Date().toLocaleString()}\n唤醒原因: ${o.reason}\n\n任务上下文:\n${o.content}`
+        )
         return { text: 'Executed heartbeat task' }
       } catch (err) {
         console.error(`[Agent ${this.id}] Heartbeat execution failed:`, err)
@@ -229,19 +260,22 @@ export class Agent {
     return this.sessionService.create()
   }
 
-  public async resetSession(sessionKey: string) {
-    return this.sessionService.reset(sessionKey)
+  public async resetSession(rawSessionKey: string) {
+    const sk = resolveSessionKey({ agentId: this.id, sessionKey: rawSessionKey })
+    return this.sessionService.reset(sk)
   }
 
-  public async deleteSession(sessionKey: string) {
-    return this.sessionService.delete(sessionKey)
+  public async deleteSession(rawSessionKey: string) {
+    const sk = resolveSessionKey({ agentId: this.id, sessionKey: rawSessionKey })
+    return this.sessionService.delete(sk)
   }
 
   public async getSessionHistory(
-    sessionKey: string,
+    rawSessionKey: string,
     options?: { limit?: number; offset?: number }
   ) {
-    return this.sessionService.getHistory(sessionKey, options)
+    const sk = resolveSessionKey({ agentId: this.id, sessionKey: rawSessionKey })
+    return this.sessionService.getHistory(sk, options)
   }
 
   // --- 事件系统 ---
@@ -257,8 +291,8 @@ export class Agent {
 
   // --- 核心业务方法 (Run / Abort / Steer) ---
 
-  public async run(sessionKey: string, userInput: string): Promise<RunResult> {
-    const sk = resolveSessionKey({ sessionKey })
+  public async run(rawSessionKey: string, userInput: string): Promise<RunResult> {
+    const sk = resolveSessionKey({ agentId: this.id, sessionKey: rawSessionKey })
     const runId = newShortId()
 
     // 监听 Abort
@@ -277,9 +311,6 @@ export class Agent {
 
       const history = await this.sessionManager.load(sk)
       const currentMessages = [...history.messages]
-      const userMessage: Message = { role: 'user', content: userInput, timestamp: Date.now() }
-      currentMessages.push(userMessage)
-
       this.emit({
         type: 'agent:run-start',
         runId,
@@ -288,13 +319,19 @@ export class Agent {
         model: modelDef.id
       })
 
-      this.sessionManager.append(sessionKey, userMessage)
-      this.emit({
-        type: 'chat:userMessage',
-        runId,
-        sessionKey: sk,
-        message: userMessage
-      })
+      // 只有在 userInput 非空时才注入并广播 User 消息
+      if (userInput) {
+        const userMessage: Message = { role: 'user', content: userInput, timestamp: Date.now() }
+        currentMessages.push(userMessage)
+        this.sessionManager.append(sk, userMessage)
+
+        this.emit({
+          type: 'chat:userMessage',
+          runId,
+          sessionKey: sk,
+          message: userMessage
+        })
+      }
 
       // 5. 构建 params 对接 runAgentLoop
       const stream = runAgentLoop({
@@ -321,6 +358,40 @@ export class Agent {
               task: params.task,
               label: params.label,
               cleanup: params.cleanup
+            })
+          },
+          heartbeat: {
+            updateConfig: (cfg) => this.heartbeat.updateConfig(cfg),
+            start: () => this.heartbeat.start(),
+            stop: () => this.heartbeat.stop(),
+            trigger: () => this.heartbeat.trigger()
+          },
+          confirm: async (prompt, options) => {
+            return new Promise((resolve) => {
+              const interactionId = `int_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+
+              // 5 分钟超时处理
+              const timer = setTimeout(
+                () => {
+                  this.respondInteraction(interactionId, false)
+                },
+                5 * 60 * 1000
+              )
+
+              this.interactionCallbacks.set(interactionId, {
+                resolve,
+                timer
+              })
+
+              this.emit({
+                type: 'chat:interaction',
+                runId,
+                sessionKey: sk,
+                interactionId,
+                prompt,
+                options,
+                isComplete: false
+              })
             })
           }
         },
@@ -374,6 +445,10 @@ export class Agent {
         toolCalls
       }
     } finally {
+      // 清理该次运行所有挂起的交互
+      this.interactionCallbacks.forEach((entry, id) => {
+        this.respondInteraction(id, false)
+      })
       await this.stateManager.endRun(sk, runId)
     }
   }
@@ -382,13 +457,24 @@ export class Agent {
     this.stateManager.abort(runId)
   }
 
-  public abortSession(sessionKey: string) {
-    this.stateManager.abortSession(sessionKey)
+  public abortSession(rawSessionKey: string) {
+    const sk = resolveSessionKey({ agentId: this.id, sessionKey: rawSessionKey })
+    this.stateManager.abortSession(sk)
   }
 
-  public steer(sessionKey: string, text: string) {
-    this.stateManager.steer(sessionKey, text)
-    this.emit({ type: 'chat:notice', sessionKey, runId: 'steer', text: '指令已注入' })
+  public steer(rawSessionKey: string, text: string) {
+    const sk = resolveSessionKey({ agentId: this.id, sessionKey: rawSessionKey })
+    this.stateManager.steer(sk, text)
+    this.emit({ type: 'chat:notice', sessionKey: sk, runId: 'steer', text: '指令已注入' })
+  }
+
+  public respondInteraction(interactionId: string, result: boolean) {
+    const entry = this.interactionCallbacks.get(interactionId)
+    if (entry) {
+      this.interactionCallbacks.delete(interactionId)
+      clearTimeout(entry.timer)
+      entry.resolve(result)
+    }
   }
 
   // --- 辅助工具方法 ---

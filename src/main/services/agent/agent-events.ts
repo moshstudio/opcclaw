@@ -9,7 +9,13 @@
 import { EventStream, type Usage } from '@mariozechner/pi-ai'
 import { type Message, type AgentPerformance, type ContentBlock } from '@shared/types/agent'
 
-export type { Message, AgentPerformance }
+import {
+  type HeartbeatTaskStatus,
+  type HeartbeatLogEntry,
+  type HeartbeatLogStatus
+} from '@shared/types/gateway'
+
+export type { Message, AgentPerformance, HeartbeatTaskStatus, HeartbeatLogEntry, HeartbeatLogStatus }
 
 // ============== 事件类型（判别联合） ==============
 
@@ -101,6 +107,21 @@ export type MiniAgentEvent =
   | { type: 'agent:updated'; agentId: string }
   | { type: 'agent:deleted'; agentId: string }
   | { type: 'config:saved'; path: string }
+  // 心跳任务专用
+  | { type: 'heartbeat:created'; agentId: string; status: HeartbeatTaskStatus }
+  | { type: 'heartbeat:updated'; agentId: string; status: HeartbeatTaskStatus }
+  | { type: 'heartbeat:deleted'; agentId: string }
+  | { type: 'heartbeat:triggered'; agentId: string; status: HeartbeatTaskStatus }
+  // 用户确认/交互
+  | {
+      type: 'chat:interaction'
+      runId: string
+      sessionKey: string
+      interactionId: string
+      prompt: string
+      options?: string[]
+      isComplete?: boolean
+    }
 
 // ============== 结果类型 ==============
 

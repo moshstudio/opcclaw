@@ -1,6 +1,7 @@
 import { create, StoreApi } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { getGatewayClient } from '../services/gateway-client'
+import { ConfirmService } from '../components/ui/confirm-context'
 import { Message, ChatStatus } from '@shared/types/agent'
 import { ChatPayload, AgentEventPayload } from '@shared/types/gateway'
 import { mapHistoryMessage, RESET_TIMEOUT } from './gateway/chat-handler'
@@ -17,6 +18,7 @@ interface ChatState {
   allSessions: Record<string, string[]> // agentId -> keys[]
   isLoadingSessions: Record<string, boolean> // agentId -> state
   toolResultsMap: Record<string, Record<string, unknown>> // sessionKey -> { toolCallId -> result }
+  interactionMap: Record<string, ChatPayload['interaction'] | null> // sessionKey -> active interaction
   initialized: boolean
 
   handleChatEvent: (payload: ChatPayload) => void
@@ -32,6 +34,12 @@ interface ChatState {
   resetSession: (agentId: string) => Promise<void>
   deleteSession: (agentId: string, sessionKey: string) => Promise<void>
   abortMessage: (agentId: string, sessionKey: string) => Promise<void>
+  respondInteraction: (
+    agentId: string,
+    sessionKey: string,
+    interactionId: string,
+    result: boolean
+  ) => Promise<void>
 }
 
 type SetState = StoreApi<ChatState>['setState']
@@ -61,11 +69,29 @@ export const useChatStore = create<ChatState>()(
       allSessions: {},
       isLoadingSessions: {},
       toolResultsMap: {},
+      interactionMap: {},
       initialized: false,
 
       handleChatEvent: (payload) => {
         const sk = payload.sessionKey
         set((s) => applyGatewayEvent(s as MinimalChatStore, payload, 'chat'))
+
+        // 交互逻辑自动处理
+        if (
+          payload.state === 'interaction' &&
+          payload.interaction &&
+          !payload.interaction.isComplete
+        ) {
+          ConfirmService.confirm({
+            title: 'AI 需要你的确认',
+            description: payload.interaction.prompt,
+            confirmText: payload.interaction.options?.[0],
+            cancelText: payload.interaction.options?.[1]
+          }).then((res) => {
+            const agentId = payload.agentId || sk.split(':')[0] || 'main'
+            get().respondInteraction(agentId, sk, payload.interaction!.interactionId, res)
+          })
+        }
 
         // 异步状态复位逻辑 (UI 体验优化)
         if (payload.state === 'final' || payload.state === 'error') {
@@ -188,14 +214,12 @@ export const useChatStore = create<ChatState>()(
       },
 
       switchSession: async (agentId: string, sk: string) => {
+        // 规范化：确保 sessionKey 包含 agentId 前缀
+        const normalizedSk = sk.includes(':') ? sk : `${agentId}:${sk}`
         set((s) => ({
-          sessionKeys: { ...s.sessionKeys, [agentId]: sk },
-          allSessions: {
-            ...s.allSessions,
-            [agentId]: Array.from(new Set([sk, ...(s.allSessions[agentId] || [])]))
-          }
+          sessionKeys: { ...s.sessionKeys, [agentId]: normalizedSk }
         }))
-        get().fetchHistory(agentId, sk, 'initial')
+        get().fetchHistory(agentId, normalizedSk, 'initial')
       },
 
       fetchSessions: async (agentId: string) => {
@@ -211,8 +235,13 @@ export const useChatStore = create<ChatState>()(
 
           set((s) => {
             const currentKey = s.sessionKeys[agentId]
+            // 尊重服务器返回的顺序，除非 currentKey 还没被包含进来（比如刚创建且未刷新）
             const combined = Array.from(
-              new Set(currentKey ? [currentKey, ...remoteSessions] : remoteSessions)
+              new Set(
+                currentKey && !remoteSessions.includes(currentKey)
+                  ? [currentKey, ...remoteSessions]
+                  : remoteSessions
+              )
             ) as string[]
             return {
               allSessions: { ...s.allSessions, [agentId]: combined },
@@ -263,6 +292,19 @@ export const useChatStore = create<ChatState>()(
           setTimeout(() => updateSubState(set, 'chatStatuses', sk, 'idle'), RESET_TIMEOUT.ABORT)
         } catch (err) {
           console.error('Abort error:', err)
+        }
+      },
+      respondInteraction: async (agentId, sk, interactionId, result) => {
+        try {
+          await getGatewayClient().request('chat:respondInteraction', {
+            agentId,
+            interactionId,
+            result
+          })
+          // 清理本地状态（或者等待后端通知清理，通常这里设为 null 响应更快）
+          updateSubState(set, 'interactionMap', sk, null)
+        } catch (err) {
+          console.error('Respond interaction error:', err)
         }
       }
     }),

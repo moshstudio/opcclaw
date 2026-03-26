@@ -1,23 +1,7 @@
 import type { Handler } from './types'
+import { ErrorCodes, errorShape } from '../protocol'
+import { ensureParams } from './handler-utils'
 import { HeartbeatLog } from '@shared/types/gateway'
-
-// ===================== 明确的 params 结构定义 =====================
-
-interface HeartbeatUpdateParams {
-  agentId: string
-  intervalMs?: number
-  enabled?: boolean
-  activeHours?: { start: string; end: string }
-}
-
-interface HeartbeatAgentParams {
-  agentId: string
-}
-
-interface HeartbeatSaveFileParams {
-  agentId: string
-  content: string
-}
 
 // ===================== Handlers =====================
 
@@ -29,18 +13,27 @@ export const handleHeartbeatList: Handler = async (_params, _client, ctx) => {
   return { ok: true, payload: { tasks } }
 }
 
-/**
- * 更新心跳任务配置
- */
 export const handleHeartbeatUpdate: Handler = async (params, _client, ctx) => {
-  const { agentId, intervalMs, enabled, activeHours } = params as HeartbeatUpdateParams
+  const check = ensureParams(params, {
+    agentId: 'string',
+    intervalMs: 'number?',
+    enabled: 'boolean?',
+    activeHours: 'object?'
+  })
+  if (!check.ok) return check
+
+  const { agentId, intervalMs, enabled, activeHours } = check.values
   const agent = ctx.registry.getAgent(agentId)
 
   if (!agent) {
-    throw new Error(`Agent ${agentId} not found`)
+    return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `Agent ${agentId} not found`) }
   }
 
-  agent.updateHeartbeatConfig({ intervalMs, enabled, activeHours })
+  agent.updateHeartbeatConfig({
+    intervalMs,
+    enabled,
+    activeHours: activeHours as { start: string; end: string } | undefined
+  })
 
   // 如果是手动开启，确保启动
   if (enabled) {
@@ -59,54 +52,47 @@ export const handleHeartbeatUpdate: Handler = async (params, _client, ctx) => {
   return { ok: true, payload: { success: true } }
 }
 
-/**
- * 立即触发心跳
- */
 export const handleHeartbeatTrigger: Handler = async (params, _client, ctx) => {
-  const { agentId } = params as HeartbeatAgentParams
+  const check = ensureParams(params, { agentId: 'string' })
+  if (!check.ok) return check
+
+  const { agentId } = check.values
   const agent = ctx.registry.getAgent(agentId)
 
   if (!agent) {
-    throw new Error(`Agent ${agentId} not found`)
+    return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `Agent ${agentId} not found`) }
   }
 
-  // 1. 广播开始 (isRunning: true)
+  // 1. 启动心跳任务 (触发 isRunning 状态变更)
+  const heartbeatTask = agent.triggerHeartbeat()
+
+  // 2. 广播立即触发事件 (此时 isRunning 已为 true)
   ctx.broadcaster.dispatch({
-    type: 'heartbeat:updated',
+    type: 'heartbeat:triggered',
     agentId,
     status: agent.getHeartbeatStatus()
   })
 
   try {
-    const result = await agent.triggerHeartbeat()
-
-    // 2. 广播触发结果
-    ctx.broadcaster.dispatch({
-      type: 'heartbeat:triggered',
-      agentId,
-      status: agent.getHeartbeatStatus()
-    })
-
+    const result = await heartbeatTask
     return { ok: true, payload: { result } }
   } finally {
-    // 3. 广播结束 (isRunning: false)
-    ctx.broadcaster.dispatch({
-      type: 'heartbeat:updated',
-      agentId,
-      status: agent.getHeartbeatStatus()
-    })
+    // 任务完成后通常会由 agent trigger 发布更新，无需重复 dispatch
   }
 }
 
-/**
- * 保存/编辑 heartbeat.md 文件
- */
 export const handleHeartbeatSaveFile: Handler = async (params, _client, ctx) => {
-  const { agentId, content } = params as HeartbeatSaveFileParams
+  const check = ensureParams(params, {
+    agentId: 'string',
+    content: 'string'
+  })
+  if (!check.ok) return check
+
+  const { agentId, content } = check.values
   const agent = ctx.registry.getAgent(agentId)
 
   if (!agent) {
-    throw new Error(`Agent ${agentId} not found`)
+    return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `Agent ${agentId} not found`) }
   }
 
   const isNew = !agent.hasHeartbeatFile()
@@ -122,15 +108,15 @@ export const handleHeartbeatSaveFile: Handler = async (params, _client, ctx) => 
   return { ok: true, payload: { success: true } }
 }
 
-/**
- * 删除 heartbeat.md 文件
- */
 export const handleHeartbeatDeleteFile: Handler = async (params, _client, ctx) => {
-  const { agentId } = params as HeartbeatAgentParams
+  const check = ensureParams(params, { agentId: 'string' })
+  if (!check.ok) return check
+
+  const { agentId } = check.values
   const agent = ctx.registry.getAgent(agentId)
 
   if (!agent) {
-    throw new Error(`Agent ${agentId} not found`)
+    return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `Agent ${agentId} not found`) }
   }
 
   await agent.deleteHeartbeatFile()
@@ -144,32 +130,33 @@ export const handleHeartbeatDeleteFile: Handler = async (params, _client, ctx) =
   return { ok: true, payload: { success: true } }
 }
 
-/**
- * 获取 heartbeat.md 文件内容
- */
 export const handleHeartbeatGetFile: Handler = async (params, _client, ctx) => {
-  const { agentId } = params as HeartbeatAgentParams
+  const check = ensureParams(params, { agentId: 'string' })
+  if (!check.ok) return check
+
+  const { agentId } = check.values
   const agent = ctx.registry.getAgent(agentId)
 
   if (!agent) {
-    throw new Error(`Agent ${agentId} not found`)
+    return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `Agent ${agentId} not found`) }
   }
 
   const content = await agent.getHeartbeatFileContent()
   return { ok: true, payload: { content } }
 }
 
-interface HeartbeatLogsParams {
-  agentId?: string
-  limit?: number
-  offset?: number
-}
-
 /**
  * 获取心跳任务执行记录
  */
 export const handleHeartbeatLogs: Handler = async (params, _client, ctx) => {
-  const { agentId, limit: paramLimit, offset: paramOffset } = (params || {}) as HeartbeatLogsParams
+  const check = ensureParams(params, {
+    agentId: 'string?',
+    limit: 'number?',
+    offset: 'number?'
+  })
+  if (!check.ok) return check
+
+  const { agentId, limit: paramLimit, offset: paramOffset } = check.values
   const limit = paramLimit || 50
   const offset = paramOffset || 0
 
@@ -177,7 +164,7 @@ export const handleHeartbeatLogs: Handler = async (params, _client, ctx) => {
   if (agentId) {
     const agent = ctx.registry.getAgent(agentId)
     if (!agent) {
-      throw new Error(`Agent ${agentId} not found`)
+      return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `Agent ${agentId} not found`) }
     }
 
     const { items, total, hasMore } = await agent.readHeartbeatLogs({

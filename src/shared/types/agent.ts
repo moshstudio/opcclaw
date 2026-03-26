@@ -60,6 +60,17 @@ export interface ToolContext {
     label?: string
     cleanup?: 'keep' | 'delete'
   }) => Promise<{ runId: string; sessionKey: string }>
+  heartbeat?: {
+    updateConfig: (config: {
+      intervalMs?: number
+      enabled?: boolean
+      activeHours?: { start: string; end: string }
+    }) => void
+    start: () => void
+    stop: () => void
+    trigger: () => Promise<any>
+  }
+  confirm?: (prompt: string, options?: string[]) => Promise<boolean>
   abortSignal?: AbortSignal
 }
 

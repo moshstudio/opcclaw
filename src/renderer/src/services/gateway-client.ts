@@ -1,3 +1,5 @@
+import { toast } from 'sonner'
+import i18n from '@renderer/i18n'
 import { BaseGatewayClient } from '@shared/services/gateway-client-core'
 import {
   type HelloOk,
@@ -59,11 +61,31 @@ export class RendererGatewayClient extends BaseGatewayClient {
   }
 
   /**
-   * 重写请求逻辑，增加自动连接
+   * 重写请求逻辑，增加自动连接和错误提示
    */
   async request<T = unknown>(method: GatewayMethod, params?: unknown): Promise<T> {
-    await this.ensureConnected()
-    return super.request(method, params)
+    try {
+      await this.ensureConnected()
+      return await super.request(method, params)
+    } catch (err: any) {
+      console.error(`[RendererGatewayClient] Request failed: ${method}`, err)
+      this.handleError(err, `${i18n.t('operation_failed')}: ${method}`)
+      throw err
+    }
+  }
+
+  /**
+   * 统一错误处理
+   */
+  private handleError(err: any, context: string) {
+    const message = err?.message || String(err)
+    // 使用 sonner 的 id 特性，同样的错误消息在短时间内只显示一个
+    const errorId = `gateway-error-${message}`
+
+    toast.error(context, {
+      description: message,
+      id: errorId
+    })
   }
 
   /**

@@ -32,6 +32,7 @@ export interface MinimalChatStore {
   chatStatuses: Record<string, ChatStatus>
   errorMessages: Record<string, string | null>
   toolResultsMap?: Record<string, Record<string, unknown>>
+  interactionMap?: Record<string, ChatPayload['interaction'] | null>
 
   // 资源领域 (预留/扩展)
   models?: ModelsPayload['models']
@@ -104,7 +105,8 @@ export const applyGatewayEvent = (
           errorMessage: updates.errorMessages?.[sk] ?? (state.errorMessages[sk] || null),
           toolResults:
             updates.toolResultsMap?.[sk] ||
-            (state.toolResultsMap?.[sk] ? { ...state.toolResultsMap[sk] } : {})
+            (state.toolResultsMap?.[sk] ? { ...state.toolResultsMap[sk] } : {}),
+          interaction: updates.interactionMap?.[sk] || state.interactionMap?.[sk] || null
         }
 
         const next = applyChatEvent(payload, basePatch)
@@ -121,6 +123,11 @@ export const applyGatewayEvent = (
           ...state.toolResultsMap,
           ...updates.toolResultsMap,
           [sk]: next.toolResults
+        }
+        updates.interactionMap = {
+          ...state.interactionMap,
+          ...updates.interactionMap,
+          [sk]: next.interaction
         }
       }
       break

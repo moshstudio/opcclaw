@@ -8,5 +8,10 @@
   "save_applied": "Save & Applied Changes",
   "refresh_token_title": "Refresh Token",
   "refresh_token_confirm": "Are you sure you want to refresh the gateway token? External apps will need to be updated.",
-  "external_access_only": "Only used for external access"
+  "external_access_only": "Only used for external access",
+  "documentation": "Documentation",
+  "doc_title": "BEM API Documentation",
+  "doc_subtitle": "JSON Metadata API",
+  "view_now": "View Now",
+  "copy_link": "Copy Link"
 }

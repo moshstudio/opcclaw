@@ -12,7 +12,7 @@ import {
   AlertDialogTitle
 } from './alert-dialog'
 import { useTranslation } from 'react-i18next'
-import { ConfirmContext, ConfirmOptions } from './confirm-context'
+import { ConfirmContext, ConfirmOptions, ConfirmService } from './confirm-context'
 
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation()
@@ -39,6 +39,10 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     setOpen(false)
     resolveRef?.resolve(true)
   }
+
+  React.useEffect(() => {
+    ConfirmService._set(confirm)
+  }, [confirm])
 
   return (
     <ConfirmContext.Provider value={{ confirm }}>

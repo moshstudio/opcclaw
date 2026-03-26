@@ -215,52 +215,58 @@ const GatewayTab: React.FC = () => {
           </div>
         </Card>
 
-        <Card className="p-4 border-dashed border-zinc-800 bg-zinc-950/50 flex items-center justify-between group">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10 text-primary">
-              <FileText className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold">BEM 接口对接文档</h4>
-              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest leading-none mt-1">
-                JSON Metadata API
-              </p>
-            </div>
+        <Card className="p-6 border-dashed border-muted bg-muted/30 flex flex-col gap-6 group transition-all hover:bg-muted/50">
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-primary" />
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+              {t('gateway.documentation')}
+            </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:block px-3 py-1.5 rounded-md bg-black/40 border border-zinc-800 text-[10px] font-mono text-zinc-400 group-hover:text-primary transition-colors">
-              {docUrl}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h4 className="text-sm font-bold tracking-tight">{t('gateway.doc_title')}</h4>
+              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest leading-none">
+                {t('gateway.doc_subtitle')}
+              </p>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(
-                'h-8 gap-2 text-xs font-bold',
-                copiedUrl ? 'text-green-500' : 'text-zinc-400 hover:text-primary'
-              )}
-              onClick={() => {
-                navigator.clipboard.writeText(docUrl)
-                setCopiedUrl(true)
-                setTimeout(() => setCopiedUrl(false), 2000)
-              }}
-            >
-              {copiedUrl ? (
-                <CheckCircle2 className="w-3.5 h-3.5" />
-              ) : (
-                <Copy className="w-3.5 h-3.5" />
-              )}
-              {copiedUrl ? '已复制' : '复制链接'}
-            </Button>
-            <Button
-              variant="default"
-              size="sm"
-              className="h-8 gap-2 text-xs font-bold"
-              onClick={() => window.open(docUrl, '_blank')}
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              立即查看
-            </Button>
+
+            <div className="flex items-center gap-2">
+              <div className="hidden lg:block px-3 py-1.5 rounded-lg bg-background/50 border border-muted text-[10px] font-mono text-muted-foreground group-hover:text-primary transition-colors">
+                {docUrl}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className={cn(
+                    'h-9 px-4 rounded-xl gap-2 text-xs font-extrabold transition-all shadow-sm active:scale-95',
+                    copiedUrl ? 'text-green-500 bg-green-500/10 border-green-500/20' : ''
+                  )}
+                  onClick={() => {
+                    navigator.clipboard.writeText(docUrl)
+                    setCopiedUrl(true)
+                    setTimeout(() => setCopiedUrl(false), 2000)
+                  }}
+                >
+                  {copiedUrl ? (
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  {copiedUrl ? t('common.copied') : t('gateway.copy_link')}
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="h-9 px-4 rounded-xl gap-2 text-xs font-extrabold shadow-lg shadow-primary/20 transition-all hover:shadow-primary/40 active:scale-95"
+                  onClick={() => window.open(docUrl, '_blank')}
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  {t('gateway.view_now')}
+                </Button>
+              </div>
+            </div>
           </div>
         </Card>
       </div>

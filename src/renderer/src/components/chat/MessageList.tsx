@@ -122,11 +122,11 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isTyping, isLoading
         role: isAi ? 'ai' : 'user',
         content: m.id || ' ', // 占位符，实际渲染由 contentRender 接管
         footer: (
-          <div className="aaa flex items-center gap-3 px-6 mt-0 max-w-4xl mx-auto w-full">
+          <div className="flex items-center gap-3 px-6 mt-0 max-w-4xl mx-auto w-full">
             <div
-              className={`bbb flex-1 flex items-center gap-3 ${isAi ? 'justify-start' : 'justify-end'}`}
+              className={`flex-1 flex items-center gap-3 ${isAi ? 'justify-start' : 'justify-end'}`}
             >
-              <span className="text-[10px] text-muted-foreground/30 font-medium">
+              <span className="text-[10px] text-muted-foreground/30 font-medium leading-none flex items-center h-4">
                 {formatTime(m.timestamp)}
               </span>
               {isAi && <UsageStats usage={m.usage} performance={m.performance} />}
@@ -148,7 +148,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isTyping, isLoading
                       onItemClick: () => handleCopy(m)
                     }
                   ]}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-muted-foreground/30 text-[9px] font-bold uppercase tracking-tight"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-muted-foreground/30 text-[9px] font-bold uppercase tracking-tight flex items-center h-4"
                 />
               )}
             </div>

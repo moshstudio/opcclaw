@@ -60,3 +60,23 @@ export const handleChatHistory: Handler = async (params, _client, ctx) => {
   })
   return { ok: true, payload: { agentId, sessionKey, messages, hasMore, total } }
 }
+
+/**
+ * chat.respondInteraction
+ */
+export const handleChatRespondInteraction: Handler = async (params, _client, ctx) => {
+  const check = ensureParams(params, {
+    agentId: 'string',
+    interactionId: 'string',
+    result: 'boolean'
+  })
+  if (!check.ok) return check
+
+  const { agentId, interactionId, result } = check.values
+  const res = getAgentOrError(ctx, agentId)
+  if (!res.ok) return res
+
+  const { agent } = res
+  agent.respondInteraction(interactionId, !!result)
+  return { ok: true, payload: { agentId, interactionId } }
+}

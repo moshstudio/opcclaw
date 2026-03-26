@@ -271,6 +271,28 @@ export class SessionManager {
     }
   }
 
+  async getMetadata(sessionKey: string): Promise<SessionHeaderEntry | undefined> {
+    const cached = this.states.get(sessionKey)
+    if (cached) return cached.header
+
+    const filePath = this.getPath(sessionKey)
+    const store = new JsonlStore<SessionFileEntry>(filePath)
+    const header = await store.readFirstLine()
+    if (header && isSessionHeader(header)) {
+      return header
+    }
+
+    // 处理遗留路径
+    const legacyPath = this.getLegacyPath(sessionKey)
+    const legacyStore = new JsonlStore<SessionFileEntry>(legacyPath)
+    const legacyHeader = await legacyStore.readFirstLine()
+    if (legacyHeader && isSessionHeader(legacyHeader)) {
+      return legacyHeader
+    }
+
+    return undefined
+  }
+
   private async ensureState(sessionKey: string): Promise<SessionState> {
     const cached = this.states.get(sessionKey)
     if (cached) return cached

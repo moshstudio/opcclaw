@@ -19,6 +19,7 @@ export interface SessionPatch {
   status: ChatStatus
   errorMessage?: string | null
   toolResults: Record<string, unknown> // id -> content
+  interaction?: ChatPayload['interaction'] | null
 }
 
 /** 协议状态到 UI 状态的精确映射 */
@@ -31,6 +32,7 @@ const STATUS_MAP: Partial<Record<GatewayChatState, ChatStatus>> = {
   toolCall: 'toolCalling',
   toolResult: 'toolExecuting',
   notice: 'streaming',
+  interaction: 'waiting',
   final: 'completed',
   error: 'error'
 }
@@ -182,6 +184,12 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
       const idx = msgs.findIndex((m) => m.id === p.firstKeptEntryId)
       if (idx !== -1) msgs.splice(0, idx)
     }
+  },
+
+  interaction: (p, _msgs, patch) => {
+    if (p.interaction) {
+      patch.interaction = p.interaction
+    }
   }
 }
 
@@ -190,9 +198,13 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
 // ============================================================================
 
 export const applyChatEvent = (payload: ChatPayload, patch: SessionPatch): SessionPatch => {
-  const { messages, status: currentStatus, toolResults, errorMessage } = patch
+  // 直接忽略 notice 事件，不触发任何引用变化
+  if ((payload.state as string) === 'notice') return patch
+
+  const { messages, status: currentStatus, toolResults, errorMessage, interaction } = patch
   let nextStatus = currentStatus
   let nextError = errorMessage ?? null
+  let nextInteraction = interaction ?? null
 
   // 1. 状态映射逻辑
   const mappedStatus = STATUS_MAP[payload.state]
@@ -218,6 +230,7 @@ export const applyChatEvent = (payload: ChatPayload, patch: SessionPatch): Sessi
     messages: [...messages], // 确保引用变化触发 React 渲染
     status: nextStatus,
     errorMessage: nextError,
-    toolResults: { ...toolResults }
+    toolResults: { ...toolResults },
+    interaction: nextInteraction
   }
 }

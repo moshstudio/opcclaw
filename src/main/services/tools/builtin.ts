@@ -23,11 +23,50 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import type { Tool, ToolContext } from './types'
 import { assertSandboxPath } from '@main/services/sandbox-paths'
+import { EnvironmentService } from '@main/services/runtime/environment'
 
 // ============== 辅助函数 ==============
+
+let cachedWinShell: string | null = null
+
+/**
+ * 探测 Windows 下最佳可用的 Shell
+ * 优先级: pwsh (PowerShell Core) > powershell (Windows PowerShell) > cmd.exe (Fallback)
+ */
+function getBestWinShell(): string {
+  if (process.platform !== 'win32') return 'sh'
+  if (cachedWinShell) return cachedWinShell
+
+  // 待选方案
+  const shells = ['pwsh', 'powershell', 'cmd.exe']
+
+  for (const s of shells) {
+    try {
+      // 使用 spawnSync 快速静默检查命令是否存在
+      // 这里的检查逻辑必须非常轻量，不能阻塞太久
+      const args =
+        s.includes('powershell') || s === 'pwsh' ? ['-Command', 'exit 0'] : ['/c', 'exit 0']
+      const result = spawnSync(s, args, {
+        stdio: 'ignore',
+        timeout: 1000 // 1秒探测超时
+      })
+
+      if (result.status === 0) {
+        cachedWinShell = s
+        return s
+      }
+    } catch {
+      // 忽略找不到命令的错误，尝试下一个
+    }
+  }
+
+  // 终极回退
+  cachedWinShell = 'cmd.exe'
+  return cachedWinShell
+}
 
 /**
  * 确保路径在沙箱内并返回解析后的绝对路径
@@ -239,14 +278,89 @@ export const execTool: Tool<{ command: string; timeout?: number }> = {
 
     try {
       const isWin = process.platform === 'win32'
-      const shell = isWin ? 'cmd.exe' : 'sh'
-      const args = isWin ? ['/c', input.command] : ['-c', input.command]
+      const rawCommand = input.command.trim()
+
+      // 1. 环境校验与自动安装
+      const envService = EnvironmentService.getInstance()
+      let envToInstall: 'node' | 'python' | null = null
+
+      if (rawCommand.startsWith('node ') || rawCommand === 'node') {
+        if (!envService.check('node')) envToInstall = 'node'
+      } else if (
+        rawCommand.startsWith('python ') ||
+        rawCommand.startsWith('python3 ') ||
+        rawCommand === 'python' ||
+        rawCommand === 'python3'
+      ) {
+        if (!envService.check('python')) envToInstall = 'python'
+      }
+
+      if (envToInstall && ctx.confirm) {
+        const confirmed = await ctx.confirm(
+          `检测到本地未安装 ${envToInstall} 环境，是否现在尝试安装？（安装过程可能需要管理员权限且耗时较长）`,
+          ['立即安装', '取消执行']
+        )
+        console.log('ctx.confirm:', confirmed)
+
+        if (confirmed) {
+          const success = await envService.install(envToInstall)
+          if (!success) {
+            return `错误: ${envToInstall} 环境安装失败，请手动安装后重试。`
+          }
+        } else {
+          return `已取消执行: 用户拒绝安装 ${envToInstall} 环境。`
+        }
+      }
+
+      // 2. 透明检测：Agent 是否已经提供了 shell 前缀？
+      // 如果命令已经以 powershell, pwsh, cmd 开头，我们应该直接运行它，不进行二次包装
+      const hasPrefix = /^(powershell|pwsh|cmd)(\.exe)?\s/i.test(rawCommand)
+
+      let shell = ''
+      let args: string[] = []
+
+      if (hasPrefix && isWin) {
+        // 情况 A: 裸命令模式（用户已处理转义）
+        // 提取第一个空格前的部分作为 shell
+        const firstSpaceIndex = rawCommand.indexOf(' ')
+        shell = rawCommand.substring(0, firstSpaceIndex)
+        // 剩余部分需要仔细处理，这里我们回退到最原始的执行方式
+        // 注意：这里我们使用 cmd.exe /c 来承载用户已经拼好的 powershell 命令
+        shell = 'cmd.exe'
+        args = ['/c', `chcp 65001 > nul && ${rawCommand}`]
+      } else {
+        // 情况 B: 自动包装模式
+        shell = isWin ? getBestWinShell() : 'sh'
+
+        // 针对 WinRT 通知脚本的特殊优化：如果是通知类脚本但当前选择了 pwsh，尝试降级到 powershell.exe
+        if (isWin && shell === 'pwsh' && rawCommand.includes('Windows.UI.Notifications')) {
+          shell = 'powershell.exe'
+        }
+
+        const isPowerShell =
+          shell === 'powershell' ||
+          shell === 'pwsh' ||
+          shell.endsWith('pwsh') ||
+          shell.endsWith('powershell.exe')
+        const isCmd = shell === 'cmd' || shell === 'cmd.exe' || shell.endsWith('cmd.exe')
+
+        if (isPowerShell) {
+          const preCommand =
+            '$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8'
+          // 对于极其复杂的命令，Base64 编码是终极方案，但为了通用性，这里先优化字符串注入
+          args = ['-NoProfile', '-NonInteractive', '-Command', `${preCommand}; ${rawCommand}`]
+        } else if (isCmd && isWin) {
+          args = ['/c', `chcp 65001 > nul && ${rawCommand}`]
+        } else {
+          args = ['-c', rawCommand]
+        }
+      }
 
       const child = spawn(shell, args, {
         cwd: ctx.workspaceDir,
         stdio: ['ignore', 'pipe', 'pipe'],
-        // Windows 下 cmd.exe 需要 windowsVerbatimArguments: true 才能正确处理复杂转义
-        windowsVerbatimArguments: isWin
+        // 仅在明确使用 cmd.exe 时开启 verbatim
+        windowsVerbatimArguments: isWin && shell === 'cmd.exe'
       })
 
       // AbortSignal → 杀进程
@@ -685,6 +799,87 @@ export const sessionsSpawnTool: Tool<{
   }
 }
 
+// ============== 定时任务工具 ==============
+
+/**
+ * 设置或更新定时任务
+ *
+ * 核心逻辑:
+ * 1. 写入 HEARTBEAT.md 项目根目录
+ * 2. 如果提供了间隔或启用状态，调用 ctx.heartbeat 更新
+ *
+ * 对应架构设计:
+ * - HEARTBEAT.md 是 LLM 的上下文输入
+ * - HeartbeatManager 负责调度
+ */
+export const scheduleTaskTool: Tool<{
+  content: string
+  interval_ms?: number
+  active_hours?: { start: string; end: string }
+  enabled?: boolean
+}> = {
+  name: 'schedule_task',
+  category: 'runtime',
+  description:
+    '设置或更新定时任务。建议在调用前先使用 `read` 工具读取 `HEARTBEAT.md` 以避免内容冲突。支持设置任务内容、检查间隔和活跃时间段。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      content: {
+        type: 'string',
+        description: '任务描述（Markdown 格式），将作为心跳唤醒时的上下文输入'
+      },
+      interval_ms: {
+        type: 'number',
+        description: '任务检查间隔（毫秒），例如 1800000 表示 30 分钟'
+      },
+      active_hours: {
+        type: 'object',
+        properties: {
+          start: { type: 'string', description: '开始时间，格式 "HH:MM"' },
+          end: { type: 'string', description: '结束时间，格式 "HH:MM"' }
+        },
+        description: '活跃执行时间窗'
+      },
+      enabled: { type: 'boolean', description: '是否启用定时任务，默认为 true' }
+    },
+    required: ['content']
+  },
+  async execute(input, ctx: ToolContext) {
+    const heartbeatPath = 'HEARTBEAT.md'
+    const { resolved: filePath, error } = await resolveAndVerifyPath(ctx, heartbeatPath)
+    if (error) return `错误: ${error}`
+
+    try {
+      // 1. 写入内容
+      await fs.writeFile(filePath, input.content, 'utf-8')
+
+      // 2. 如果提供了心跳管理，同步配置
+      if (ctx.heartbeat) {
+        const enabled = input.enabled ?? true
+        ctx.heartbeat.updateConfig({
+          intervalMs: input.interval_ms,
+          activeHours: input.active_hours,
+          enabled
+        })
+        if (enabled) {
+          ctx.heartbeat.start()
+        }
+      }
+
+      let res = `成功更新定时任务内容 (${heartbeatPath})`
+      if (input.interval_ms) res += `，设置间隔 ${input.interval_ms}ms`
+      if (input.active_hours)
+        res += `，活跃时间段 ${input.active_hours.start}-${input.active_hours.end}`
+      if (input.enabled === false) res += `，任务已禁用`
+
+      return res
+    } catch (err) {
+      return `错误: ${(err as Error).message}`
+    }
+  }
+}
+
 // ============== 导出 ==============
 
 /**
@@ -716,5 +911,6 @@ export const builtinTools: Tool[] = [
   memoryGetTool,
   memorySaveTool,
   memoryDeleteTool,
-  sessionsSpawnTool
+  sessionsSpawnTool,
+  scheduleTaskTool
 ]

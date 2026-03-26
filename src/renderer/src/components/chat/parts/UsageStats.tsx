@@ -14,15 +14,15 @@ const UsageStats: React.FC<UsageStatsProps> = ({ usage, performance }) => {
   if (!usage && !performance) return null
 
   return (
-    <div className="flex items-center gap-x-4 text-muted-foreground/30 whitespace-nowrap overflow-hidden">
+    <div className="flex items-center gap-x-4 text-muted-foreground/30 whitespace-nowrap overflow-hidden h-4">
       {usage && (
-        <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-tight">
+        <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-tight leading-none h-4">
           <Zap size={10} className="text-amber-500/50" />
           <span>{t('common.tokens_count', { count: usage.totalTokens || 0 })}</span>
         </div>
       )}
       {performance?.totalDurationMs && (
-        <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-tight">
+        <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-tight leading-none h-4">
           <Cpu size={10} className="text-blue-500/50" />
           <span>{((performance.totalDurationMs || 0) / 1000).toFixed(2)}s</span>
         </div>

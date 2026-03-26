@@ -92,6 +92,17 @@ export function mapEventToChatFields(event: MiniAgentEvent): Partial<ChatPayload
     case 'chat:thinking':
       return base
 
+    case 'chat:interaction':
+      return {
+        state,
+        interaction: {
+          interactionId: event.interactionId,
+          prompt: event.prompt,
+          options: event.options,
+          isComplete: event.isComplete
+        }
+      }
+
     default:
       return null
   }

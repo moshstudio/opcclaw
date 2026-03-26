@@ -27,6 +27,7 @@ export const GATEWAY_METHODS = [
   'chat:send',
   'chat:abort',
   'chat:history',
+  'chat:respondInteraction',
   'tools:list',
   'skills:list',
   'bootstrap:list',
@@ -203,6 +204,7 @@ export type ChatState =
   | 'toolResult'
   | 'retrying'
   | 'notice'
+  | 'interaction'
   | 'final'
   | 'error'
 
@@ -304,6 +306,14 @@ export interface ChatPayload {
 
   /** 历史压缩后第一个保留的消息 ID (用于同步裁剪) */
   firstKeptEntryId?: string
+
+  /** 交互请求数据 (state: interaction) */
+  interaction?: {
+    interactionId: string
+    prompt: string
+    options?: string[]
+    isComplete?: boolean
+  }
 }
 
 /** agent 频道负载：主要用于生命周期管理和智能体内部事件转发 */

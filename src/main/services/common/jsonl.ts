@@ -253,4 +253,31 @@ export class JsonlStore<T> {
   exists(): boolean {
     return existsSync(this.filePath)
   }
+
+  /**
+   * 高效读取第一行 (通常为 Header)
+   */
+  async readFirstLine(): Promise<T | null> {
+    if (!existsSync(this.filePath)) return null
+
+    const fileStream = createReadStream(this.filePath)
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity
+    })
+
+    try {
+      for await (const line of rl) {
+        if (line.trim()) {
+          return JSON.parse(line) as T
+        }
+      }
+      return null
+    } catch {
+      return null
+    } finally {
+      rl.close()
+      fileStream.destroy()
+    }
+  }
 }

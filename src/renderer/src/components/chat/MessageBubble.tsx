@@ -169,7 +169,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         case 'text':
           return (
             <div key={groupIdx} className="prose-container w-full min-w-0">
-              <MarkdownRenderer content={block.text} />
+              <MarkdownRenderer
+                content={block.text}
+                className={!isAi ? 'text-foreground dark:text-zinc-100' : ''}
+              />
             </div>
           )
         case 'thinking':
@@ -198,7 +201,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   // 气泡容器样式
   const bubbleClass = isAi
     ? 'w-full max-w-full rounded-2xl px-5 py-4 bg-zinc-100/40 dark:bg-zinc-800/20 backdrop-blur-md border border-zinc-200/50 dark:border-zinc-700/30 shadow-sm hover:shadow-md transition-all duration-500 ring-1 ring-white/20 dark:ring-white/5'
-    : 'max-w-full rounded-2xl px-5 py-4 bg-primary/10 dark:bg-primary/20 backdrop-blur-sm border border-primary/20 dark:border-primary/30 text-foreground dark:text-zinc-100 shadow-sm hover:shadow-md transition-all duration-500'
+    : 'max-w-full rounded-2xl px-5 py-4 bg-gradient-to-br from-orange-50/90 to-orange-100/80 dark:from-orange-500/10 dark:to-orange-600/5 backdrop-blur-md border border-orange-200/40 dark:border-orange-500/20 text-foreground dark:text-zinc-100 shadow-sm hover:shadow-md transition-all duration-300 ring-1 ring-orange-100/50 dark:ring-orange-900/20'
 
   return (
     <div

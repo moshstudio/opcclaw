@@ -126,11 +126,10 @@ export function runAgentLoop(
     let overflowCompactionAttempted = false
 
     try {
-      // 初始检查 steering (用户在 agent 启动间隙可能输入了消息)
-      let pendingMessages = await getSteeringMessages()
-
       // ========== OUTER LOOP (Follow-ups) ==========
       outerLoop: while (true) {
+        // 初始检查 steering
+        let pendingMessages = await getSteeringMessages()
         let hasMoreToolCalls = true
 
         // ========== INNER LOOP (LLM + Tools + Steering) ==========

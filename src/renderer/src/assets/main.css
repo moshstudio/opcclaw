@@ -75,7 +75,7 @@
   * {
     @apply border-border;
   }
-  
+
   html,
   body,
   #root {
@@ -84,7 +84,9 @@
 
   body {
     @apply bg-background text-foreground antialiased font-sans;
-    font-feature-settings: 'rlig' 1, 'calt' 1;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
     text-rendering: optimizeLegibility;
   }
 }
@@ -116,6 +118,38 @@
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: hsl(var(--muted-foreground) / 0.1);
   border-radius: 10px;
+}
+
+/* Ant Design X specific overrides - Forced priority */
+.ant-bubble-list.custom-scrollbar,
+.ant-bubble-list.custom-scrollbar > div {
+  scrollbar-width: thin !important;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent !important;
+}
+
+.ant-bubble-list.custom-scrollbar::-webkit-scrollbar,
+.ant-bubble-list.custom-scrollbar *::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+  display: block !important;
+}
+
+.ant-bubble-list.custom-scrollbar::-webkit-scrollbar-track,
+.ant-bubble-list.custom-scrollbar *::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.ant-bubble-list.custom-scrollbar::-webkit-scrollbar-thumb,
+.ant-bubble-list.custom-scrollbar *::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.2) !important;
+  border-radius: 10px !important;
+  border: 1px solid transparent !important;
+  background-clip: content-box !important;
+}
+
+.ant-bubble-list.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.ant-bubble-list.custom-scrollbar *::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.4) !important;
 }
 
 /* Optimize transitions */

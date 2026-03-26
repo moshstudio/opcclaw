@@ -296,6 +296,7 @@ export class HeartbeatManager {
 
   private wake: HeartbeatWake
   private callback: HeartbeatCallback | null = null
+  private statusCallback: (() => void) | null = null
   private started = false
 
   constructor(workspaceDir: string, logDir: string, config: HeartbeatConfig = {}) {
@@ -332,6 +333,13 @@ export class HeartbeatManager {
    */
   onHeartbeat(callback: HeartbeatCallback): void {
     this.callback = callback
+  }
+
+  /**
+   * 注册状态变化回调
+   */
+  onStatusChange(callback: () => void): void {
+    this.statusCallback = callback
   }
 
   /**
@@ -428,7 +436,7 @@ export class HeartbeatManager {
   }
 
   /**
-   * 更新配置 (热加载)
+   * 执行配置更新
    */
   updateConfig(config: Partial<HeartbeatConfig>): void {
     if (config.intervalMs !== undefined) {
@@ -446,11 +454,8 @@ export class HeartbeatManager {
       }
     }
 
-    // 重新调度
+    // 重新调度 (scheduleNext 内部现在已自带清理逻辑)
     if (this.started && this.config.enabled) {
-      if (this.state.timer) {
-        clearTimeout(this.state.timer)
-      }
       this.scheduleNext()
     }
   }
@@ -496,6 +501,12 @@ export class HeartbeatManager {
   private scheduleNext(): void {
     if (!this.started) return
 
+    // 修复: 必须先清理旧定时器，防止并行定时器导致采集频率倍增
+    if (this.state.timer) {
+      clearTimeout(this.state.timer)
+      this.state.timer = null
+    }
+
     const now = Date.now()
     const lastRun = this.state.lastRunMs ?? now
 
@@ -516,49 +527,39 @@ export class HeartbeatManager {
 
   /**
    * 执行一次 Heartbeat
-   *
-   * 对应 OpenClaw heartbeat-runner.ts: runHeartbeatOnce()
-   * 流程:
-   * 1. 活跃时间窗口检查
-   * 2. 读取 HEARTBEAT.md 内容
-   * 3. 空内容检测 (exec 事件豁免)
-   * 4. 调用回调获取回复 (对应 getReplyFromConfig)
-   * 5. 重复消息抑制
-   * 6. 更新状态 + 调度下一次
    */
   private async runOnce(reason?: string): Promise<HeartbeatResult> {
     const startMs = Date.now()
     const wakeReason = (reason as WakeReason) || 'requested'
 
-    // 1. 活跃时间窗口检查 (手动触发 'requested' 绕过)
-    if (wakeReason !== 'requested' && !this.isWithinActiveHours(startMs)) {
-      this.state.lastRunMs = startMs
-      this.recordLog({ reason: wakeReason, status: 'skipped', message: 'outside-active-hours' })
-      this.scheduleNext()
-      return { status: 'skipped', reason: 'outside-active-hours' }
-    }
-
-    // 2. 读取 HEARTBEAT.md 内容（原样，不做解析）
-    const content = await this.readContent()
-
-    // 3. 空内容检测 — exec 事件豁免（对齐 openclaw: EXEC_EVENT_PROMPT 例外）
-    if ((!content || isContentEffectivelyEmpty(content)) && wakeReason !== 'exec') {
-      this.state.lastRunMs = startMs
-      this.recordLog({ reason: wakeReason, status: 'skipped', message: 'empty-content' })
-      this.scheduleNext()
-      return { status: 'skipped', reason: 'empty-content' }
-    }
-
-    // 4. 调用回调获取回复
-    if (!this.callback) {
-      this.state.lastRunMs = startMs
-      this.recordLog({ reason: wakeReason, status: 'failed', message: 'no-callback' })
-      this.scheduleNext()
-      return { status: 'skipped', reason: 'no-callback' }
-    }
-
     this.state.isRunning = true
+    this.statusCallback?.()
+
     try {
+      // 1. 活跃时间窗口检查 (手动触发 'requested' 绕过)
+      if (wakeReason !== 'requested' && !this.isWithinActiveHours(startMs)) {
+        this.state.lastRunMs = startMs
+        this.recordLog({ reason: wakeReason, status: 'skipped', message: 'outside-active-hours' })
+        return { status: 'skipped', reason: 'outside-active-hours' }
+      }
+
+      // 2. 读取 HEARTBEAT.md 内容
+      const content = await this.readContent()
+
+      // 3. 空内容检测 — exec 事件豁免
+      if ((!content || isContentEffectivelyEmpty(content)) && wakeReason !== 'exec') {
+        this.state.lastRunMs = startMs
+        this.recordLog({ reason: wakeReason, status: 'skipped', message: 'empty-content' })
+        return { status: 'skipped', reason: 'empty-content' }
+      }
+
+      // 4. 调用回调获取回复
+      if (!this.callback) {
+        this.state.lastRunMs = startMs
+        this.recordLog({ reason: wakeReason, status: 'failed', message: 'no-callback' })
+        return { status: 'skipped', reason: 'no-callback' }
+      }
+
       const result = await this.callback({
         content: content ?? '',
         reason: wakeReason
@@ -567,15 +568,14 @@ export class HeartbeatManager {
       const replyText = result?.text?.trim()
       const durationMs = Date.now() - startMs
 
-      // 空回复 = HEARTBEAT_OK（LLM 无话可说）
+      // 空回复 = HEARTBEAT_OK
       if (!replyText) {
         this.state.lastRunMs = startMs
-        this.scheduleNext()
         return { status: 'ran', durationMs, reason: 'ack' }
       }
 
       // 5. 重复消息抑制
-      if (this.isDuplicateMessage(replyText, startMs)) {
+      if (wakeReason !== 'requested' && this.isDuplicateMessage(replyText, startMs)) {
         this.state.lastRunMs = startMs
         this.recordLog({
           reason: wakeReason,
@@ -583,7 +583,6 @@ export class HeartbeatManager {
           message: 'duplicate-message',
           durationMs
         })
-        this.scheduleNext()
         return { status: 'skipped', durationMs, reason: 'duplicate-message' }
       }
 
@@ -598,7 +597,6 @@ export class HeartbeatManager {
       this.state.lastRunMs = startMs
       this.state.lastText = replyText
       this.state.lastTextAt = startMs
-      this.scheduleNext()
 
       return { status: 'ran', durationMs }
     } catch (err: any) {
@@ -608,10 +606,12 @@ export class HeartbeatManager {
         status: 'failed',
         message: err?.message || 'callback-error'
       })
-      this.scheduleNext()
       return { status: 'failed', reason: 'callback-error' }
     } finally {
       this.state.isRunning = false
+      // 统一在这里触发下一次调度，确保无论何种结果都会继续循环
+      this.scheduleNext()
+      this.statusCallback?.()
     }
   }
 

@@ -61,7 +61,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
   })
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    base: true,
+    base: false,
     model: false,
     file: false,
     tool: false,

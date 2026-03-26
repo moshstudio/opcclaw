@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { getGatewayClient } from '@renderer/services/gateway-client'
 import { useAgentStore } from './useAgentStore'
 import { HeartbeatEventPayload, HeartbeatTaskStatus, HeartbeatLog } from '@shared/types/gateway'
+export type { HeartbeatLog }
 
 export interface HeartbeatTask {
   agentId: string
@@ -21,7 +22,7 @@ interface HeartbeatState {
     intervalMs?: number
     activeHours?: { start: string; end: string }
   }) => Promise<void>
-  triggerHeartbeat: (agentId: string) => Promise<void>
+  triggerHeartbeat: (agentId: string) => Promise<{ status: string; reason?: string }>
   saveHeartbeatFile: (agentId: string, content: string) => Promise<void>
   deleteHeartbeatFile: (agentId: string) => Promise<void>
   fetchHeartbeatFile: (agentId: string) => Promise<string>
@@ -55,25 +56,32 @@ export const useHeartbeatStore = create<HeartbeatState>((set, get) => ({
   },
 
   handleHeartbeatEvent: (payload: HeartbeatEventPayload) => {
+    console.log('---')
+
+    console.log(payload)
+
     const { type, agentId, status } = payload
 
     set((state) => {
+      // 1. 查找现有任务索引并克隆任务列表 (遵循不可变更新原则)
       const existingIdx = state.heartbeatTasks.findIndex((t) => t.agentId === agentId)
       const tasks = [...state.heartbeatTasks]
 
+      // 2. 处理删除事件：从列表中移除该任务
       if (type === 'heartbeat:deleted') {
         return { heartbeatTasks: tasks.filter((t) => t.agentId !== agentId) }
       }
 
+      // 3. 处理状态更新 (核心：isRunning 状态变更会由此同步到 UI)
       if (status) {
         if (existingIdx > -1) {
-          // 更新现有任务状态 (created/updated/triggered)
+          // 更新现有条目：合并新的状态 (触发按钮金色特效或恢复原样)
           tasks[existingIdx] = {
             ...tasks[existingIdx],
             status: { ...tasks[existingIdx].status, ...status }
           }
         } else if (type === 'heartbeat:created' || type === 'heartbeat:updated') {
-          // 新增任务 (如果之前不在列表中)
+          // 自动发现：如果后端创建了新任务文件而前端还不在列表中，则新增一条
           const agent = useAgentStore.getState().agents.find((a) => a.id === agentId)
           tasks.push({
             agentId,
@@ -88,20 +96,11 @@ export const useHeartbeatStore = create<HeartbeatState>((set, get) => ({
   },
 
   updateHeartbeatConfig: async (params) => {
-    const { agentId, ...updates } = params
-
-    // 乐观更新：立即在 UI 上反映开关状态或间隔变化
-    set((state) => ({
-      heartbeatTasks: state.heartbeatTasks.map((t) =>
-        t.agentId === agentId ? { ...t, status: { ...t.status, ...updates } } : t
-      )
-    }))
-
     try {
       await getGatewayClient().request('heartbeat:update', params)
     } catch (err) {
       console.error('[HeartbeatStore] Update failed:', err)
-      // 失败时回滚
+      // 失败时重新拉取以确保状态同步
       await get().fetchHeartbeatTasks()
       throw err
     }
@@ -109,7 +108,10 @@ export const useHeartbeatStore = create<HeartbeatState>((set, get) => ({
 
   triggerHeartbeat: async (agentId) => {
     try {
-      await getGatewayClient().request('heartbeat:trigger', { agentId })
+      const res = await getGatewayClient().request<{
+        result: { status: string; reason?: string }
+      }>('heartbeat:trigger', { agentId })
+      return res.result
     } catch (err) {
       console.error('[HeartbeatStore] Trigger failed:', err)
       throw err

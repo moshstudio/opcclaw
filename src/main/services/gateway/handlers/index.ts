@@ -26,7 +26,12 @@ import {
   handleAgentUpdate,
   handleAgentDelete
 } from './agent-handler'
-import { handleChatSend, handleChatAbort, handleChatHistory } from './chat-handler'
+import {
+  handleChatSend,
+  handleChatAbort,
+  handleChatHistory,
+  handleChatRespondInteraction
+} from './chat-handler'
 import {
   handleSessionsCreate,
   handleSessionsList,
@@ -53,6 +58,7 @@ export const handlers: Record<string, Handler> = {
   'chat:send': handleChatSend,
   'chat:abort': handleChatAbort,
   'chat:history': handleChatHistory,
+  'chat:respondInteraction': handleChatRespondInteraction,
   'sessions:create': handleSessionsCreate,
   'sessions:list': handleSessionsList,
   'sessions:reset': handleSessionsReset,
