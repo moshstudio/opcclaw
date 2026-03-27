@@ -38,7 +38,9 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
     updateModel,
     deleteModel,
     testModel,
-    setDefaultModel
+    setDefaultModel,
+    providers,
+    fetchProviders
   } = useModelStore()
 
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -89,19 +91,24 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
           : result.error || t('common.connection_failed')
       })
 
-      // 2. 无论测试结果如何，都执行保存逻辑（支持带错保存）
-      const isNew = editingId === 'new'
-
-      if (isNew) {
-        await addModel(editForm as Omit<AIModelConfig, 'id'>)
-      } else {
-        await updateModel(editingId, editForm)
-      }
-
-      // 3. 只有测试成功才关闭对话框
+      // 2. 只有测试通过才执行持久化逻辑
       if (result.ok) {
-        // 成功则给用户一个极短的视觉反馈，然后关闭
-        setTimeout(() => setEditingId(null), 500)
+        const isNew = editingId === 'new'
+
+        let success = false
+        if (isNew) {
+          success = await addModel(editForm as Omit<AIModelConfig, 'id'>)
+        } else {
+          success = await updateModel(editingId, editForm)
+        }
+
+        if (success) {
+          // 成功则给用户一个极短的视觉反馈，然后关闭
+          setTimeout(() => setEditingId(null), 500)
+        } else {
+          // 保存本身失败
+          setTestResult({ ok: false, message: t('common.save_failed') || 'Save failed' })
+        }
       }
     } catch (err: any) {
       console.error('Save failed:', err)
@@ -112,6 +119,10 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
   }
 
   const hasTriggeredAutoAction = React.useRef(false)
+
+  useEffect(() => {
+    fetchProviders()
+  }, [fetchProviders])
 
   useEffect(() => {
     let isMounted = true
@@ -146,13 +157,6 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
     }
   }
 
-  const providerOptions = [
-    { value: 'openai', label: 'OpenAI' },
-    { value: 'anthropic', label: 'Anthropic' },
-    { value: 'google', label: 'Google Gemini' },
-    { value: 'groq', label: 'Groq' },
-    { value: 'custom', label: 'Custom (OpenAI Compatible)' }
-  ]
 
   return (
     <div className="space-y-6">
@@ -294,15 +298,28 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
                 </label>
                 <Select
                   value={editForm.provider || 'openai'}
-                  onValueChange={(val) => setEditForm({ ...editForm, provider: val })}
+                  onValueChange={(val) => {
+                    const defaults = providers.find((p) => p.id === val)
+                    setEditForm({
+                      ...editForm,
+                      provider: val,
+                      ...(defaults
+                        ? {
+                            baseUrl: defaults.baseUrl,
+                            model: defaults.defaultModel,
+                            supportsVision: !!defaults.supportsVision
+                          }
+                        : {})
+                    })
+                  }}
                 >
                   <SelectTrigger className="font-bold">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {providerOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
+                    {providers.map((opt) => (
+                      <SelectItem key={opt.id} value={opt.id}>
+                        {opt.name}
                       </SelectItem>
                     ))}
                   </SelectContent>

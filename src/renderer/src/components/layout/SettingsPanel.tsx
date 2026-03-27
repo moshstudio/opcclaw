@@ -75,10 +75,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
   useEffect(() => {
     if (visible && editingAgent) {
       const config = editingAgent.config || {}
+
+      // Try to find the matching model in the store
+      let modelSelectId = 'default'
+      if (config.modelId) {
+        // Use modelId if exists
+        const matchingModel = models.find((m) => m.id === config.modelId)
+        if (matchingModel) {
+          modelSelectId = matchingModel.id
+        }
+      }
+
       const initialData: AgentSettingsFormData = {
         name: config.name || '',
         systemPrompt: config.systemPrompt || '',
-        modelSelectId: 'default',
+        modelSelectId,
         temperature: config.temperature ?? 0.7,
         reasoning: config.reasoning || 'medium',
         contextTokens: config.contextTokens ?? 128000,
@@ -99,7 +110,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
       setFormData(initialData)
       setInitialFormData(initialData)
     }
-  }, [visible, editingAgent])
+  }, [visible, editingAgent, models]) // Added models to dependency array
 
   const isChanged = useMemo(() => {
     if (!initialFormData) return false
@@ -164,7 +175,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
         toolPolicy: formData.toolPolicy
       }
 
-      if (selectedModelMsg && formData.modelSelectId !== 'default') {
+      if (formData.modelSelectId === 'default') {
+        updates.modelId = null
+        updates.provider = null
+        updates.model = null
+        updates.apiKey = null
+        updates.baseUrl = null
+        updates.supportsVision = null
+      } else if (selectedModelMsg) {
+        updates.modelId = selectedModelMsg.id
         updates.provider = selectedModelMsg.provider
         updates.model = selectedModelMsg.model
         updates.apiKey = selectedModelMsg.apiKey

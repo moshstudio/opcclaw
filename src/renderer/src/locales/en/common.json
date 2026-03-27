@@ -197,6 +197,8 @@
   "minute_short": "m",
   "hour_short": "h",
   "hour": "hour",
+  "day": "day",
+  "day_short": "d",
   "success_status": "Success",
   "failed_status": "Failed",
   "skipped_status": "Skipped",

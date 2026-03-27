@@ -65,6 +65,7 @@ export interface ToolContext {
       intervalMs?: number
       enabled?: boolean
       activeHours?: { start: string; end: string }
+      startTime?: number
     }) => void
     start: () => void
     stop: () => void
@@ -101,6 +102,7 @@ export interface AgentConfig {
   isPinned?: boolean
 
   // --- 模型与 API 配置 ---
+  modelId?: string
   apiKey?: string
   provider?: string
   model?: string
@@ -135,7 +137,9 @@ export interface AgentConfig {
   enableSkills?: boolean
   enableHeartbeat?: boolean
   heartbeatInterval?: number
+  heartbeatStartTime?: number
   supportsVision?: boolean
+  heartbeatActiveHours?: { start: string; end: string }
 
   // --- 目录与路径配置 ---
   workspaceDir?: string

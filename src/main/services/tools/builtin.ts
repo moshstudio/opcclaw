@@ -22,6 +22,7 @@
  */
 
 import fs from 'node:fs/promises'
+import dayjs from 'dayjs'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import type { Tool, ToolContext } from './types'
@@ -280,19 +281,25 @@ export const execTool: Tool<{ command: string; timeout?: number }> = {
       const isWin = process.platform === 'win32'
       const rawCommand = input.command.trim()
 
-      // 1. 环境校验与自动安装
+      // 0. 启动前强制采样最新的系统环境变量
       const envService = EnvironmentService.getInstance()
+      if (isWin) envService.refreshProcessPath()
+
+      // 1. 环境校验与自动安装
       let envToInstall: 'node' | 'python' | null = null
+      let runtimeInfo: any = null
 
       if (rawCommand.startsWith('node ') || rawCommand === 'node') {
-        if (!envService.check('node')) envToInstall = 'node'
+        runtimeInfo = envService.getInfo('node')
+        if (!runtimeInfo.exists) envToInstall = 'node'
       } else if (
         rawCommand.startsWith('python ') ||
         rawCommand.startsWith('python3 ') ||
         rawCommand === 'python' ||
         rawCommand === 'python3'
       ) {
-        if (!envService.check('python')) envToInstall = 'python'
+        runtimeInfo = envService.getInfo('python')
+        if (!runtimeInfo.exists) envToInstall = 'python'
       }
 
       if (envToInstall && ctx.confirm) {
@@ -300,13 +307,13 @@ export const execTool: Tool<{ command: string; timeout?: number }> = {
           `检测到本地未安装 ${envToInstall} 环境，是否现在尝试安装？（安装过程可能需要管理员权限且耗时较长）`,
           ['立即安装', '取消执行']
         )
-        console.log('ctx.confirm:', confirmed)
 
         if (confirmed) {
-          const success = await envService.install(envToInstall)
-          if (!success) {
-            return `错误: ${envToInstall} 环境安装失败，请手动安装后重试。`
+          const result = await envService.install(envToInstall)
+          if (!result.success) {
+            return `错误: ${envToInstall} 环境安装失败。\n\n[安装日志]\n${result.logs}\n\n请根据日志排查问题或手动安装后重试。`
           }
+          return `成功: ${envToInstall} 环境安装成功，环境变量已刷新。现在你可以重新尝试执行你的 Python 指令了。\n\n[安装日志]\n${result.logs}`
         } else {
           return `已取消执行: 用户拒绝安装 ${envToInstall} 环境。`
         }
@@ -356,8 +363,19 @@ export const execTool: Tool<{ command: string; timeout?: number }> = {
         }
       }
 
+      // 0.5 准备执行环境：将检测到的运行时路径置于最优先地位
+      const spawnEnv = { ...process.env }
+      if (runtimeInfo?.path) {
+        const binDir = path.dirname(runtimeInfo.path)
+        // 查找当前进程环境中真正的 PATH 键名 (Windows 下可能是 Path 或 PATH)
+        const pathKey = Object.keys(spawnEnv).find((k) => k.toLowerCase() === 'path') || 'PATH'
+        const existingPath = spawnEnv[pathKey] || ''
+        spawnEnv[pathKey] = `${binDir}${path.delimiter}${existingPath}`
+      }
+
       const child = spawn(shell, args, {
         cwd: ctx.workspaceDir,
+        env: spawnEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
         // 仅在明确使用 cmd.exe 时开启 verbatim
         windowsVerbatimArguments: isWin && shell === 'cmd.exe'
@@ -817,6 +835,7 @@ export const scheduleTaskTool: Tool<{
   interval_ms?: number
   active_hours?: { start: string; end: string }
   enabled?: boolean
+  start_time?: string
 }> = {
   name: 'schedule_task',
   category: 'runtime',
@@ -839,9 +858,14 @@ export const scheduleTaskTool: Tool<{
           start: { type: 'string', description: '开始时间，格式 "HH:MM"' },
           end: { type: 'string', description: '结束时间，格式 "HH:MM"' }
         },
-        description: '活跃执行时间窗'
+        description: '活跃执行时间窗，如果不填则默认为全天 (00:00-23:59)'
       },
-      enabled: { type: 'boolean', description: '是否启用定时任务，默认为 true' }
+      enabled: { type: 'boolean', description: '是否启用定时任务，默认为 true' },
+      start_time: {
+        type: 'string',
+        description:
+          '首次执行时间（ISO 8601 格式，如 "2026-03-27T10:00:00+08:00"），设置后下一次执行将以此为准'
+      }
     },
     required: ['content']
   },
@@ -857,10 +881,18 @@ export const scheduleTaskTool: Tool<{
       // 2. 如果提供了心跳管理，同步配置
       if (ctx.heartbeat) {
         const enabled = input.enabled ?? true
+        // Pass input.active_hours directly. If it's undefined or null, HeartbeatManager should handle it as "full day".
+        const activeHours = input.active_hours
+        const startTimeTs = input.start_time ? dayjs(input.start_time).valueOf() : undefined
+        if (input.start_time && isNaN(startTimeTs as number)) {
+          return `错误: 开始时间格式无效，请使用有效的 ISO 8601 字符串（建议包含时区，如 +08:00）`
+        }
+
         ctx.heartbeat.updateConfig({
           intervalMs: input.interval_ms,
-          activeHours: input.active_hours,
-          enabled
+          activeHours,
+          enabled,
+          startTime: startTimeTs
         })
         if (enabled) {
           ctx.heartbeat.start()
@@ -869,8 +901,12 @@ export const scheduleTaskTool: Tool<{
 
       let res = `成功更新定时任务内容 (${heartbeatPath})`
       if (input.interval_ms) res += `，设置间隔 ${input.interval_ms}ms`
-      if (input.active_hours)
+      if (input.active_hours) {
         res += `，活跃时间段 ${input.active_hours.start}-${input.active_hours.end}`
+      } else {
+        res += `，活跃时间段 全天`
+      }
+      if (input.start_time) res += `，设定开始时间 ${input.start_time}`
       if (input.enabled === false) res += `，任务已禁用`
 
       return res

@@ -157,10 +157,7 @@ export class JsonlStore<T> {
     hasMore: boolean
   }> {
     // 渐进式流读取实现
-    const items: T[] = []
     let totalCount = 0
-    let skip = offset
-    let take = limit
 
     // 这里可以使用现有的 readStream 实现，为了代码紧凑先简单全量实现兼容
     const res = await this._readAllInternal()

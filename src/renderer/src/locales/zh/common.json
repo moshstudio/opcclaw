@@ -201,6 +201,8 @@
   "minute_short": "分",
   "hour_short": "时",
   "hour": "小时",
+  "day": "天",
+  "day_short": "天",
   "success_status": "成功",
   "failed_status": "失败",
   "skipped_status": "跳过",
@@ -214,5 +216,6 @@
   "no_callback": "回调未就绪",
   "duplicate_message": "重复消息抑制",
   "callback_error": "执行逻辑错误",
-  "requests_in_flight": "任务合并中"
+  "requests_in_flight": "任务合并中",
+  "scheduled_start": "计划启动"
 }

@@ -22,7 +22,7 @@ export class RendererGatewayClient extends BaseGatewayClient {
   constructor(opts: Partial<GatewayClientOptions> = {}) {
     // 初始 URL 和 Token 先设为空，connect 时会从主进程拉取最新配置
     super({
-      url: opts.url ?? 'ws://localhost:18789',
+      url: opts.url ?? 'ws://localhost:18781',
       token: opts.token,
       ...opts
     })

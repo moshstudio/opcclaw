@@ -41,6 +41,7 @@ export const GATEWAY_METHODS = [
   'models:delete',
   'models:setDefault',
   'models:test',
+  'models:providers',
   'health',
   'system:events-doc',
   'heartbeat:list',
@@ -360,6 +361,7 @@ export interface HeartbeatTaskStatus {
   intervalMs: number
   activeHours: { start: string; end: string }
   isWithinActiveHours: boolean
+  forcedNextDueMs: number | null
 }
 
 /** heartbeat 频道负载：心跳任务动态更新 */

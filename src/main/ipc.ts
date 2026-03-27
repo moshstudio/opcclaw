@@ -12,7 +12,7 @@ export function initIpcServices(): void {
   ipcMain.handle('gateway:info', async () => {
     const config = ConfigService.getInstance().getConfig()
     return {
-      port: config.gateway?.port || 18789,
+      port: config.gateway?.port || 18781,
       token: config.gateway?.token
     }
   })
@@ -41,7 +41,7 @@ export function initIpcServices(): void {
         ]
       })
 
-      // 3. 删除自定义数据文件夹 (.opcclaw)
+      // 3. 删除自定义数据文件夹 (.opcclaw / .opcclaw-dev)
       const opcclawRoot = ConfigService.getInstance().getRootPath()
       console.log(`[IPC] Cleaning opcclawRoot: ${opcclawRoot}`)
       if (fs.existsSync(opcclawRoot)) {

@@ -74,6 +74,7 @@
 @layer base {
   * {
     @apply border-border;
+    font-family: inherit;
   }
 
   html,
@@ -162,4 +163,13 @@ textarea,
     background-color 0.2s ease,
     border-color 0.2s ease,
     color 0.1s ease;
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 import { getGatewayClient } from '../services/gateway-client'
 
-import { type AIModelConfig, type ModelTestResult } from '@shared/types/models'
-export type { AIModelConfig, ModelTestResult } from '@shared/types/models'
+import { type AIModelConfig, type ModelTestResult, type ModelProvider } from '@shared/types/models'
+export type { AIModelConfig, ModelTestResult, ModelProvider } from '@shared/types/models'
 
 interface ModelState {
   models: AIModelConfig[]
+  providers: ModelProvider[]
   defaultModelId: string | null
   isLoading: boolean
   error: string | null
@@ -15,6 +16,7 @@ interface ModelState {
   init: () => void
 
   fetchModels: () => Promise<void>
+  fetchProviders: () => Promise<void>
   addModel: (model: Omit<AIModelConfig, 'id'>) => Promise<boolean>
   updateModel: (id: string, updates: Partial<AIModelConfig>) => Promise<boolean>
   deleteModel: (id: string) => Promise<boolean>
@@ -24,6 +26,7 @@ interface ModelState {
 
 export const useModelStore = create<ModelState>((set) => ({
   models: [],
+  providers: [],
   defaultModelId: null,
   isLoading: false,
   error: null,
@@ -51,6 +54,14 @@ export const useModelStore = create<ModelState>((set) => ({
       await getGatewayClient().request('models:fetch', {})
     } catch (err) {
       set({ error: (err as Error).message, isLoading: false })
+    }
+  },
+  fetchProviders: async () => {
+    try {
+      const providers = await getGatewayClient().request<ModelProvider[]>('models:providers', {})
+      set({ providers })
+    } catch (err) {
+      console.error('Failed to fetch providers:', err)
     }
   },
 

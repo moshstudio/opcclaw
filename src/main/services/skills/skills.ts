@@ -313,11 +313,25 @@ export class SkillManager {
 
   /**
    * @param workspaceDir 工作目录（最高优先级 skill 来源）
-   * @param managedDir 用户全局目录（~/.opcclaw/skills/）
+   * @param managedDir 用户全局目录（~/.opcclaw/skills/ 或 ~/.opcclaw-dev/skills/）
    */
   constructor(workspaceDir: string, managedDir?: string) {
     this.workspaceDir = workspaceDir
     this.managedDir = managedDir ?? ConfigService.getInstance().getGlobalSkillsDir()
+  }
+
+  /**
+   * 更新配置（热更新）
+   */
+  updateConfig(config: { workspaceDir?: string; managedDir?: string }) {
+    if (config.workspaceDir !== undefined && config.workspaceDir !== this.workspaceDir) {
+      this.workspaceDir = config.workspaceDir
+      this.loaded = false // 路径变更，标记需要重新加载
+    }
+    if (config.managedDir !== undefined && config.managedDir !== this.managedDir) {
+      this.managedDir = config.managedDir
+      this.loaded = false
+    }
   }
 
   /**

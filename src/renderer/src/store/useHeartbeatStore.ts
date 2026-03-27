@@ -56,10 +56,6 @@ export const useHeartbeatStore = create<HeartbeatState>((set, get) => ({
   },
 
   handleHeartbeatEvent: (payload: HeartbeatEventPayload) => {
-    console.log('---')
-
-    console.log(payload)
-
     const { type, agentId, status } = payload
 
     set((state) => {

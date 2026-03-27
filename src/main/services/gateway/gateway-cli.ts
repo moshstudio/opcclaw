@@ -7,7 +7,7 @@
  * - 两种模式: serve（启动服务）/ connect（连接客户端）
  *
  * 用法:
- *   tsx src/gateway/gateway-cli.ts serve [--port 18789] [--token xxx]
+ *   tsx src/gateway/gateway-cli.ts serve [--port 18781] [--token xxx]
  *   tsx src/gateway/gateway-cli.ts connect [--url ws://...] [--token xxx]
  */
 
@@ -61,7 +61,7 @@ const mode = args[0] ?? 'serve'
 // ============== serve 模式 ==============
 
 async function serve() {
-  const port = Number(flag(args, '--port') ?? 18789)
+  const port = Number(flag(args, '--port') ?? 18781)
   const token = flag(args, '--token') ?? process.env.OPENCLAW_MINI_GW_TOKEN
   const provider = flag(args, '--provider') ?? process.env.OPENCLAW_MINI_PROVIDER ?? 'anthropic'
   const model = flag(args, '--model') ?? process.env.OPENCLAW_MINI_MODEL
@@ -106,7 +106,7 @@ async function serve() {
 // ============== connect 模式 ==============
 
 async function connect() {
-  const url = flag(args, '--url') ?? 'ws://localhost:18789'
+  const url = flag(args, '--url') ?? 'ws://localhost:18781'
   const token = flag(args, '--token') ?? process.env.OPENCLAW_MINI_GW_TOKEN
   const sessionKey = flag(args, '--session') ?? 'main'
 

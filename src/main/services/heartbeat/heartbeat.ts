@@ -26,6 +26,7 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import dayjs from 'dayjs'
 import type { HeartbeatLogEntry, HeartbeatLogStatus } from '@shared/types/gateway'
 import { JsonlStore } from '../common/jsonl'
 
@@ -60,6 +61,10 @@ export interface HeartbeatConfig {
   coalesceMs?: number
   /** 重复检测窗口 (毫秒)，默认 24 小时 */
   duplicateWindowMs?: number
+  /** 指定的首次运行时间（毫秒时间戳） */
+  startTime?: number
+  /** 工作空间目录 */
+  workspaceDir?: string
 }
 
 /**
@@ -264,6 +269,8 @@ interface RunnerState {
   logs: HeartbeatLogEntry[]
   /** 正在执行 */
   isRunning: boolean
+  /** 强制指定的下一次运行时间（毫秒时间戳），仅生效一次 */
+  forcedNextDueMs: number | null
 }
 
 /**
@@ -279,8 +286,9 @@ interface RunnerState {
  */
 export class HeartbeatManager {
   private workspaceDir: string
-  private config: Required<Omit<HeartbeatConfig, 'activeHours'>> & {
+  private config: Required<Omit<HeartbeatConfig, 'activeHours' | 'startTime'>> & {
     activeHours?: ActiveHours
+    startTime?: number
   }
   private logStore: JsonlStore<HeartbeatLogEntry>
 
@@ -291,7 +299,8 @@ export class HeartbeatManager {
     lastText: null,
     lastTextAt: null,
     logs: [],
-    isRunning: false
+    isRunning: false,
+    forcedNextDueMs: null
   }
 
   private wake: HeartbeatWake
@@ -307,7 +316,8 @@ export class HeartbeatManager {
       enabled: config.enabled ?? true,
       coalesceMs: config.coalesceMs ?? 250,
       duplicateWindowMs: config.duplicateWindowMs ?? 24 * 60 * 60 * 1000,
-      activeHours: config.activeHours
+      activeHours: config.activeHours,
+      workspaceDir: config.workspaceDir ?? workspaceDir
     }
 
     this.logStore = new JsonlStore(path.join(logDir, 'heartbeat-logs.jsonl'))
@@ -315,6 +325,10 @@ export class HeartbeatManager {
     this.wake = new HeartbeatWake(this.config.coalesceMs)
     // HeartbeatWake 的 handler 对应 openclaw 的 runHeartbeatOnce
     this.wake.setHandler((opts) => this.runOnce(opts.reason))
+
+    if (config.startTime) {
+      this.state.forcedNextDueMs = config.startTime
+    }
 
     // 初始化加载历史日志
     const logs = this.logStore.readAllSync()
@@ -439,19 +453,20 @@ export class HeartbeatManager {
    * 执行配置更新
    */
   updateConfig(config: Partial<HeartbeatConfig>): void {
+    if (config.startTime !== undefined) {
+      this.state.forcedNextDueMs = config.startTime
+    }
     if (config.intervalMs !== undefined) {
       this.config.intervalMs = config.intervalMs
     }
-    if (config.activeHours !== undefined) {
+    if ('activeHours' in config) {
       this.config.activeHours = config.activeHours
     }
     if (config.enabled !== undefined) {
       this.config.enabled = config.enabled
-      if (!config.enabled) {
-        this.stop()
-      } else if (this.started) {
-        this.scheduleNext()
-      }
+    }
+    if (config.workspaceDir !== undefined && config.workspaceDir !== this.workspaceDir) {
+      this.workspaceDir = config.workspaceDir
     }
 
     // 重新调度 (scheduleNext 内部现在已自带清理逻辑)
@@ -474,6 +489,7 @@ export class HeartbeatManager {
     isWithinActiveHours: boolean
     hasPending: boolean
     heartbeatPath: string
+    forcedNextDueMs: number | null
   } {
     return {
       enabled: this.config.enabled,
@@ -485,7 +501,8 @@ export class HeartbeatManager {
       activeHours: this.config.activeHours || { start: '00:00', end: '23:59' },
       isWithinActiveHours: this.isWithinActiveHours(Date.now()),
       hasPending: this.wake.hasPending(),
-      heartbeatPath: this.config.heartbeatPath
+      heartbeatPath: this.config.heartbeatPath,
+      forcedNextDueMs: this.state.forcedNextDueMs
     }
   }
 
@@ -510,17 +527,22 @@ export class HeartbeatManager {
     const now = Date.now()
     const lastRun = this.state.lastRunMs ?? now
 
-    // 基础间隔 + 随机偏移 (最大 30秒 或 间隔的 5%)
-    const maxJitter = Math.min(30000, this.config.intervalMs * 0.05)
-    const jitter = Math.floor(Math.random() * maxJitter)
-
-    const nextDue = lastRun + this.config.intervalMs + jitter
+    let nextDue: number
+    if (this.state.forcedNextDueMs) {
+      nextDue = this.state.forcedNextDueMs
+    } else {
+      // 基础间隔 + 随机偏移 (最大 30秒 或 间隔的 5%)
+      const maxJitter = Math.min(30000, this.config.intervalMs * 0.05)
+      const jitter = Math.floor(Math.random() * maxJitter)
+      nextDue = lastRun + this.config.intervalMs + jitter
+    }
     this.state.nextDueMs = nextDue
 
     const delay = Math.max(0, nextDue - now)
 
     this.state.timer = setTimeout(() => {
       this.state.timer = null
+      this.state.forcedNextDueMs = null // 计划已触发，清除强制时间
       this.wake.request('interval')
     }, delay)
   }
@@ -544,16 +566,23 @@ export class HeartbeatManager {
       }
 
       // 2. 读取 HEARTBEAT.md 内容
-      const content = await this.readContent()
+      const fileContent = await this.readContent()
 
       // 3. 空内容检测 — exec 事件豁免
-      if ((!content || isContentEffectivelyEmpty(content)) && wakeReason !== 'exec') {
+      // 这里的检测基于原始文件内容，避免注入指令干扰导致空文件检测失效
+      const isActuallyEmpty = !fileContent || isContentEffectivelyEmpty(fileContent)
+      if (isActuallyEmpty && wakeReason !== 'exec') {
         this.state.lastRunMs = startMs
         this.recordLog({ reason: wakeReason, status: 'skipped', message: 'empty-content' })
         return { status: 'skipped', reason: 'empty-content' }
       }
 
-      // 4. 调用回调获取回复
+      // 4. 为 content 补充指令
+      const content =
+        (fileContent || '').trim() +
+        '\n\n如果是提醒事件，使用电脑系统级别的提醒，如果是只执行一次的任务，执行完毕后关闭定时任务'
+
+      // 5. 调用回调获取回复
       if (!this.callback) {
         this.state.lastRunMs = startMs
         this.recordLog({ reason: wakeReason, status: 'failed', message: 'no-callback' })
@@ -561,7 +590,7 @@ export class HeartbeatManager {
       }
 
       const result = await this.callback({
-        content: content ?? '',
+        content: content,
         reason: wakeReason
       })
 
@@ -627,8 +656,8 @@ export class HeartbeatManager {
     const { activeHours } = this.config
     if (!activeHours) return true
 
-    const date = new Date(nowMs)
-    const currentMinutes = date.getHours() * 60 + date.getMinutes()
+    const now = dayjs(nowMs)
+    const currentMinutes = now.hour() * 60 + now.minute()
 
     const [startH, startM] = activeHours.start.split(':').map(Number)
     const [endH, endM] = activeHours.end.split(':').map(Number)

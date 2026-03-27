@@ -4,6 +4,7 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import dayjs from 'dayjs'
 import { newUUID, newShortId } from '@shared/utils/id'
 import { acquireSessionWriteLock } from './session-write-lock'
 import { JsonlStore } from '../common/jsonl'
@@ -97,7 +98,7 @@ export class SessionManager {
       type: 'session',
       version: CURRENT_SESSION_VERSION,
       id: newUUID(),
-      timestamp: new Date().toISOString(),
+      timestamp: dayjs().toISOString(),
       cwd: process.cwd()
     }
   }
@@ -133,7 +134,7 @@ export class SessionManager {
       type: 'message',
       id: entryId,
       parentId: state.leafId,
-      timestamp: new Date().toISOString(),
+      timestamp: dayjs().toISOString(),
       message
     }
     state.entries.push(entry)
@@ -166,7 +167,7 @@ export class SessionManager {
       type: 'compaction',
       id: generateId(state.byId),
       parentId: state.leafId,
-      timestamp: new Date().toISOString(),
+      timestamp: dayjs().toISOString(),
       summary,
       firstKeptEntryId,
       tokensBefore
@@ -507,7 +508,7 @@ function buildStateFromLegacy(filePath: string, messages: Message[]): SessionSta
     type: 'session',
     version: CURRENT_SESSION_VERSION,
     id: newUUID(),
-    timestamp: new Date().toISOString(),
+    timestamp: dayjs().toISOString(),
     cwd: process.cwd()
   } satisfies SessionHeaderEntry
   const entries: SessionEntry[] = []
@@ -523,7 +524,7 @@ function buildStateFromLegacy(filePath: string, messages: Message[]): SessionSta
       type: 'message',
       id: entryId,
       parentId: leafId,
-      timestamp: new Date().toISOString(),
+      timestamp: dayjs().toISOString(),
       message: piMessage
     }
     entries.push(entry)

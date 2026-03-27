@@ -1,6 +1,7 @@
 import type { ContextLoader } from '@main/services/context/index'
 import type { SkillManager } from '@main/services/skills/skills'
 import type { Tool } from '@main/services/tools/types'
+import dayjs from 'dayjs'
 import os from 'node:os'
 
 export type PromptMode = 'full' | 'minimal' | 'none'
@@ -86,8 +87,6 @@ export class AgentPromptBuilder {
         sessionKey: params.sessionKey
       })
       if (contextPrompt) {
-        lines.push('\n# 项目上下文 (Project Context)')
-        lines.push('以下是自动注入的项目文件内容，请将其作为背景知识：')
         lines.push(contextPrompt)
       }
     }
@@ -96,8 +95,6 @@ export class AgentPromptBuilder {
     if (this.options.sandbox?.enabled) {
       lines.push(...this.buildSandboxSection())
     }
-    console.log(lines);
-
 
     return lines.filter((l) => l !== undefined).join('\n')
   }
@@ -118,7 +115,7 @@ export class AgentPromptBuilder {
       `Arch: ${runtime?.arch || os.arch()}`,
       `Node: ${runtime?.node || process.version}`,
       `Model: ${runtime?.model || 'Unknown'}`,
-      `Time: ${new Date().toLocaleString()}`
+      `Time: ${dayjs().format('YYYY-MM-DDTHH:mm:ssZ')}`
     ]
     return ['## 运行时环境', ...info.map((i) => `- ${i}`), '']
   }
@@ -149,15 +146,12 @@ export class AgentPromptBuilder {
   private buildProtocolSection(): string[] {
     return [
       '## 交互协议',
-      '### 1. 思考与推理',
-      '在处理复杂任务或调用工具前，请务必在 `<think>` 标签内进行内部推理。分析任务步骤、潜在风险及工具选择。',
-      '',
-      '### 2. 工具调用风格',
+      '### 1. 工具调用风格',
       '- **静默调用**：对于低风险、常规的工具调用（如读取文件、列目录），直接执行工具，无需在外部解释。',
       '- **叙述性调用**：仅在涉及多步复杂工作、高风险操作（如删除文件或执行敏感 shell 命令）或用户明确要求解释时，才提供简洁的说明。',
       '- **首选工具**：当存在专门的工具（如 `edit`）时，优先使用该工具，而非尝试通过 `exec` 调用 CLI 命令。',
       '',
-      '### 3. 输出质量',
+      '### 2. 输出质量',
       '- 保持回复专业、客观且简洁。',
       '- 代码块必须指定正确的 Markdown 语言标识（如 ```typescript）。',
       '- 如果遇到超出当前权限或能力范围的请求，请诚实告知。',
@@ -200,6 +194,11 @@ export class AgentPromptBuilder {
       '请在受限范围内选择操作方案。',
       ''
     ]
+  }
+
+  /** 更新配置 */
+  updateConfig(updates: Partial<PromptBuilderOptions>) {
+    this.options = { ...this.options, ...updates }
   }
 
   /** 更新基础提示词 */

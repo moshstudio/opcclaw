@@ -44,7 +44,8 @@ import {
   handleModelsUpdate,
   handleModelsDelete,
   handleModelsSetDefault,
-  handleModelsTest
+  handleModelsTest,
+  handleModelsGetProviders
 } from './model-handler'
 
 export * from './types'
@@ -77,6 +78,7 @@ export const handlers: Record<string, Handler> = {
   'models:delete': handleModelsDelete,
   'models:setDefault': handleModelsSetDefault,
   'models:test': handleModelsTest,
+  'models:providers': handleModelsGetProviders,
   'heartbeat:list': handleHeartbeatList,
   'heartbeat:update': handleHeartbeatUpdate,
   'heartbeat:trigger': handleHeartbeatTrigger,

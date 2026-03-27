@@ -102,7 +102,7 @@ function AppContent(): React.JSX.Element {
               />
             </Routes>
           </AnimatePresence>
-          <Toaster position="top-center" richColors closeButton />
+          <Toaster position="top-center" richColors />
         </ConfirmProvider>
       </ThemeProvider>
     </ConfigProvider>

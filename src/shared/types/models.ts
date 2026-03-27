@@ -12,6 +12,15 @@ export interface AIModelConfig {
   supportsVision?: boolean
 }
 
+export interface ModelProvider {
+  id: string
+  name: string
+  baseUrl: string
+  defaultModel: string
+  supportsVision?: boolean
+  thinkingSignature?: string
+}
+
 export interface ModelTestResult {
   ok: boolean
   error?: string

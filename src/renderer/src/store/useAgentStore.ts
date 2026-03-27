@@ -6,6 +6,7 @@ import { AgentEventPayload } from '@shared/types/gateway'
 interface AgentState {
   agents: Agent[]
   activeAgentId: string | null
+  isLoading: boolean
 
   // Actions
   fetchAgents: () => Promise<void>
@@ -21,13 +22,33 @@ const ACTIVE_AGENT_STORAGE_KEY = 'opcclaw_active_agent_id'
 export const useAgentStore = create<AgentState>((set, get) => ({
   agents: [],
   activeAgentId: localStorage.getItem(ACTIVE_AGENT_STORAGE_KEY),
+  isLoading: true,
 
   fetchAgents: async () => {
+    set({ isLoading: true })
     try {
       const { agents } = await getGatewayClient().request<{ agents: Agent[] }>('agent:list', {})
-      set({ agents })
+      let nextActiveId = get().activeAgentId
+
+      // 如果当前没有选中的智能体，或者选中的智能体已不存在
+      if (!nextActiveId || !agents.find((a) => a.id === nextActiveId)) {
+        if (agents.length > 0) {
+          nextActiveId = agents[0].id
+        } else {
+          nextActiveId = null
+        }
+      }
+
+      set({ agents, activeAgentId: nextActiveId, isLoading: false })
+
+      if (nextActiveId) {
+        localStorage.setItem(ACTIVE_AGENT_STORAGE_KEY, nextActiveId)
+      } else {
+        localStorage.removeItem(ACTIVE_AGENT_STORAGE_KEY)
+      }
     } catch (err) {
       console.error('[AgentStore] Failed to fetch agents:', err)
+      set({ isLoading: false })
     }
   },
 

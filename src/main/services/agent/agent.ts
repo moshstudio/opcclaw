@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import dayjs from 'dayjs'
 import { newShortId } from '@shared/utils/id'
 import type { Tool } from '@main/services/tools/types'
 import { builtinTools } from '@main/services/tools/builtin'
@@ -10,12 +11,14 @@ import { HeartbeatManager } from '@main/services/heartbeat/heartbeat'
 import { resolveSessionKey } from '@main/services/session/session-key'
 import { runAgentLoop } from './agent-loop'
 import { ContextLoader } from '@main/services/context/index'
+import { Logger } from '@main/services/common/logger'
 
 import { UsageManager } from '@main/services/usage/usage-manager'
 import { ConfigService } from '../config/config-service'
-import type { Model, Api, KnownProvider } from '@mariozechner/pi-ai'
+import type { Model, Api } from '@mariozechner/pi-ai'
 import { streamSimple } from '@mariozechner/pi-ai'
 import type { AIModelConfig } from '@shared/types/models'
+import { createModelDef } from '@main/services/provider/model-factory'
 import type { MiniAgentEvent } from './agent-events'
 import type { AgentConfig, RunResult, Message } from '@shared/types/agent'
 export type { AgentConfig, RunResult, Message }
@@ -35,15 +38,66 @@ import { SubagentService } from './core/subagent-service'
  * Agent 核心类 (Architecture Orchestrator)
  */
 export class Agent {
-  public readonly id: string
-  public readonly config: AgentConfig
-  public readonly workspaceDir: string
+  public id: string
+  public config: AgentConfig
+  public workspaceDir: string
+
+  /**
+   * 热更新配置，不中断当前运行的任务
+   */
+  public updateConfig(newConfig: AgentConfig): void {
+    // 1. 同步内存配置
+    // 注意：保留原本的 agentId 等关键标识
+    this.config = { ...newConfig, agentId: this.id }
+
+    // 更新关键路径属性
+    if (this.config.workspaceDir) {
+      this.workspaceDir = this.config.workspaceDir
+    }
+
+    // 2. 同步心跳管理器配置 (如果涉及心跳参数变更)
+    this.heartbeat.updateConfig({
+      enabled: this.config.enableHeartbeat,
+      intervalMs: this.config.heartbeatInterval,
+      activeHours: this.config.heartbeatActiveHours,
+      startTime: this.config.heartbeatStartTime,
+      workspaceDir: this.workspaceDir
+    })
+
+    // 同步技能管理器配置 (SkillManager)
+    this.skillManager.updateConfig({
+      workspaceDir: this.workspaceDir
+    })
+
+    // 3. 同步提示词生成器 (虽然 run 时会重写，但提前同步以防万一)
+    this.promptBuilder.updateConfig({
+      baseSystemPrompt: this.config.systemPrompt || 'You are a helpful assistant.',
+      enableMemory: this.config.enableMemory,
+      context: this.config.enableContext
+        ? new ContextLoader(this.workspaceDir, {
+            getHeartbeatStatus: () => this.getHeartbeatStatus()
+          })
+        : undefined,
+      sandbox: this.config.sandbox
+    })
+    this.logger.debug(`Base system prompt hot-updated: ${this.config.systemPrompt || 'default'}`)
+
+    // 如果启用了心跳，确保它正在运行；如果禁用了，确保停止
+    if (this.config.enableHeartbeat) {
+      this.heartbeat.start()
+    } else {
+      this.heartbeat.stop()
+    }
+
+    this.logger.info(`Agent ${this.id} config hot-updated, workspaceDir: ${this.workspaceDir}`)
+  }
 
   private readonly sessionManager: SessionManager
   private readonly memoryManager: MemoryManager
   private readonly skillManager: SkillManager
   private readonly heartbeat: HeartbeatManager
   private readonly usageManager: UsageManager
+  private readonly logger: Logger
 
   // 子服务实例
   private readonly stateManager: AgentStateManager
@@ -55,13 +109,16 @@ export class Agent {
     string,
     { resolve: (res: boolean) => void; timer: NodeJS.Timeout }
   >()
+  private readonly onConfigChange?: (config: AgentConfig) => void
 
   private eventsListeners = new Set<(event: MiniAgentEvent) => void>()
 
-  constructor(config: AgentConfig) {
+  constructor(config: AgentConfig, options?: { onConfigChange?: (config: AgentConfig) => void }) {
     this.id = config.agentId || newShortId()
     this.config = { ...config, agentId: this.id }
+    this.onConfigChange = options?.onConfigChange
     this.workspaceDir = config.workspaceDir || path.join(process.cwd(), 'agents', this.id)
+    this.logger = new Logger(`[Agent:${this.id}]`)
 
     // 1. 初始化基础管理器
     this.sessionManager = new SessionManager(config.sessionDir!)
@@ -71,6 +128,8 @@ export class Agent {
     this.heartbeat = new HeartbeatManager(this.workspaceDir, config.heartbeatDir!, {
       enabled: config.enableHeartbeat,
       intervalMs: config.heartbeatInterval,
+      activeHours: config.heartbeatActiveHours,
+      startTime: config.heartbeatStartTime,
       heartbeatPath: 'HEARTBEAT.md'
     })
 
@@ -81,9 +140,14 @@ export class Agent {
       baseSystemPrompt: config.systemPrompt || 'You are a helpful assistant.',
       enableMemory: config.enableMemory,
       skills: this.skillManager,
-      context: config.enableContext ? new ContextLoader(this.workspaceDir) : undefined,
+      context: config.enableContext
+        ? new ContextLoader(this.workspaceDir, {
+            getHeartbeatStatus: () => this.getHeartbeatStatus()
+          })
+        : undefined,
       sandbox: config.sandbox
     })
+    this.logger.debug(`Agent initialized with base system prompt: ${config.systemPrompt || 'default'}`)
 
     const { modelDef, apiKey: resolvedApiKey } = this.resolveModelDef()
     this.contextManager = new AgentContextManager({
@@ -118,10 +182,17 @@ export class Agent {
     )
     // 3. 注册心跳回调 (始终注册，确保手动触发可用)
     this.heartbeat.onStatusChange(() => {
+      const status = this.getHeartbeatStatus()
+      // 反向同步：如果下一次强制执行时间已由于触发而被清除，则更新配置并持久化
+      if (status.forcedNextDueMs !== (this.config.heartbeatStartTime ?? null)) {
+        this.config.heartbeatStartTime = status.forcedNextDueMs ?? undefined
+        this.onConfigChange?.(this.config)
+      }
+
       this.emit({
         type: 'heartbeat:updated',
         agentId: this.id,
-        status: this.getHeartbeatStatus()
+        status
       })
     })
 
@@ -140,7 +211,7 @@ export class Agent {
 
         await this.run(
           sk,
-          `[心跳唤醒] 当前时间: ${new Date().toLocaleString()}\n唤醒原因: ${o.reason}\n\n任务上下文:\n${o.content}`
+          `[心跳唤醒] 当前时间: ${dayjs().format('YYYY-MM-DD HH:mm:ss Z')}\n唤醒原因: ${o.reason}\n\n任务上下文:\n${o.content}`
         )
         return { text: 'Executed heartbeat task' }
       } catch (err) {
@@ -163,20 +234,15 @@ export class Agent {
     const configService = ConfigService.getInstance()
     const appConfig = configService.getConfig()
 
-    // 1. 尝试获取模型配置的对象
-    let modelConfig: AIModelConfig | undefined
+    // 1. 优先级 1: Agent 绑定了明确的模型 ID
+    let modelConfig = this.config.modelId ? configService.getModel(this.config.modelId) : undefined
 
-    // 优先级 1: Agent 绑定了特定模型 ID
-    if (this.config.model) {
-      modelConfig = configService.getModel(this.config.model)
-    }
-
-    // 优先级 2: 使用系统默认模型
+    // 2. 优先级 2: 使用系统默认模型
     if (!modelConfig && appConfig.defaultModelId) {
       modelConfig = configService.getModel(appConfig.defaultModelId)
     }
 
-    // 优先级 3: 实在没有，拿第一个
+    // 3. 优先级 3: 最后保底方案，取第一个可用模型
     if (!modelConfig && appConfig.models.length > 0) {
       modelConfig = appConfig.models[0]
     }
@@ -193,31 +259,15 @@ export class Agent {
     const modelConfig = this.resolveModelConfig()
     if (!modelConfig) return { modelDef: undefined }
 
-    const provider = this.config.provider || modelConfig.provider
-    const modelId = modelConfig.model // 真正的模型标识符
-
-    const API_FOR_PROVIDER: Record<string, string> = {
-      openai: 'openai-completions',
-      anthropic: 'anthropic-messages',
-      google: 'google-generative-ai',
-      groq: 'openai-completions'
-    }
-    const api = API_FOR_PROVIDER[provider] || 'openai-completions'
-
-    const def: any = {
-      id: modelId,
-      name: modelConfig.name || modelId,
-      api: api as Api,
-      provider: provider as KnownProvider,
-      baseUrl: this.config.baseUrl || modelConfig.baseUrl || '',
+    const def = createModelDef(modelConfig, {
+      provider: this.config.provider,
+      baseUrl: this.config.baseUrl,
       reasoning: this.config.reasoning !== undefined,
-      input: ['text'],
-      contextWindow: this.config.contextTokens || 128000,
-      maxTokens: 4096,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-    }
+      contextTokens: this.config.contextTokens,
+      supportsVision: this.config.supportsVision
+    })
 
-    return { modelDef: def as Model<Api>, apiKey: modelConfig.apiKey }
+    return { modelDef: def, apiKey: modelConfig.apiKey }
   }
 
   // --- 基础 Getter ---
@@ -300,6 +350,7 @@ export class Agent {
 
     try {
       const { modelDef, apiKey: resolvedApiKey } = this.resolveModelDef()
+      const modelConfig = this.resolveModelConfig()
 
       if (!modelDef) {
         throw new Error(
@@ -333,6 +384,17 @@ export class Agent {
         })
       }
 
+      const systemPrompt = await this.promptBuilder.build({
+        sessionKey: sk,
+        availableTools: this.getAvailableTools(),
+        runtime: {
+          agentId: this.id,
+          workspaceDir: this.workspaceDir,
+          model: modelConfig?.model || modelDef.id
+        }
+      })
+      this.logger.debug(`Generated System Prompt for session ${sk}:\n${systemPrompt}`)
+
       // 5. 构建 params 对接 runAgentLoop
       const stream = runAgentLoop({
         runId,
@@ -340,11 +402,7 @@ export class Agent {
         agentId: this.id,
         currentMessages,
         compactionSummary: undefined, // 初始为空
-        systemPrompt: await this.promptBuilder.build({
-          sessionKey: sk,
-          availableTools: this.getAvailableTools(),
-          runtime: { agentId: this.id, workspaceDir: this.workspaceDir }
-        }),
+        systemPrompt,
         toolsForRun: this.getAvailableTools(),
         toolCtx: {
           agentId: this.id,
@@ -361,7 +419,7 @@ export class Agent {
             })
           },
           heartbeat: {
-            updateConfig: (cfg) => this.heartbeat.updateConfig(cfg),
+            updateConfig: (cfg) => this.updateHeartbeatConfig(cfg),
             start: () => this.heartbeat.start(),
             stop: () => this.heartbeat.stop(),
             trigger: () => this.heartbeat.trigger()
@@ -446,7 +504,7 @@ export class Agent {
       }
     } finally {
       // 清理该次运行所有挂起的交互
-      this.interactionCallbacks.forEach((entry, id) => {
+      this.interactionCallbacks.forEach((_, id) => {
         this.respondInteraction(id, false)
       })
       await this.stateManager.endRun(sk, runId)
@@ -495,7 +553,8 @@ export class Agent {
       nextDueMs: status.nextDueMs,
       intervalMs: status.intervalMs,
       activeHours: status.activeHours || { start: '00:00', end: '23:59' },
-      isWithinActiveHours: status.isWithinActiveHours
+      isWithinActiveHours: status.isWithinActiveHours,
+      forcedNextDueMs: status.forcedNextDueMs
     }
   }
 
@@ -538,8 +597,16 @@ export class Agent {
     intervalMs?: number
     enabled?: boolean
     activeHours?: { start: string; end: string }
+    startTime?: number
   }) {
     this.heartbeat.updateConfig(config)
+    // 同步到内存配置并触发持久化
+    if (config.intervalMs !== undefined) this.config.heartbeatInterval = config.intervalMs
+    if (config.enabled !== undefined) this.config.enableHeartbeat = config.enabled
+    if (config.activeHours !== undefined) this.config.heartbeatActiveHours = config.activeHours
+    if (config.startTime !== undefined) this.config.heartbeatStartTime = config.startTime
+
+    this.onConfigChange?.(this.config)
   }
 
   public getHeartbeatLogs() {

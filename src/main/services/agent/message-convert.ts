@@ -9,6 +9,7 @@ import type {
   ImageContent as PiImageContent
 } from '@mariozechner/pi-ai'
 import type { ContentBlock, AgentTextBlock } from '@shared/types/agent'
+import { ConfigService } from '../config/config-service'
 
 /**
  * 更稳健的 Assistant 消息类型
@@ -65,8 +66,10 @@ export function convertMessagesToPi(
         result.push({ role: 'user', content: textParts, timestamp: Number(timestamp) })
       }
     } else if (role === 'assistant') {
-      const isDeepSeek =
-        modelInfo.id.toLowerCase().includes('deepseek') || modelInfo.provider === 'deepseek'
+      const providerSig = ConfigService.getInstance().getProviderThinkingSignature(
+        modelInfo.provider,
+        modelInfo.id
+      )
       const piContent: (PiTextContent | PiThinkingContent | PiToolCall)[] = []
       let reasoningContent = ''
       let detectedSignature = ''
@@ -75,7 +78,7 @@ export function convertMessagesToPi(
         if (block.type === 'text' && block.text) {
           piContent.push({ type: 'text', text: block.text })
         } else if (block.type === 'thinking' && block.thinking) {
-          const sig = block.thinking_signature || (isDeepSeek ? 'reasoning_content' : undefined)
+          const sig = block.thinkingSignature || providerSig
           piContent.push({
             type: 'thinking',
             thinking: block.thinking,

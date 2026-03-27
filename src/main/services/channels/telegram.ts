@@ -85,7 +85,7 @@ export async function startTelegramChannel(opts: TelegramChannelOptions) {
   // ============== Gateway 客户端 ==============
 
   const client = new GatewayClient({
-    url: opts.gatewayUrl ?? 'ws://localhost:18789',
+    url: opts.gatewayUrl ?? 'ws://localhost:18781',
     token: opts.gatewayToken,
     onEvent: (evt: EventFrame) => {
       if (evt.event !== 'chat') return
@@ -182,7 +182,7 @@ export async function startTelegramChannel(opts: TelegramChannelOptions) {
   bot.start()
 
   logger.info('Telegram Channel started')
-  logger.info(`Gateway: ${opts.gatewayUrl ?? 'ws://localhost:18789'} (v${hello.protocol})`)
+  logger.info(`Gateway: ${opts.gatewayUrl ?? 'ws://localhost:18781'} (v${hello.protocol})`)
   logger.info('Bot: polling')
   logger.info('Commands: /start /reset /health')
 

@@ -27,10 +27,14 @@ export const handleModelsAdd: Handler = async (params, _client, ctx) => {
     return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, 'model config required') }
   }
   const configService = ConfigService.getInstance()
+  const oldDefault = configService.getConfig().defaultModelId
   configService.addModel(model)
+  const newDefault = configService.getConfig().defaultModelId
 
-  // 触发智能体重载
-  await AgentRegistry.getInstance().loadAllAgents()
+  // 如果此操作产生了新的默认模型（通常是添加了第一个模型），刷新依赖默认模型的智能体
+  if (newDefault && oldDefault !== newDefault) {
+    await AgentRegistry.getInstance().refreshImpactedAgents(newDefault)
+  }
 
   const config = configService.getConfig()
   ctx.broadcaster.dispatch({
@@ -52,8 +56,8 @@ export const handleModelsUpdate: Handler = async (params, _client, ctx) => {
   const configService = ConfigService.getInstance()
   configService.updateModel(p.id, p.updates)
 
-  // 触发智能体重载
-  await AgentRegistry.getInstance().loadAllAgents()
+  // 定向刷新受影响的智能体
+  await AgentRegistry.getInstance().refreshImpactedAgents(p.id)
 
   const config = configService.getConfig()
   ctx.broadcaster.dispatch({
@@ -75,8 +79,8 @@ export const handleModelsDelete: Handler = async (params, _client, ctx) => {
   const configService = ConfigService.getInstance()
   configService.deleteModel(p.id)
 
-  // 触发智能体重载
-  await AgentRegistry.getInstance().loadAllAgents()
+  // 定向刷新受影响的智能体
+  await AgentRegistry.getInstance().refreshImpactedAgents(p.id)
 
   const config = configService.getConfig()
   ctx.broadcaster.dispatch({
@@ -98,8 +102,8 @@ export const handleModelsSetDefault: Handler = async (params, _client, ctx) => {
   const configService = ConfigService.getInstance()
   configService.saveConfig({ defaultModelId: p.id })
 
-  // 触发智能体重载
-  await AgentRegistry.getInstance().loadAllAgents()
+  // 刷新所有依赖默认模型的智能体
+  await AgentRegistry.getInstance().refreshImpactedAgents(p.id)
 
   const config = configService.getConfig()
   ctx.broadcaster.dispatch({
@@ -121,4 +125,12 @@ export const handleModelsTest: Handler = async (params, _client, _ctx) => {
   const configService = ConfigService.getInstance()
   const result = await configService.testModel(model)
   return { ok: true, payload: result }
+}
+/**
+ * models.providers
+ */
+export const handleModelsGetProviders: Handler = async (_params, _client, _ctx) => {
+  const configService = ConfigService.getInstance()
+  const providers = configService.getProviders()
+  return { ok: true, payload: providers }
 }

@@ -1,10 +1,11 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { Zap, FileEdit, Settings, Trash2 } from 'lucide-react'
+import { Zap, FileEdit, Settings, Trash2, Timer } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Switch } from '@renderer/components/ui/switch'
 import { cn } from '@renderer/lib/utils'
+import { formatDuration } from '@renderer/lib/time'
 import { HeartbeatTask } from '@renderer/store/useHeartbeatStore'
 
 interface TaskListItemProps {
@@ -24,6 +25,8 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
   onEditFile,
   onEditConfig
 }) => {
+  console.log(task)
+
   const { t } = useTranslation()
 
   const formatTimeManual = (ms: number) => {
@@ -104,24 +107,54 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
       </div>
 
       {/* Stats Sections */}
-      <div className="hidden sm:flex flex-col min-w-[100px] px-4 border-l border-muted/30">
+      <div className="hidden lg:flex flex-col min-w-[100px] px-4 border-l border-muted/30">
         <span className="text-[9px] uppercase font-bold text-muted-foreground/40 tracking-widest mb-1">
-          {t('common.next_run')}
+          {t('common.last_run')}
         </span>
-        <span className="text-[13px] font-mono font-semibold tabular-nums text-foreground/80">
+        <span className="text-[13px] font-mono font-semibold text-foreground/70 tabular-nums">
+          {task.status.lastRunMs > 0 ? formatTimeManual(task.status.lastRunMs) : '--:--'}
+        </span>
+      </div>
+
+      <div className="hidden sm:flex flex-col min-w-[120px] px-4 border-l border-muted/30">
+        <div className="flex items-center gap-1.5 mb-1">
+          <span
+            className={cn(
+              'text-[9px] uppercase font-bold tracking-widest',
+              task.status.forcedNextDueMs ? 'text-primary/70' : 'text-muted-foreground/40'
+            )}
+          >
+            {task.status.forcedNextDueMs ? t('common.scheduled_start') : t('common.next_run')}
+          </span>
+          {!task.status.isWithinActiveHours && task.status.enabled && (
+            <span className="text-[8px] bg-muted px-1 rounded text-muted-foreground/60 font-medium">
+              {t('common.outside_active_hours')}
+            </span>
+          )}
+        </div>
+        <span
+          className={cn(
+            'text-[13px] font-mono font-semibold tabular-nums transition-all',
+            task.status.forcedNextDueMs
+              ? 'text-primary italic animate-pulse-subtle'
+              : !task.status.isWithinActiveHours && task.status.enabled
+                ? 'text-muted-foreground/40 line-through decoration-muted-foreground/20'
+                : 'text-foreground/80'
+          )}
+        >
           {task.status.enabled ? formatTimeManual(task.status.nextDueMs) : '--:--'}
         </span>
       </div>
 
-      <div className="hidden md:flex flex-col min-w-[90px] px-4 border-l border-muted/30">
-        <span className="text-[9px] uppercase font-bold text-muted-foreground/40 tracking-widest mb-1">
-          {t('common.interval')}
-        </span>
-        <span className="text-[13px] font-bold flex items-baseline gap-1 text-foreground/80">
-          {Math.round(task.status.intervalMs / 60000)}
-          <span className="text-[10px] font-medium text-muted-foreground/40 lowercase">
-            {t('common.minute_short')}
+      <div className="hidden md:flex flex-col min-w-[100px] px-4 border-l border-muted/30">
+        <div className="flex items-center gap-1.5 mb-1">
+          <Timer className="w-[10px] h-[10px] text-muted-foreground/40" />
+          <span className="text-[9px] uppercase font-bold text-muted-foreground/40 tracking-widest">
+            {t('common.interval')}
           </span>
+        </div>
+        <span className="text-[13px] font-mono font-bold flex items-baseline gap-1 text-foreground/80 tabular-nums">
+          {formatDuration(task.status.intervalMs, t)}
         </span>
       </div>
 

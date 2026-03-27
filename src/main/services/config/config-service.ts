@@ -1,18 +1,21 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import { app } from 'electron'
 import { newUUID } from '@shared/utils/id'
 import { completeSimple } from '@mariozechner/pi-ai'
+import { Logger } from '@main/services/common/logger'
 
-const OPCCLAW_ROOT = path.join(os.homedir(), '.opcclaw')
+const OPCCLAW_ROOT = path.join(os.homedir(), app.isPackaged ? '.opcclaw' : '.opcclaw-dev')
 
-import { type AIModelConfig, type ModelTestResult } from '@shared/types/models'
+import { type AIModelConfig, type ModelTestResult, type ModelProvider } from '@shared/types/models'
 import { type AppConfig } from '@shared/types/config'
+import { createModelDef } from '@main/services/provider/model-factory'
 
 const DEFAULT_CONFIG: AppConfig = {
   models: [],
   gateway: {
-    port: 18789,
+    port: 18781,
     token: 'openclaw-mini-secret',
     logLevel: 'info'
   },
@@ -23,6 +26,7 @@ export class ConfigService {
   private static instance: ConfigService
   private configPath: string
   private config: AppConfig
+  private logger = new Logger('ConfigService')
 
   private constructor() {
     this.ensureDir(OPCCLAW_ROOT)
@@ -61,7 +65,7 @@ export class ConfigService {
         return { ...DEFAULT_CONFIG, ...data }
       }
     } catch (err) {
-      console.error('Failed to load config, using defaults:', err)
+      this.logger.error('Failed to load config, using defaults:', err)
     }
     return {
       ...DEFAULT_CONFIG,
@@ -74,7 +78,7 @@ export class ConfigService {
     try {
       fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2))
     } catch (err) {
-      console.error('Failed to save config:', err)
+      this.logger.error('Failed to save config:', err)
     }
   }
 
@@ -91,6 +95,12 @@ export class ConfigService {
   public addModel(model: Omit<AIModelConfig, 'id'>): AIModelConfig {
     const newModel: AIModelConfig = { ...model, id: newUUID() }
     this.config.models.push(newModel)
+
+    // 如果添加的是第一个模型，自动设置为默认模型
+    if (this.config.models.length === 1 || !this.config.defaultModelId) {
+      this.config.defaultModelId = newModel.id
+    }
+
     this.saveConfig({})
     return newModel
   }
@@ -134,33 +144,10 @@ export class ConfigService {
   public async testModel(modelConfig: AIModelConfig): Promise<ModelTestResult> {
     try {
       // 简单测试连接：发送一个极短的消息
-      const provider = modelConfig.provider
-      const modelId = modelConfig.model
       const apiKey = modelConfig.apiKey
-      const baseUrl = modelConfig.baseUrl
 
       // 构造临时 Model 定义
-      const API_FOR_PROVIDER: Record<string, string> = {
-        openai: 'openai-completions',
-        anthropic: 'anthropic-messages',
-        google: 'google-generative-ai',
-        groq: 'openai-completions' // groq 也是 openai 兼容
-      }
-
-      const api = API_FOR_PROVIDER[provider] || 'openai-completions'
-
-      const testModelDef: Record<string, unknown> = {
-        id: modelId,
-        name: modelId,
-        api,
-        provider,
-        baseUrl: baseUrl || '',
-        reasoning: true,
-        input: ['text'],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
-        maxTokens: 4096
-      }
+      const testModelDef = createModelDef(modelConfig)
 
       const message = await completeSimple(
         testModelDef as any,
@@ -176,8 +163,75 @@ export class ConfigService {
 
       return { ok: true }
     } catch (err: any) {
-      console.error('[ConfigService] Model test failed:', err)
+      this.logger.error('Model test failed:', err)
       return { ok: false, error: err.message || String(err) }
     }
+  }
+
+  public getProviders(): ModelProvider[] {
+    return [
+      {
+        id: 'openai',
+        name: 'OpenAI',
+        baseUrl: 'https://api.openai.com/v1',
+        defaultModel: 'gpt-4o',
+        supportsVision: true
+      },
+      {
+        id: 'deepseek',
+        name: 'DeepSeek',
+        baseUrl: 'https://api.deepseek.com',
+        defaultModel: 'deepseek-chat',
+        supportsVision: false,
+        thinkingSignature: 'reasoning_content'
+      },
+      {
+        id: 'glm',
+        name: 'Zhipu GLM (智谱)',
+        baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+        defaultModel: 'glm-4',
+        supportsVision: true
+      },
+      {
+        id: 'kimi',
+        name: 'Moonshot Kimi (月之暗面)',
+        baseUrl: 'https://api.moonshot.cn/v1',
+        defaultModel: 'moonshot-v4',
+        supportsVision: true
+      },
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        baseUrl: 'https://api.anthropic.com/v1',
+        defaultModel: 'claude-4-5-sonnet',
+        supportsVision: true
+      },
+      {
+        id: 'google',
+        name: 'Google Gemini',
+        baseUrl: 'https://generativelanguage.googleapis.com',
+        defaultModel: 'gemini-3.5-pro',
+        supportsVision: true
+      },
+      {
+        id: 'groq',
+        name: 'Groq',
+        baseUrl: 'https://api.groq.com/openai/v1',
+        defaultModel: 'llama3-70b-8192',
+        supportsVision: false
+      }
+    ]
+  }
+
+  public getProviderThinkingSignature(providerId: string, modelId?: string): string | undefined {
+    const fromProvider = this.getProviders().find((p) => p.id === providerId)?.thinkingSignature
+    if (fromProvider) return fromProvider
+
+    // 处理某些通过通用 API (如 OpenAI/OpenRouter) 格式访问 DeepSeek 的场景
+    if (modelId?.toLowerCase().includes('deepseek')) {
+      return 'reasoning_content'
+    }
+
+    return undefined
   }
 }

@@ -5,16 +5,18 @@ import { Brain, Sparkles } from 'lucide-react'
 import { Dialog, DialogContent, DialogBody } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
 import { useModelStore } from '@renderer/store/useModelStore'
+import { useAgentStore } from '@renderer/store/useAgentStore'
 
 export function OnboardingOverlay() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const models = useModelStore((s) => s.models)
-  const initialized = useModelStore((s) => s.initialized)
+  const modelsInitialized = useModelStore((s) => s.initialized)
+  const agentLoading = useAgentStore((s) => s.isLoading)
 
-  // 仅在初始化完成（后端数据返回后）且模型依然为空时展示
+  // 仅在智能体加载完成、且模型初始化完成且列表仍为空时展示
   const [hasClosed, setHasClosed] = useState(false)
-  const show = initialized && models.length === 0 && !hasClosed
+  const show = !agentLoading && modelsInitialized && models.length === 0 && !hasClosed
 
   if (!show) return null
 

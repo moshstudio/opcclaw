@@ -50,7 +50,7 @@ const channel = args[0] ?? 'telegram'
 async function telegram() {
   const botToken = flag(args, '--bot-token') ?? process.env.TELEGRAM_BOT_TOKEN
   const gatewayUrl =
-    flag(args, '--gateway-url') ?? process.env.OPENCLAW_MINI_GW_URL ?? 'ws://localhost:18789'
+    flag(args, '--gateway-url') ?? process.env.OPENCLAW_MINI_GW_URL ?? 'ws://localhost:18781'
   const gatewayToken = flag(args, '--gateway-token') ?? process.env.OPENCLAW_MINI_GW_TOKEN
 
   if (!botToken) {

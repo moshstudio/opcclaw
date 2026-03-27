@@ -1,6 +1,13 @@
 import React, { useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Settings as SettingsIcon, PanelLeftClose, PanelLeftOpen, Clock } from 'lucide-react'
+import {
+  Plus,
+  Settings as SettingsIcon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Clock,
+  Settings2
+} from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
@@ -248,7 +255,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
                 className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-300 ease-linear"
                 title={t('common.settings')}
               >
-                <SettingsIcon className="w-[18px] h-[18px]" />
+                <Settings2 className="w-[18px] h-[18px]" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" className="w-[180px]">

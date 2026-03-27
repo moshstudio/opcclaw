@@ -37,7 +37,7 @@ export type GatewayServer = {
 // ============== 启动服务 ==============
 
 export async function startGatewayServer(opts: GatewayServerOptions): Promise<GatewayServer> {
-  const port = opts.port ?? 18789
+  const port = opts.port ?? 18781
   const clients = new Set<GwClient>()
   const nonces = new Map<string, string>()
 
