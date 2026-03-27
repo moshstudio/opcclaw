@@ -77,16 +77,30 @@ async function resolveAndVerifyPath(
   ctx: ToolContext,
   rawPath: string
 ): Promise<{ resolved: string; error?: string }> {
-  try {
-    const res = await assertSandboxPath({
-      filePath: rawPath,
-      cwd: ctx.workspaceDir,
-      root: ctx.workspaceDir
-    })
-    return { resolved: res.resolved }
-  } catch (err) {
-    return { resolved: '', error: (err as Error).message }
+  // 允许的根目录列表：当前工作目录 + 显式允许的其他目录（如技能目录）
+  const roots = [ctx.workspaceDir, ...(ctx.allowedPaths || [])]
+  let lastError: string | undefined
+
+  for (const root of roots) {
+    try {
+      const res = await assertSandboxPath({
+        filePath: rawPath,
+        cwd: ctx.workspaceDir,
+        root: root
+      })
+      return { resolved: res.resolved }
+    } catch (err) {
+      lastError = (err as Error).message
+      // 如果错误是"路径在根目录之外"，我们继续尝试下一个根目录
+      if (lastError.includes('escapes workspace')) {
+        continue
+      }
+      // 如果是其他错误（如存在符号链接），则立即返回错误
+      return { resolved: '', error: lastError }
+    }
   }
+
+  return { resolved: '', error: lastError || `无权访问路径: ${rawPath}` }
 }
 
 // ============== 文件读取 ==============

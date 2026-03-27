@@ -327,7 +327,7 @@ export class AgentRegistry {
       fs.writeFileSync(promptPath, systemPrompt)
     }
 
-  // 重新加载实例
+    // 重新加载实例
     await this.loadAgent(agentId)
   }
 

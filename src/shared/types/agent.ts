@@ -72,6 +72,7 @@ export interface ToolContext {
     trigger: () => Promise<any>
   }
   confirm?: (prompt: string, options?: string[]) => Promise<boolean>
+  allowedPaths?: string[]
   abortSignal?: AbortSignal
 }
 
@@ -261,3 +262,14 @@ export type ChatStatus =
   | 'completed' // 已完成（本次运行结束）
   | 'error' // 发生错误
   | 'aborted' // 用户手动中止
+
+/**
+ * 技能定义 (Shared)
+ */
+export interface Skill {
+  name: string
+  description?: string
+  source: 'built-in' | 'managed' | 'workspace'
+  path: string
+  baseDir: string
+}

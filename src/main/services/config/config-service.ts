@@ -141,6 +141,15 @@ export class ConfigService {
     return path.join(OPCCLAW_ROOT, 'skills')
   }
 
+  /** 获取内置技能目录 (根目录 resources/skills 或分发后的 resourcesPath) */
+  public getBuiltInSkillsDir(): string {
+    if (app.isPackaged) {
+      return path.join(process.resourcesPath, 'skills')
+    } else {
+      return path.join(app.getAppPath(), 'resources', 'skills')
+    }
+  }
+
   public async testModel(modelConfig: AIModelConfig): Promise<ModelTestResult> {
     try {
       // 简单测试连接：发送一个极短的消息

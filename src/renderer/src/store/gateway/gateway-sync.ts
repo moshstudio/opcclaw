@@ -4,6 +4,7 @@ import { useAgentStore } from '@renderer/store/useAgentStore'
 import { useModelStore } from '@renderer/store/useModelStore'
 import { useSystemStore } from '@renderer/store/useSystemStore'
 import { useHeartbeatStore } from '@renderer/store/useHeartbeatStore'
+import { useSkillStore } from '@renderer/store/useSkillStore'
 import {
   ChatPayload,
   AgentEventPayload,
@@ -41,6 +42,7 @@ export const initGatewaySync = () => {
     const activeAgentId = useAgentStore.getState().activeAgentId
     if (activeAgentId) {
       useChatStore.getState().fetchSessions(activeAgentId)
+      useSkillStore.getState().fetchSkills(activeAgentId)
     }
   }
 
@@ -71,10 +73,13 @@ export const initGatewaySync = () => {
       useAgentStore.getState().handleLifecycleEvent(payload)
     }
 
-    const runStatusTypes = ['agent:run-start', 'agent:run-end', 'agent:run-error']
+    const runStatusTypes = ['agent:run-start', 'agent:run-end', 'agent:run-error', 'agent:skill-triggered']
     if (runStatusTypes.includes(payload.type)) {
       useChatStore.getState().handleAgentEvent(payload)
     }
+
+    // C. 专门分发给技能领域
+    useSkillStore.getState().handleSkillEvent(payload)
   })
 
   // C. 会话生命周期与独立状态

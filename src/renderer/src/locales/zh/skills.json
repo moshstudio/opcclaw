@@ -1,0 +1,17 @@
+{
+  "title": "技能管理",
+  "desc": "管理当前智能体的扩展能力。技能存放在专用的模块文件夹中。",
+  "refresh": "刷新",
+  "create": "新建技能",
+  "empty": "暂无已安装的技能",
+  "no_agent": "请先选择一个智能体",
+  "delete_confirm": "确定要删除技能 \"{{name}}\" 吗？",
+  "category_label": "关于技能分层",
+  "category_desc": "• **Built-in**: 系统内置技能，不可直接删除，是核心架构的一部分。<br />• **Managed**: 全局安装的技能，可在所有智能体间共享。<br />• **Workspace**: 此智能体独有的技能，存放于该智能体的工作目录中，优先级最高。",
+  "source": {
+    "built-in": "内置",
+    "managed": "共享",
+    "workspace": "私有"
+  },
+  "activated": "⚡ **技能已激活**: {{name}}"
+}

@@ -1,5 +1,7 @@
 import { AgentEventPayload } from '@shared/types/gateway'
 import { Message, ChatStatus } from '@shared/types/agent'
+import { normalizeMessage } from '@shared/utils/message'
+import i18n from '@renderer/i18n'
 
 /** 会话状态补丁接口 */
 export interface SessionStorePatch {
@@ -83,6 +85,21 @@ export const applySessionLifecycleEvent = (
         updates.errorMessages = { ...state.errorMessages, [sk]: String(payload.error) }
       }
       break
+
+    case 'agent:skill-triggered': {
+      const skillName = payload.skillName as string
+      if (sk) {
+        const currentMsgs = state.sessions[sk] || []
+        const noticeMsg = normalizeMessage({
+          role: 'assistant',
+          content: [{ type: 'text', text: i18n.t('skills.activated', { name: skillName }) }],
+          timestamp: Date.now(),
+          id: `skill-${Date.now()}`
+        })
+        updates.sessions = { ...state.sessions, [sk]: [...currentMsgs, noticeMsg] }
+      }
+      break
+    }
   }
 
   return updates

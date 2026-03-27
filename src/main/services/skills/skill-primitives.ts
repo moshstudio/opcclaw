@@ -152,13 +152,16 @@ async function loadSkillFromFile(
  *   编排层（skills.ts）会重读文件用自己的解析器提取更多字段
  */
 export function extractFrontmatter(content: string): Record<string, string> {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+  const match = content.trim().match(/^---\r?\n([\s\S]*?)\r?\n---/)
   if (!match) return {}
   const result: Record<string, string> = {}
-  for (const line of match[1].split('\n')) {
-    const kv = line.match(/^([a-zA-Z][\w-]*):\s*(.+)$/)
+  const rawFm = match[1]
+  // 处理可能存在的 Windows \r
+  for (const line of rawFm.split('\n')) {
+    const trimmedLine = line.replace(/\r$/, '')
+    const kv = trimmedLine.match(/^([a-zA-Z][\w-]*):\s*(.+)$/)
     if (kv) {
-      result[kv[1]] = kv[2].replace(/^["']|["']$/g, '')
+      result[kv[1]] = kv[2].replace(/^["']|["']$/g, '').trim()
     }
   }
   return result
@@ -208,6 +211,7 @@ export function formatSkillsForPrompt(skills: Skill[]): string {
     lines.push(`    <name>${escapeXml(s.name)}</name>`)
     lines.push(`    <description>${escapeXml(s.description)}</description>`)
     lines.push(`    <location>${escapeXml(s.filePath)}</location>`)
+    lines.push(`    <source>${escapeXml(s.source)}</source>`)
     lines.push('  </skill>')
   }
   lines.push('</available_skills>')

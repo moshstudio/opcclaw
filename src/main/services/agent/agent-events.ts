@@ -34,6 +34,7 @@ export type MiniAgentEvent =
       performance?: AgentPerformance
     }
   | { type: 'agent:run-error'; runId: string; sessionKey: string; error: string }
+  | { type: 'agent:skill-triggered'; runId: string; sessionKey: string; skillName: string }
 
   // 轮次
   | { type: 'agent:turn-start'; runId: string; sessionKey: string; turn: number }

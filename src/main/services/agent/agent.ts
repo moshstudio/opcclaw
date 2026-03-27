@@ -147,7 +147,9 @@ export class Agent {
         : undefined,
       sandbox: config.sandbox
     })
-    this.logger.debug(`Agent initialized with base system prompt: ${config.systemPrompt || 'default'}`)
+    this.logger.debug(
+      `Agent initialized with base system prompt: ${config.systemPrompt || 'default'}`
+    )
 
     const { modelDef, apiKey: resolvedApiKey } = this.resolveModelDef()
     this.contextManager = new AgentContextManager({
@@ -362,6 +364,7 @@ export class Agent {
 
       const history = await this.sessionManager.load(sk)
       const currentMessages = [...history.messages]
+
       this.emit({
         type: 'agent:run-start',
         runId,
@@ -370,12 +373,40 @@ export class Agent {
         model: modelDef.id
       })
 
-      // 只有在 userInput 非空时才注入并广播 User 消息
-      if (userInput) {
-        const userMessage: Message = { role: 'user', content: userInput, timestamp: Date.now() }
+      // 1. 处理用户输入与技能匹配 (Slash Commands)
+      let processedInput = userInput
+      let matchedSkillName: string | undefined
+
+      if (userInput && this.config.enableSkills !== false) {
+        const match = await this.skillManager.match(userInput)
+        if (match) {
+          matchedSkillName = match.command.skillName
+          const args = match.args || ''
+          // 对齐 OpenClaw: 改写消息告诉模型使用哪个技能
+          processedInput = `Use the "${matchedSkillName}" skill for this request.\n\nUser input:\n${args}`
+          this.logger.info(`Skill command matched: /${match.command.name} -> ${matchedSkillName}`)
+
+          // 发送技能触发事件，让 UI 能够感知到
+          this.emit({
+            type: 'agent:skill-triggered',
+            runId,
+            sessionKey: sk,
+            skillName: matchedSkillName
+          })
+        }
+      }
+
+      // 2. 只有在 processedInput 非空时才注入并广播 User 消息
+      if (processedInput) {
+        const userMessage: Message = {
+          role: 'user',
+          content: processedInput,
+          timestamp: Date.now()
+        }
         currentMessages.push(userMessage)
         this.sessionManager.append(sk, userMessage)
 
+        // 注意：广播时可能需要告知 UI 触发了技能（可选）
         this.emit({
           type: 'chat:userMessage',
           runId,
@@ -408,6 +439,7 @@ export class Agent {
           agentId: this.id,
           sessionKey: sk,
           workspaceDir: this.workspaceDir,
+          allowedPaths: this.skillManager.getRoots(),
           abortSignal: signal,
           memory: this.memoryManager,
           spawnSubagent: async (params) => {

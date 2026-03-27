@@ -30,6 +30,9 @@ export const GATEWAY_METHODS = [
   'chat:respondInteraction',
   'tools:list',
   'skills:list',
+  'skills:install',
+  'skills:update',
+  'skills:delete',
   'bootstrap:list',
   'bootstrap:save',
   'usage:stats',
@@ -82,7 +85,8 @@ export const GATEWAY_ACTIONS = [
   'session:reset',
   'session:deleted',
   'config:saved',
-  'models:list'
+  'models:list',
+  'agent:skill-triggered'
 ] as const
 
 export type GatewayAction = (typeof GATEWAY_ACTIONS)[number]

@@ -1,12 +1,13 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Globe, Brain, Network, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Globe, Brain, Network, AlertTriangle, Puzzle } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@renderer/store/useSettingsStore'
 import { cn } from '@renderer/lib/utils'
 import ModelsTab from './ModelsTab'
 import GatewayTab from './GatewayTab'
+import SkillsTab from './SkillsTab'
 import {
   Select,
   SelectContent,
@@ -27,10 +28,10 @@ const SettingsPage: React.FC = () => {
   const confirm = useConfirm()
 
   const queryParams = new URLSearchParams(location.search)
-  const initialTab = (queryParams.get('tab') as 'general' | 'models' | 'gateway') || 'general'
+  const initialTab = (queryParams.get('tab') as 'general' | 'models' | 'gateway' | 'skills') || 'general'
   const autoAction = queryParams.get('action')
 
-  const [activeTab, setActiveTab] = useState<'general' | 'models' | 'gateway'>(initialTab)
+  const [activeTab, setActiveTab] = useState<'general' | 'models' | 'gateway' | 'skills'>(initialTab)
 
   // Clear action query param after it's been captured to prevent re-triggering on tab switch
   React.useEffect(() => {
@@ -45,6 +46,7 @@ const SettingsPage: React.FC = () => {
   const tabs = [
     { id: 'general', icon: Globe, label: t('settings.app_settings') },
     { id: 'models', icon: Brain, label: t('models.title') },
+    { id: 'skills', icon: Puzzle, label: t('skills.title') },
     { id: 'gateway', icon: Network, label: t('gateway.title') }
   ] as const
 
@@ -248,6 +250,17 @@ const SettingsPage: React.FC = () => {
                   transition={{ duration: 0.2 }}
                 >
                   <GatewayTab />
+                </motion.div>
+              )}
+              {activeTab === 'skills' && (
+                <motion.div
+                  key="skills"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <SkillsTab />
                 </motion.div>
               )}
             </AnimatePresence>

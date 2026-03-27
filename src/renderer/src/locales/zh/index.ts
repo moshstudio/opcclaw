@@ -4,6 +4,7 @@ import models from './models.json'
 import gateway from './gateway.json'
 import onboarding from './onboarding.json'
 import chat from './chat.json'
+import skills from './skills.json'
 
 export default {
   common,
@@ -11,5 +12,6 @@ export default {
   models,
   gateway,
   onboarding,
-  chat
+  chat,
+  skills
 }

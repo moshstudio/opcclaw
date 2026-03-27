@@ -1,5 +1,4 @@
 import fs from 'node:fs/promises'
-import path from 'node:path'
 import {
   ErrorCodes,
   errorShape,
@@ -18,6 +17,7 @@ import { GatewayManager } from '../manager'
 import { type AppConfig } from '@shared/types/config'
 import { type Handler, safeEqual } from './types'
 import { GATEWAY_EVENTS_DOC } from '@shared/metadata/events'
+import { ensureParams, getAgentOrError } from './handler-utils'
 
 /**
  * system:events-doc
@@ -88,25 +88,104 @@ export const handleToolsList: Handler = async (_params, _client, _ctx) => {
 /**
  * skills.list
  */
-export const handleSkillsList: Handler = async (params, _client, _ctx) => {
-  const p = params as { agentId?: string } | undefined
-  const agentId = p?.agentId || 'main'
-  const configService = ConfigService.getInstance()
-  const agentDir = configService.getAgentDir(agentId)
-  const skillsDir = path.join(agentDir, 'skills')
+export const handleSkillsList: Handler = async (params, _client, ctx) => {
+  const check = ensureParams(params, { agentId: 'string?' })
+  if (!check.ok) return check
+
+  const { agentId = 'main' } = check.values
+  const agentCheck = getAgentOrError(ctx, agentId)
+  if (!agentCheck.ok) return agentCheck
 
   try {
-    await fs.access(skillsDir)
-    const entries = await fs.readdir(skillsDir, { withFileTypes: true })
-    const skills = entries
-      .filter((e) => e.name.endsWith('.ts') || e.name.endsWith('.js'))
-      .map((e) => ({
-        name: e.name,
-        path: path.join(skillsDir, e.name)
-      }))
-    return { ok: true, payload: { agentId, skills } }
-  } catch {
-    return { ok: true, payload: { agentId, skills: [] } }
+    const skillManager = agentCheck.agent.getSkillManager()
+    const skills = await skillManager.list()
+
+    return {
+      ok: true,
+      payload: {
+        agentId,
+        skills: skills.map((s) => ({
+          name: s.name,
+          description: s.description,
+          source: s.source,
+          path: s.filePath,
+          baseDir: s.baseDir
+        }))
+      }
+    }
+  } catch (err) {
+    return { ok: false, error: errorShape(ErrorCodes.UNAVAILABLE, String(err)) }
+  }
+}
+
+/**
+ * skills.install
+ */
+export const handleSkillInstall: Handler = async (params, _client, ctx) => {
+  const check = ensureParams(params, {
+    agentId: 'string?',
+    target: 'string',
+    name: 'string',
+    content: 'string'
+  })
+  if (!check.ok) return check
+
+  const { agentId = 'main', target, name, content } = check.values
+  const agentCheck = getAgentOrError(ctx, agentId)
+  if (!agentCheck.ok) return agentCheck
+
+  try {
+    await agentCheck.agent
+      .getSkillManager()
+      .installSkill(target as 'workspace' | 'managed', name, content)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: errorShape(ErrorCodes.UNAVAILABLE, String(err)) }
+  }
+}
+
+/**
+ * skills.update
+ */
+export const handleSkillUpdate: Handler = async (params, _client, ctx) => {
+  const check = ensureParams(params, {
+    agentId: 'string?',
+    name: 'string',
+    content: 'string'
+  })
+  if (!check.ok) return check
+
+  const { agentId = 'main', name, content } = check.values
+  const agentCheck = getAgentOrError(ctx, agentId)
+  if (!agentCheck.ok) return agentCheck
+
+  try {
+    await agentCheck.agent.getSkillManager().updateSkill(name, content)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: errorShape(ErrorCodes.UNAVAILABLE, String(err)) }
+  }
+}
+
+/**
+ * skills.delete
+ */
+export const handleSkillDelete: Handler = async (params, _client, ctx) => {
+  const check = ensureParams(params, {
+    agentId: 'string?',
+    name: 'string'
+  })
+  if (!check.ok) return check
+
+  const { agentId = 'main', name } = check.values
+  const agentCheck = getAgentOrError(ctx, agentId)
+  if (!agentCheck.ok) return agentCheck
+
+  try {
+    await agentCheck.agent.getSkillManager().deleteSkill(name)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: errorShape(ErrorCodes.UNAVAILABLE, String(err)) }
   }
 }
 

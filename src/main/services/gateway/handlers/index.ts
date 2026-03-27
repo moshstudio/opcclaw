@@ -9,7 +9,10 @@ import {
   handleUsageStats,
   handleConfigGet,
   handleConfigSave,
-  handleEventsDoc
+  handleEventsDoc,
+  handleSkillInstall,
+  handleSkillUpdate,
+  handleSkillDelete
 } from './system-handler'
 import {
   handleHeartbeatList,
@@ -66,6 +69,9 @@ export const handlers: Record<string, Handler> = {
   'sessions:delete': handleSessionsDelete,
   'tools:list': handleToolsList,
   'skills:list': handleSkillsList,
+  'skills:install': handleSkillInstall,
+  'skills:update': handleSkillUpdate,
+  'skills:delete': handleSkillDelete,
   'bootstrap:list': handleBootstrapList,
   'bootstrap:save': handleBootstrapSave,
   'usage:stats': handleUsageStats,

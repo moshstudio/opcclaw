@@ -133,10 +133,19 @@ function resolveInvocationPolicy(fm: ParsedSkillFrontmatter): SkillInvocationPol
  * SDK 已经读过一次提取了 name/description，但编排层需要
  * 提取 SDK 不关心的字段（user-invocable 等），所以再读一次。
  */
-async function loadSkillEntries(workspaceDir: string, managedDir: string): Promise<SkillEntry[]> {
+async function loadSkillEntries(
+  workspaceDir: string,
+  managedDir: string,
+  builtInDir: string
+): Promise<SkillEntry[]> {
   const merged = new Map<string, Skill>()
 
-  // 优先级: managed < workspace（对应 OpenClaw 的 extra < bundled < managed < workspace）
+  // 优先级: built-in < managed < workspace
+  const builtInSkills = await loadSkillsFromDir({ dir: builtInDir, source: 'built-in' })
+  for (const skill of builtInSkills) {
+    merged.set(skill.name, skill)
+  }
+
   const managedSkills = await loadSkillsFromDir({ dir: managedDir, source: 'managed' })
   for (const skill of managedSkills) {
     merged.set(skill.name, skill)
@@ -305,6 +314,7 @@ function resolveCommandInvocation(input: string, commands: SkillCommandSpec[]): 
 export class SkillManager {
   private workspaceDir: string
   private managedDir: string
+  private builtInDir: string
   /** 加载后的全部 entry（按 name 去重，后加载覆盖） */
   private entries: SkillEntry[] = []
   /** 构建好的斜杠命令列表 */
@@ -313,23 +323,34 @@ export class SkillManager {
 
   /**
    * @param workspaceDir 工作目录（最高优先级 skill 来源）
-   * @param managedDir 用户全局目录（~/.opcclaw/skills/ 或 ~/.opcclaw-dev/skills/）
+   * @param managedDir 用户全局目录（~/.opcclaw/skills/）
+   * @param builtInDir 内置技能目录 (src/main/resources/skills)
    */
-  constructor(workspaceDir: string, managedDir?: string) {
+  constructor(workspaceDir: string, managedDir?: string, builtInDir?: string) {
     this.workspaceDir = workspaceDir
-    this.managedDir = managedDir ?? ConfigService.getInstance().getGlobalSkillsDir()
+    const config = ConfigService.getInstance()
+    this.managedDir = managedDir ?? config.getGlobalSkillsDir()
+    this.builtInDir = builtInDir ?? config.getBuiltInSkillsDir()
   }
 
   /**
    * 更新配置（热更新）
    */
-  updateConfig(config: { workspaceDir?: string; managedDir?: string }) {
+  updateConfig(config: { workspaceDir?: string; managedDir?: string; builtInDir?: string }) {
+    let changed = false
     if (config.workspaceDir !== undefined && config.workspaceDir !== this.workspaceDir) {
       this.workspaceDir = config.workspaceDir
-      this.loaded = false // 路径变更，标记需要重新加载
+      changed = true
     }
     if (config.managedDir !== undefined && config.managedDir !== this.managedDir) {
       this.managedDir = config.managedDir
+      changed = true
+    }
+    if (config.builtInDir !== undefined && config.builtInDir !== this.builtInDir) {
+      this.builtInDir = config.builtInDir
+      changed = true
+    }
+    if (changed) {
       this.loaded = false
     }
   }
@@ -341,9 +362,74 @@ export class SkillManager {
    */
   async loadAll(): Promise<void> {
     if (this.loaded) return
-    this.entries = await loadSkillEntries(this.workspaceDir, this.managedDir)
+    this.entries = await loadSkillEntries(this.workspaceDir, this.managedDir, this.builtInDir)
     this.commands = buildSkillCommandSpecs(this.entries)
     this.loaded = true
+  }
+
+  /**
+   * 安装技能
+   * @param target 安装目标 (workspace 为智能体私有，managed 为全局)
+   * @param name 技能名称 (作为文件夹名)
+   * @param content 技能内容 (带 frontmatter 的 Markdown，将保存为 SKILL.md)
+   */
+  async installSkill(
+    target: 'workspace' | 'managed',
+    name: string,
+    content: string
+  ): Promise<void> {
+    const parentDir = target === 'workspace' ? path.join(this.workspaceDir, 'skills') : this.managedDir
+    const skillDirName = sanitizeCommandName(name) // 使用 sanitized name 作为目录名
+    const skillDir = path.join(parentDir, skillDirName)
+
+    await fs.mkdir(skillDir, { recursive: true })
+    const filePath = path.join(skillDir, 'SKILL.md')
+    await fs.writeFile(filePath, content, 'utf-8')
+
+    this.loaded = false // 触发重新加载
+    await this.loadAll()
+  }
+
+  /**
+   * 卸载/删除技能
+   * 注意：内置技能不允许删除
+   */
+  async deleteSkill(name: string): Promise<void> {
+    await this.loadAll()
+    const entry = this.entries.find((e) => e.skill.name === name)
+    if (!entry) throw new Error(`Skill ${name} not found`)
+    if (entry.skill.source === 'built-in') {
+      throw new Error(`Cannot delete built-in skill: ${name}`)
+    }
+
+    // 递归删除整个技能目录
+    // 如果是单文件技能，则删除单个文件
+    const isDir = (await fs.stat(entry.skill.baseDir)).isDirectory()
+    const isFolderBased = path.basename(entry.skill.filePath).toUpperCase() === 'SKILL.MD'
+
+    if (isFolderBased && isDir) {
+      await fs.rm(entry.skill.baseDir, { recursive: true, force: true })
+    } else {
+      await fs.unlink(entry.skill.filePath)
+    }
+
+    this.loaded = false
+    await this.loadAll()
+  }
+
+  /**
+   * 更新技能内容
+   */
+  async updateSkill(name: string, content: string): Promise<void> {
+    await this.loadAll()
+    const entry = this.entries.find((e) => e.skill.name === name)
+    if (!entry) throw new Error(`Skill ${name} not found`)
+    if (entry.skill.source === 'built-in') {
+      throw new Error(`Cannot update built-in skill directly: ${name}`)
+    }
+    await fs.writeFile(entry.skill.filePath, content, 'utf-8')
+    this.loaded = false
+    await this.loadAll()
   }
 
   /**
@@ -387,5 +473,10 @@ export class SkillManager {
       .filter((e) => !e.invocation.disableModelInvocation)
       .map((e) => e.skill)
     return formatSkillsForPrompt(skills)
+  }
+
+  /** 获取所有管理的技能根目录（用于工具权限校验） */
+  getRoots(): string[] {
+    return [this.builtInDir, this.managedDir, path.join(this.workspaceDir, 'skills')]
   }
 }

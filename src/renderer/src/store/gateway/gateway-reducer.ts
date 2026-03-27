@@ -5,7 +5,7 @@ import {
   TickPayload,
   ShutdownPayload
 } from '@shared/types/gateway'
-import { Message, ChatStatus } from '@shared/types/agent'
+import { Message, ChatStatus, Skill } from '@shared/types/agent'
 import { applyChatEvent, SessionPatch } from './chat-handler'
 import { applySessionLifecycleEvent, SessionStorePatch } from './session-handler'
 
@@ -33,6 +33,7 @@ export interface MinimalChatStore {
   errorMessages: Record<string, string | null>
   toolResultsMap?: Record<string, Record<string, unknown>>
   interactionMap?: Record<string, ChatPayload['interaction'] | null>
+  skills?: Record<string, Skill[]>
 
   // 资源领域 (预留/扩展)
   models?: ModelsPayload['models']

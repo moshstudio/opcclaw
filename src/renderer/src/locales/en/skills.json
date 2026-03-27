@@ -1,0 +1,17 @@
+{
+  "title": "Skill Management",
+  "desc": "Manage the extended capabilities of the current agent. Skills are stored in dedicated module folders.",
+  "refresh": "Refresh",
+  "create": "New Skill",
+  "empty": "No skills installed yet",
+  "no_agent": "Please select an agent first",
+  "delete_confirm": "Are you sure you want to delete the skill \"{{name}}\"?",
+  "category_label": "About Skill Tiers",
+  "category_desc": "• **Built-in**: System-integrated skills, cannot be deleted, part of the core architecture.<br />• **Managed**: Globally installed skills, shared across all agents.<br />• **Workspace**: Agent-specific skills, stored in the agent's workspace, has the highest priority.",
+  "source": {
+    "built-in": "Built-in",
+    "managed": "Managed",
+    "workspace": "Workspace"
+  },
+  "activated": "⚡ **Skill Activated**: {{name}}"
+}
