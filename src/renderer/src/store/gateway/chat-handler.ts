@@ -1,4 +1,11 @@
-import { Message, AssistantMessage, ChatStatus, ToolResultMessage } from '@shared/types/agent'
+import {
+  Message,
+  AssistantMessage,
+  ChatStatus,
+  ToolResultMessage,
+  AgentThinkingBlock,
+  AgentTextBlock
+} from '@shared/types/agent'
 import { ChatPayload, ChatState as GatewayChatState } from '@shared/types/gateway'
 import { normalizeMessage } from '@shared/utils/message'
 
@@ -25,15 +32,14 @@ export interface SessionPatch {
 /** 协议状态到 UI 状态的精确映射 */
 const STATUS_MAP: Partial<Record<GatewayChatState, ChatStatus>> = {
   start: 'waiting',
-  userMessage: 'idle',
+  userMessage: 'streaming',
   thinking: 'thinking',
   retrying: 'retrying',
   delta: 'streaming',
   toolCall: 'toolCalling',
-  toolResult: 'toolExecuting',
-  notice: 'streaming',
+  toolResult: 'streaming',
   interaction: 'waiting',
-  final: 'completed',
+  final: 'waiting',
   error: 'error'
 }
 
@@ -86,7 +92,7 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
     const text = p.delta || ''
     const existing = findLastSequenceMessage(msgs, p.runId, 'thinking')
     if (existing) {
-      const lastBlock = existing.content[existing.content.length - 1] as any
+      const lastBlock = existing.content[existing.content.length - 1] as AgentThinkingBlock
       lastBlock.thinking = (lastBlock.thinking || '') + text
     } else {
       msgs.push(
@@ -103,7 +109,7 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
     const text = p.delta || ''
     const existing = findLastSequenceMessage(msgs, p.runId, 'text')
     if (existing) {
-      const lastBlock = existing.content[existing.content.length - 1] as any
+      const lastBlock = existing.content[existing.content.length - 1] as AgentTextBlock
       lastBlock.text = (lastBlock.text || '') + text
     } else {
       msgs.push(
@@ -168,7 +174,7 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
     // 运行结束，将 performance 指标附加到该运行产生的最后一条 Assistant 消息上
     const lastAsst = msgs.findLast(
       (m) => m.role === 'assistant' && (!p.runId || m.runId === p.runId)
-    ) as any
+    ) as AssistantMessage | undefined
     if (lastAsst) {
       if (p.performance) lastAsst.performance = p.performance
       if (p.message) {
@@ -176,13 +182,6 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
         Object.assign(lastAsst, rest)
       }
       lastAsst._isFinished = true
-    }
-  },
-
-  notice: (p, msgs) => {
-    if (p.firstKeptEntryId) {
-      const idx = msgs.findIndex((m) => m.id === p.firstKeptEntryId)
-      if (idx !== -1) msgs.splice(0, idx)
     }
   },
 
@@ -198,9 +197,6 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
 // ============================================================================
 
 export const applyChatEvent = (payload: ChatPayload, patch: SessionPatch): SessionPatch => {
-  // 直接忽略 notice 事件，不触发任何引用变化
-  if ((payload.state as string) === 'notice') return patch
-
   const { messages, status: currentStatus, toolResults, errorMessage, interaction } = patch
   let nextStatus = currentStatus
   let nextError = errorMessage ?? null

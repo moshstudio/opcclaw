@@ -21,6 +21,7 @@ import type { AIModelConfig } from '@shared/types/models'
 import { createModelDef } from '@main/services/provider/model-factory'
 import type { MiniAgentEvent } from './agent-events'
 import type { AgentConfig, RunResult, Message } from '@shared/types/agent'
+import { MIN_CONTEXT_TOKENS } from '@shared/types/agent'
 export type { AgentConfig, RunResult, Message }
 
 // 导入核心子服务
@@ -48,7 +49,14 @@ export class Agent {
   public updateConfig(newConfig: AgentConfig): void {
     // 1. 同步内存配置
     // 注意：保留原本的 agentId 等关键标识
-    this.config = { ...newConfig, agentId: this.id }
+    const configWithDefaults = { ...newConfig, agentId: this.id }
+    if (configWithDefaults.contextTokens !== undefined) {
+      configWithDefaults.contextTokens = Math.max(
+        MIN_CONTEXT_TOKENS,
+        configWithDefaults.contextTokens
+      )
+    }
+    this.config = configWithDefaults
 
     // 更新关键路径属性
     if (this.config.workspaceDir) {
@@ -115,7 +123,11 @@ export class Agent {
 
   constructor(config: AgentConfig, options?: { onConfigChange?: (config: AgentConfig) => void }) {
     this.id = config.agentId || newShortId()
-    this.config = { ...config, agentId: this.id }
+    this.config = {
+      ...config,
+      agentId: this.id,
+      contextTokens: Math.max(MIN_CONTEXT_TOKENS, config.contextTokens || MIN_CONTEXT_TOKENS)
+    }
     this.onConfigChange = options?.onConfigChange
     this.workspaceDir = config.workspaceDir || path.join(process.cwd(), 'agents', this.id)
     this.logger = new Logger(`[Agent:${this.id}]`)
@@ -154,7 +166,7 @@ export class Agent {
     const { modelDef, apiKey: resolvedApiKey } = this.resolveModelDef()
     this.contextManager = new AgentContextManager({
       sessionManager: this.sessionManager,
-      contextTokens: config.contextTokens || 4000,
+      contextTokens: this.config.contextTokens!,
       modelDef,
       apiKey: resolvedApiKey || config.apiKey,
       emit: (ev) => this.emit(ev)
@@ -555,7 +567,7 @@ export class Agent {
   public steer(rawSessionKey: string, text: string) {
     const sk = resolveSessionKey({ agentId: this.id, sessionKey: rawSessionKey })
     this.stateManager.steer(sk, text)
-    this.emit({ type: 'chat:notice', sessionKey: sk, runId: 'steer', text: '指令已注入' })
+    this.emit({ type: 'notice:info', sessionKey: sk, runId: 'steer', text: '指令已注入' })
   }
 
   public respondInteraction(interactionId: string, result: boolean) {

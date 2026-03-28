@@ -2,8 +2,8 @@ import { create, StoreApi } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { getGatewayClient } from '../services/gateway-client'
 import { ConfirmService } from '../components/ui/confirm-context'
-import { Message, ChatStatus } from '@shared/types/agent'
-import { ChatPayload, AgentEventPayload } from '@shared/types/gateway'
+import { Message, ChatStatus, Agent } from '@shared/types/agent'
+import { ChatPayload, AgentEventPayload, NoticePayload, ModelsPayload } from '@shared/types/gateway'
 import { mapHistoryMessage, RESET_TIMEOUT } from './gateway/chat-handler'
 import { applyGatewayEvent, MinimalChatStore } from './gateway/gateway-reducer'
 
@@ -19,9 +19,14 @@ interface ChatState {
   isLoadingSessions: Record<string, boolean> // agentId -> state
   toolResultsMap: Record<string, Record<string, unknown>> // sessionKey -> { toolCallId -> result }
   interactionMap: Record<string, ChatPayload['interaction'] | null> // sessionKey -> active interaction
+  agents: Agent[]
+  activeAgentId: string | null
+  models: ModelsPayload['models']
+  defaultModelId: string | null
   initialized: boolean
 
   handleChatEvent: (payload: ChatPayload) => void
+  handleNoticeEvent: (payload: NoticePayload) => void
   handleAgentEvent: (payload: AgentEventPayload) => void
   handleSessionEvent: (payload: AgentEventPayload) => void
   init: () => void
@@ -70,6 +75,10 @@ export const useChatStore = create<ChatState>()(
       isLoadingSessions: {},
       toolResultsMap: {},
       interactionMap: {},
+      agents: [],
+      activeAgentId: null,
+      models: [],
+      defaultModelId: null,
       initialized: false,
 
       handleChatEvent: (payload) => {
@@ -102,6 +111,9 @@ export const useChatStore = create<ChatState>()(
             }
           }, timeout)
         }
+      },
+      handleNoticeEvent: (payload) => {
+        set((s) => applyGatewayEvent(s as MinimalChatStore, payload, 'notice'))
       },
       handleAgentEvent: (payload) => {
         set((s) => applyGatewayEvent(s as MinimalChatStore, payload, 'agent'))

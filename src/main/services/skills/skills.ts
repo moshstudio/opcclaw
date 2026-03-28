@@ -77,6 +77,8 @@ export type SkillEntry = {
   frontmatter: ParsedSkillFrontmatter
   /** 调用策略（控制用户 /command 和模型自主调用两个通道） */
   invocation: SkillInvocationPolicy
+  /** 文件修改时间戳（用于脏检查） */
+  mtimeMs: number
 }
 
 /**
@@ -136,47 +138,54 @@ function resolveInvocationPolicy(fm: ParsedSkillFrontmatter): SkillInvocationPol
 async function loadSkillEntries(
   workspaceDir: string,
   managedDir: string,
-  builtInDir: string
-): Promise<SkillEntry[]> {
+  builtInDir: string,
+  oldEntries: SkillEntry[] = []
+): Promise<{ entries: SkillEntry[]; scannedDirs: Map<string, number> }> {
   const merged = new Map<string, Skill>()
+  const allScannedDirs = new Map<string, number>()
 
-  // 优先级: built-in < managed < workspace
-  const builtInSkills = await loadSkillsFromDir({ dir: builtInDir, source: 'built-in' })
-  for (const skill of builtInSkills) {
-    merged.set(skill.name, skill)
+  const sources = [
+    { dir: builtInDir, source: 'built-in' },
+    { dir: managedDir, source: 'managed' },
+    { dir: path.join(workspaceDir, 'skills'), source: 'workspace' }
+  ]
+
+  // A. 扫描目录并合并（优先级覆盖）
+  for (const src of sources) {
+    const res = await loadSkillsFromDir(src)
+    for (const skill of res.skills) merged.set(skill.name, skill)
+    res.scannedDirs.forEach((mtime, p) => allScannedDirs.set(p, mtime))
   }
 
-  const managedSkills = await loadSkillsFromDir({ dir: managedDir, source: 'managed' })
-  for (const skill of managedSkills) {
-    merged.set(skill.name, skill)
-  }
-
-  const workspaceSkillsDir = path.join(workspaceDir, 'skills')
-  const workspaceSkills = await loadSkillsFromDir({
-    dir: workspaceSkillsDir,
-    source: 'workspace'
-  })
-  for (const skill of workspaceSkills) {
-    merged.set(skill.name, skill)
-  }
-
-  // 丰富为 SkillEntry（重读文件提取编排层元数据）
+  // B. 构建旧数据索引，极速增量复用
+  const oldMap = new Map(oldEntries.map((e) => [e.skill.filePath, e]))
   const entries: SkillEntry[] = []
+
   for (const skill of merged.values()) {
-    let frontmatter: ParsedSkillFrontmatter = {}
     try {
+      const stats = await fs.stat(skill.filePath)
+      const mtimeMs = stats.mtimeMs
+
+      const cached = oldMap.get(skill.filePath)
+      if (cached && cached.mtimeMs === mtimeMs) {
+        entries.push({ ...cached, skill }) // 属性完全复用
+        continue
+      }
+
       const raw = await fs.readFile(skill.filePath, 'utf-8')
-      frontmatter = extractFrontmatter(raw)
+      const frontmatter = extractFrontmatter(raw)
+      entries.push({
+        skill,
+        frontmatter,
+        invocation: resolveInvocationPolicy(frontmatter),
+        mtimeMs
+      })
     } catch {
-      // ignore
+      // 文件丢失或读取失败，忽略该条目
     }
-    entries.push({
-      skill,
-      frontmatter,
-      invocation: resolveInvocationPolicy(frontmatter)
-    })
   }
-  return entries
+
+  return { entries, scannedDirs: allScannedDirs }
 }
 
 // ============== 命令名 sanitize (对应 openclaw workspace.ts) ==============
@@ -320,6 +329,8 @@ export class SkillManager {
   /** 构建好的斜杠命令列表 */
   private commands: SkillCommandSpec[] = []
   private loaded = false
+  /** 记录所有扫描过的目录 mtime（用于深层增删检测） */
+  private lastScannedDirMtimes = new Map<string, number>()
 
   /**
    * @param workspaceDir 工作目录（最高优先级 skill 来源）
@@ -361,10 +372,61 @@ export class SkillManager {
    * 对应 OpenClaw: loadSkillEntries() + buildWorkspaceSkillCommandSpecs()
    */
   async loadAll(): Promise<void> {
-    if (this.loaded) return
-    this.entries = await loadSkillEntries(this.workspaceDir, this.managedDir, this.builtInDir)
+    const isDirty = await this.checkNeedsReload()
+    if (this.loaded && !isDirty) return
+
+    const { entries, scannedDirs } = await loadSkillEntries(
+      this.workspaceDir,
+      this.managedDir,
+      this.builtInDir,
+      this.entries // 传入当前列表用于增量复用
+    )
+    this.entries = entries
+    this.lastScannedDirMtimes = scannedDirs
     this.commands = buildSkillCommandSpecs(this.entries)
     this.loaded = true
+  }
+
+  /**
+   * 快速执行脏检查 (Performance Optimized & Robust)
+   * 1. 检查所有已知目录的 mtime (感知任何位置的新增/删除/重命名)
+   * 2. 检查现有 Skill Entry 对应的 SKILL.md mtime (感知内容修改)
+   */
+  private async checkNeedsReload(): Promise<boolean> {
+    if (!this.loaded) return true
+
+    // A. 收集所有需要监控的目录 (根目录 + 扫描过的子目录)
+    const monitoredDirs = new Set([...this.getRoots(), ...this.lastScannedDirMtimes.keys()])
+
+    try {
+      // 只要扫描过的任何一级目录发生了增减，其 mtime 都会变
+      const dirResults = await Promise.all(
+        Array.from(monitoredDirs).map(async (dirPath) => {
+          try {
+            const stats = await fs.stat(dirPath)
+            return stats.mtimeMs !== this.lastScannedDirMtimes.get(dirPath)
+          } catch {
+            return this.lastScannedDirMtimes.has(dirPath) // 如果以前有现在没了，说明变了
+          }
+        })
+      )
+      if (dirResults.some((r) => r)) return true
+
+      // B. 文件内容检查 (解决直接修改 SKILL.md)
+      const fileResults = await Promise.all(
+        this.entries.map(async (entry) => {
+          try {
+            const stats = await fs.stat(entry.skill.filePath)
+            return stats.mtimeMs !== entry.mtimeMs
+          } catch {
+            return true // 文件丢失
+          }
+        })
+      )
+      return fileResults.some((r) => r)
+    } catch {
+      return true
+    }
   }
 
   /**

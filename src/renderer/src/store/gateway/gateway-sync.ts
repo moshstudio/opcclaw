@@ -10,7 +10,8 @@ import {
   AgentEventPayload,
   ModelsPayload,
   TickPayload,
-  ShutdownPayload
+  ShutdownPayload,
+  NoticePayload
 } from '@shared/types/gateway'
 
 let isInitialized = false
@@ -66,25 +67,24 @@ export const initGatewaySync = () => {
     useChatStore.getState().handleChatEvent(payload)
   })
 
-  // B. 智能体生命周期与核心会话状态
+  // B. 业务通知独立频道
+  client.onNotice((payload: NoticePayload) => {
+    useChatStore.getState().handleNoticeEvent(payload)
+  })
+
+  // B. 智能体领域事件 (包含生命周期与运行态)
   client.onAgent((payload: AgentEventPayload) => {
-    const lifecycleTypes = ['agent:created', 'agent:updated', 'agent:deleted']
-    if (lifecycleTypes.includes(payload.type)) {
-      useAgentStore.getState().handleLifecycleEvent(payload)
-    }
-
-    const runStatusTypes = ['agent:run-start', 'agent:run-end', 'agent:run-error', 'agent:skill-triggered']
-    if (runStatusTypes.includes(payload.type)) {
-      useChatStore.getState().handleAgentEvent(payload)
-    }
-
-    // C. 专门分发给技能领域
+    // 1. 同步到全局智能体列表 Store
+    useAgentStore.getState().handleLifecycleEvent?.(payload)
+    // 2. 同步到各个会话的状态 Store (状态机逻辑已在 agent-handler 中解耦)
+    useChatStore.getState().handleAgentEvent(payload)
+    // 3. 辅助分发给技能领域
     useSkillStore.getState().handleSkillEvent(payload)
   })
 
-  // C. 会话生命周期与独立状态
+  // C. 会话领域事件 (创建、重置、删除)
   client.onSession((payload: AgentEventPayload) => {
-    // 处理会话级变更事件 (created, reset, deleted)
+    // 处理会话级变更事件 (逻辑已在 session-handler 中解耦)
     useChatStore.getState().handleSessionEvent(payload)
   })
 

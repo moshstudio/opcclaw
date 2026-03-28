@@ -64,10 +64,10 @@ export const ToolSection: React.FC<SettingsSectionProps> = ({
       <div className="space-y-4 pt-1">
         <div className="flex items-center justify-between px-1">
           <div className="flex flex-col">
-            <h3 className="text-[11px] font-black uppercase tracking-wider text-foreground">
+            <h3 className="text-xs font-black uppercase tracking-wider text-foreground">
               {t('common.tools')}
             </h3>
-            <p className="text-[9px] text-muted-foreground/60 leading-relaxed font-bold tracking-tight">
+            <p className="text-[10px] text-muted-foreground/60 leading-relaxed font-bold tracking-tight">
               {t('common.tools_desc', { status: `${tools.length}/${tools.length}` })}
             </p>
           </div>
@@ -75,11 +75,11 @@ export const ToolSection: React.FC<SettingsSectionProps> = ({
             <Button
               variant="outline"
               size="sm"
-              className="h-7 sm:h-8 px-2 sm:px-3 text-[9px] sm:text-[10px] font-bold rounded-lg border-border/60 hover:bg-muted/50"
+              className="h-7 sm:h-8 px-2 sm:px-3 text-xs font-bold rounded-lg border-border/60 hover:bg-muted/50"
               onClick={() => refresh()}
             >
               <RefreshCw
-                className={cn('w-3 h-3 mr-1.5 text-muted-foreground/40', loading && 'animate-spin')}
+                className={cn('w-3.5 h-3.5 mr-1.5 text-muted-foreground/40', loading && 'animate-spin')}
               />
               {t('common.refresh_config')}
             </Button>
@@ -94,14 +94,14 @@ export const ToolSection: React.FC<SettingsSectionProps> = ({
             >
               <div className="flex flex-col min-w-0 pr-4">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black text-foreground tracking-tight truncate">
+                  <span className="text-xs font-black text-foreground tracking-tight truncate">
                     {tool.name}
                   </span>
-                  <span className="text-[7px] font-black uppercase tracking-widest text-muted-foreground/30 bg-muted/5 px-1 rounded border border-border/10">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/30 bg-muted/5 px-1 rounded border border-border/10">
                     {tool.type}
                   </span>
                 </div>
-                <p className="text-[9px] text-muted-foreground/60 line-clamp-2 mt-0.5 leading-relaxed font-bold tracking-tight">
+                <p className="text-[10px] text-muted-foreground/60 line-clamp-2 mt-0.5 leading-relaxed font-bold tracking-tight">
                   {tool.description}
                 </p>
               </div>

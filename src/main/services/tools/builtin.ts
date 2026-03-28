@@ -28,6 +28,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import type { Tool, ToolContext } from './types'
 import { assertSandboxPath } from '@main/services/sandbox-paths'
 import { EnvironmentService } from '@main/services/runtime/environment'
+import { extractReadableContent, htmlToMarkdown, markdownToText } from './web-fetch-utils'
 
 // ============== 辅助函数 ==============
 
@@ -831,6 +832,146 @@ export const sessionsSpawnTool: Tool<{
   }
 }
 
+// ============== 网络获取工具 ==============
+
+/**
+ * 网页内容获取工具
+ *
+ * 设计目标:
+ * - 快速获取网页正文，避免繁重的浏览器自动化
+ * - 自动转换为 Markdown 格式，适合 LLM 阅读
+ * - 支持 Readability 算法提取核心内容
+ *
+ * 优化点:
+ * 1. 采用多级回退机制 (Readability -> HTML Cleanup -> Raw Text)
+ * 2. 限制返回长度 (默认 20k 字符)，保护 Token 消耗
+ * 3. 简单的 SSRF 基础防御
+ */
+export const webFetchTool: Tool<{
+  url: string
+  extract_mode?: 'markdown' | 'text'
+  max_chars?: number
+}> = {
+  name: 'web_fetch',
+  category: 'network',
+  description: '获取指定 URL 的内容并提取为 Markdown 或纯文本',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: '网页 URL (支持 http/https)' },
+      extract_mode: {
+        type: 'string',
+        description: '提取模式: markdown (默认) 或 text',
+        enum: ['markdown', 'text']
+      },
+      max_chars: { type: 'number', description: '最大返回字符数，默认 20000' }
+    },
+    required: ['url']
+  },
+  async execute(input, _ctx: ToolContext) {
+    let url = input.url.trim()
+    if (!url.startsWith('http')) {
+      url = 'https://' + url
+    }
+
+    // 1. SSRF 基础防御: 拒绝内网 IP
+    try {
+      const parsedUrl = new URL(url)
+      const hostname = parsedUrl.hostname.toLowerCase()
+      if (
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname.startsWith('192.168.') ||
+        hostname.startsWith('10.') ||
+        hostname.startsWith('172.')
+      ) {
+        return '错误: 处于安全考虑，禁止访问本地或内网地址'
+      }
+    } catch {
+      return '错误: 无效的 URL 格式'
+    }
+
+    const extractMode = input.extract_mode || 'markdown'
+    const maxChars = input.max_chars || 20000
+
+    try {
+      // 2. 发起请求
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30秒超时
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+        }
+      })
+
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        return `错误: 抓取失败 (HTTP ${response.status} ${response.statusText})`
+      }
+
+      const contentType = response.headers.get('content-type') || ''
+      
+      // 处理 JSON 结果
+      if (contentType.includes('application/json')) {
+        const json = await response.json()
+        const text = JSON.stringify(json, null, 2)
+        return text.slice(0, maxChars)
+      }
+
+      // 获取文本内容
+      const html = await response.text()
+      
+      // 3. 多级提取策略
+      let result: { text: string; title?: string } | null = null
+
+      // A. Readability 提取
+      result = await extractReadableContent({ html, url, extractMode })
+
+      // B. 回退: 正则提取 (如果 Readability 没抓到正文)
+      if (!result || !result.text.trim()) {
+        const fallback = htmlToMarkdown(html)
+        if (fallback.text.trim()) {
+          result = {
+            text: extractMode === 'text' ? markdownToText(fallback.text) : fallback.text,
+            title: fallback.title
+          }
+        }
+      }
+
+      // C. 终极回退: 原始文本清理 (如果是纯文本或其他非 HTML 内容)
+      if (!result || !result.text.trim()) {
+        const plainText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+        result = { text: plainText }
+      }
+
+      if (!result || !result.text.trim()) {
+        return '错误: 成功抓取页面但无法提取出有意义的文本内容'
+      }
+
+      // 4. 格式化返回
+      let output = ''
+      if (result.title) output += `### ${result.title}\n\n`
+      output += result.text
+
+      // 截断处理
+      if (output.length > maxChars) {
+        output = output.slice(0, maxChars) + '\n\n...[内容过长已截断]...'
+      }
+
+      return output
+    } catch (err: any) {
+      if (err.name === 'AbortError') return '错误: 请求超时 (30s)'
+      return `错误: 网页抓取失败: ${err.message}`
+    }
+  }
+}
+
 // ============== 定时任务工具 ==============
 
 /**
@@ -962,5 +1103,6 @@ export const builtinTools: Tool[] = [
   memorySaveTool,
   memoryDeleteTool,
   sessionsSpawnTool,
-  scheduleTaskTool
+  scheduleTaskTool,
+  webFetchTool
 ]

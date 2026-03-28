@@ -13,5 +13,9 @@
     "managed": "Managed",
     "workspace": "Workspace"
   },
-  "activated": "⚡ **Skill Activated**: {{name}}"
+  "activated": "⚡ **Skill Activated**: {{name}}",
+  "detail": "Skill Details",
+  "built_in_group": "System Built-in Skills",
+  "managed_group": "Global Shared Skills",
+  "agent_specific": "Agent Specific Skills"
 }

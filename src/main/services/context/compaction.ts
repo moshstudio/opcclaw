@@ -6,6 +6,8 @@ export const BASE_CHUNK_RATIO = 0.4
 export const MIN_CHUNK_RATIO = 0.15
 export const SAFETY_MARGIN = 1.2
 
+import { CONTEXT_RESERVE_TOKENS } from '@shared/types/agent'
+
 /**
  * Compaction 设置
  */
@@ -17,8 +19,8 @@ export interface CompactionSettings {
 
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
   enabled: true,
-  reserveTokens: 20_000,
-  keepRecentTokens: 20_000
+  reserveTokens: CONTEXT_RESERVE_TOKENS,
+  keepRecentTokens: CONTEXT_RESERVE_TOKENS
 }
 
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000

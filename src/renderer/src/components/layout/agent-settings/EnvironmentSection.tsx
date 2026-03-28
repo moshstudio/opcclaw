@@ -24,10 +24,10 @@ export const EnvironmentSection: React.FC<SettingsSectionProps> = ({
       <div className="space-y-4">
         <div className="space-y-1.5">
           <div className="flex items-center justify-between px-1">
-            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">
+            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
               {t('common.workspace_dir')}
             </label>
-            <span className="text-[8px] font-mono text-muted-foreground/40 bg-muted/10 px-1.5 py-0.5 rounded uppercase tracking-tighter">
+            <span className="text-[10px] font-mono text-muted-foreground/40 bg-muted/10 px-1.5 py-0.5 rounded uppercase tracking-tighter">
               {t('common.workspace_full_path')}
             </span>
           </div>
@@ -35,17 +35,17 @@ export const EnvironmentSection: React.FC<SettingsSectionProps> = ({
             value={formData.workspaceDir}
             onChange={(e) => setFormData((prev) => ({ ...prev, workspaceDir: e.target.value }))}
             placeholder="./workspace"
-            className="h-9 bg-muted/20 border-border/40 rounded-xl text-xs font-mono"
+            className="h-9 bg-muted/20 border-border/40 rounded-xl text-sm font-mono"
           />
           {formData.workspaceDir && (
-            <p className="text-[9px] text-muted-foreground/40 px-1 font-mono truncate">
+            <p className="text-[10px] text-muted-foreground/40 px-1 font-mono truncate">
               {formData.workspaceDir}
             </p>
           )}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
+            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
               {t('common.max_turns')}
             </label>
             <Input
@@ -54,7 +54,7 @@ export const EnvironmentSection: React.FC<SettingsSectionProps> = ({
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, maxTurns: parseInt(e.target.value) }))
               }
-              className="h-9 bg-muted/20 border-border/40 rounded-xl text-xs"
+              className="h-9 bg-muted/20 border-border/40 rounded-xl text-sm"
             />
           </div>
           <div className="space-y-1.5">

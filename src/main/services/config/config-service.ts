@@ -180,13 +180,6 @@ export class ConfigService {
   public getProviders(): ModelProvider[] {
     return [
       {
-        id: 'openai',
-        name: 'OpenAI',
-        baseUrl: 'https://api.openai.com/v1',
-        defaultModel: 'gpt-4o',
-        supportsVision: true
-      },
-      {
         id: 'deepseek',
         name: 'DeepSeek',
         baseUrl: 'https://api.deepseek.com',
@@ -198,28 +191,35 @@ export class ConfigService {
         id: 'glm',
         name: 'Zhipu GLM (智谱)',
         baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-        defaultModel: 'glm-4',
-        supportsVision: true
+        defaultModel: 'GLM-5-Turbo',
+        supportsVision: false
       },
       {
         id: 'kimi',
         name: 'Moonshot Kimi (月之暗面)',
         baseUrl: 'https://api.moonshot.cn/v1',
-        defaultModel: 'moonshot-v4',
+        defaultModel: 'kimi-k2.5',
         supportsVision: true
+      },
+      {
+        id: 'openai',
+        name: 'OpenAI',
+        baseUrl: 'https://api.openai.com/v1',
+        defaultModel: 'gpt-5-mini',
+        supportsVision: false
       },
       {
         id: 'anthropic',
         name: 'Anthropic',
         baseUrl: 'https://api.anthropic.com/v1',
         defaultModel: 'claude-4-5-sonnet',
-        supportsVision: true
+        supportsVision: false
       },
       {
         id: 'google',
         name: 'Google Gemini',
         baseUrl: 'https://generativelanguage.googleapis.com',
-        defaultModel: 'gemini-3.5-pro',
+        defaultModel: 'gemini-3.1-pro',
         supportsVision: true
       },
       {

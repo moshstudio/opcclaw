@@ -62,6 +62,7 @@ export const GATEWAY_EVENTS = [
   'agent',
   'session',
   'chat',
+  'notice',
   'models',
   'heartbeat',
   'system:shutdown'
@@ -86,7 +87,9 @@ export const GATEWAY_ACTIONS = [
   'session:deleted',
   'config:saved',
   'models:list',
-  'agent:skill-triggered'
+  'agent:skill-triggered',
+  'notice:compact',
+  'notice:info'
 ] as const
 
 export type GatewayAction = (typeof GATEWAY_ACTIONS)[number]
@@ -110,6 +113,7 @@ export type ResponseFrame = {
 
 export type EventFrame =
   | { type: 'event'; event: 'chat'; payload: ChatPayload; seq: number }
+  | { type: 'event'; event: 'notice'; payload: NoticePayload; seq: number }
   | { type: 'event'; event: 'agent'; payload: AgentEventPayload; seq: number }
   | { type: 'event'; event: 'models'; payload: ModelsPayload; seq: number }
   | { type: 'event'; event: 'heartbeat'; payload: HeartbeatEventPayload; seq: number }
@@ -199,6 +203,15 @@ export const REQUEST_TIMEOUT_MS = 60_000
 
 // ============== 广播 Payload 定义 ==============
 
+export type GatewayPayload =
+  | ChatPayload
+  | NoticePayload
+  | AgentEventPayload
+  | ModelsPayload
+  | TickPayload
+  | ShutdownPayload
+  | HeartbeatEventPayload
+
 /** 聊天状态类型 */
 export type ChatState =
   | 'start'
@@ -208,7 +221,6 @@ export type ChatState =
   | 'toolCall'
   | 'toolResult'
   | 'retrying'
-  | 'notice'
   | 'interaction'
   | 'final'
   | 'error'
@@ -335,6 +347,23 @@ export interface AgentEventPayload {
   /** 完整的智能体对象 (可选，仅在 created/updated 事件提供) */
   agent?: Agent
   [key: string]: unknown
+}
+
+/** notice 频道负载：业务提示与压缩通知 */
+export interface NoticePayload {
+  type: 'notice:compact' | 'notice:info' | (string & {})
+  sessionKey: string
+  agentId?: string
+  runId?: string
+  /**notice:compact 特有字段 */
+  firstKeptEntryId?: string
+  summaryChars?: number
+  droppedMessages?: number
+  /** notice:info 特有字段 */
+  text?: string
+  /** 兼容 chat 字段 */
+  delta?: string
+  error?: string
 }
 
 /** models 频道负载：模型列表更新 */

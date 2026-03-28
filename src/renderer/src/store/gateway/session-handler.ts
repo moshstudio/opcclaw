@@ -1,7 +1,5 @@
 import { AgentEventPayload } from '@shared/types/gateway'
 import { Message, ChatStatus } from '@shared/types/agent'
-import { normalizeMessage } from '@shared/utils/message'
-import i18n from '@renderer/i18n'
 
 /** 会话状态补丁接口 */
 export interface SessionStorePatch {
@@ -67,39 +65,6 @@ export const applySessionLifecycleEvent = (
       updates.errorMessages = { ...state.errorMessages, [sk]: null }
       updates.toolResultsMap = { ...state.toolResultsMap, [sk]: {} }
       break
-
-    case 'agent:run-start':
-      updates.chatStatuses = { ...state.chatStatuses, [sk]: 'waiting' }
-      break
-
-    case 'agent:run-end':
-      // 这里的最终状态通常由 chat:final 覆盖，这里作为 fallback
-      if (state.chatStatuses[sk] !== 'completed') {
-        updates.chatStatuses = { ...state.chatStatuses, [sk]: 'completed' }
-      }
-      break
-
-    case 'agent:run-error':
-      updates.chatStatuses = { ...state.chatStatuses, [sk]: 'error' }
-      if (payload.error) {
-        updates.errorMessages = { ...state.errorMessages, [sk]: String(payload.error) }
-      }
-      break
-
-    case 'agent:skill-triggered': {
-      const skillName = payload.skillName as string
-      if (sk) {
-        const currentMsgs = state.sessions[sk] || []
-        const noticeMsg = normalizeMessage({
-          role: 'assistant',
-          content: [{ type: 'text', text: i18n.t('skills.activated', { name: skillName }) }],
-          timestamp: Date.now(),
-          id: `skill-${Date.now()}`
-        })
-        updates.sessions = { ...state.sessions, [sk]: [...currentMsgs, noticeMsg] }
-      }
-      break
-    }
   }
 
   return updates

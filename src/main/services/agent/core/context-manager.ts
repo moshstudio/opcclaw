@@ -84,7 +84,7 @@ export class AgentContextManager {
 
       // 1. 发出压缩元数据事件
       this.options.emit({
-        type: 'chat:notice',
+        type: 'notice:compact',
         runId: params.runId,
         sessionKey: params.sessionKey,
         summaryChars: result.summary.length,

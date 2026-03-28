@@ -18,6 +18,8 @@ export type { Usage, StopReason, ThinkingLevel, StreamFunction, Model, Api }
 
 export type MemorySource = 'memory' | 'sessions'
 export const DEFAULT_MAX_CONCURRENT_RUNS = 1 // 锁定并发数为 1
+export const MIN_CONTEXT_TOKENS = 32000 // 最小上下文 Tokens (需大于 20k 预留)
+export const CONTEXT_RESERVE_TOKENS = 20000 // 后端压缩逻辑预留的缓冲 Tokens
 
 /**
  * 记忆条目 (Shared)
@@ -226,6 +228,8 @@ export interface LocalMetadata {
   timestamp: number | string // 扩展兼容 string 格式
   usage?: Usage // 覆盖为可选 (流式响应中可能为空)
   performance?: AgentPerformance
+  /** UI 内部标记：运行是否已真正结束（用于最后一条消息的特殊渲染/控制） */
+  _isFinished?: boolean
 }
 
 /**

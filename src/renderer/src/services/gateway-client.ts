@@ -10,6 +10,7 @@ import {
   type TickPayload,
   type ShutdownPayload,
   type HeartbeatEventPayload,
+  type NoticePayload,
   type GatewayMethod
 } from '@shared/types/gateway'
 
@@ -120,6 +121,13 @@ export class RendererGatewayClient extends BaseGatewayClient {
    */
   onAgent(callback: (payload: AgentEventPayload) => void) {
     return this.onChannel('agent', callback)
+  }
+
+  /**
+   * 领域特定事件订阅 - 业务通知 (对齐 notice 频道)
+   */
+  onNotice(callback: (payload: NoticePayload) => void) {
+    return this.onChannel('notice', callback)
   }
 
   /**

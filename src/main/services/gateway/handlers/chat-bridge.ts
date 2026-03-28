@@ -9,7 +9,12 @@ function toChatState(type: string): ChatState {
   if (type === 'agent:run-end') return 'final'
   if (type === 'agent:run-error') return 'error'
 
-  // 提取后缀并规范化为状态名 (e.g. chat:toolCall -> toolCall)
+  // 支持多级状态
+  if (type.startsWith('chat:')) {
+    return type.substring(5) as ChatState
+  }
+
+  // 提取后缀并规范化为状态名
   const state = type.split(':')[1] || type
   return state as ChatState
 }
@@ -22,9 +27,11 @@ function toChatState(type: string): ChatState {
 export function mapEventToChatFields(event: MiniAgentEvent): Partial<ChatPayload> | null {
   const state = toChatState(event.type)
 
-  // 1. 基础消息链处理 (Delta/Thinking/Planning/Notice)
+  // 1. 基础消息链处理 (Delta/Thinking/Planning)
   const base: Partial<ChatPayload> = { state }
-  if ('delta' in event) base.delta = event.delta
+  if ('delta' in event) {
+    base.delta = (event as { delta?: string }).delta
+  }
 
   // 2. 状态分发处理
   switch (event.type) {
@@ -79,13 +86,6 @@ export function mapEventToChatFields(event: MiniAgentEvent): Partial<ChatPayload
       return {
         state,
         delta: `[Retry] Attempt ${event.attempt} (delay ${event.delay}ms): ${event.error}`
-      }
-
-    case 'chat:notice':
-      return {
-        ...base,
-        delta: `History condensed: dropped ${event.droppedMessages} messages, kept ${event.summaryChars} chars summary.`,
-        firstKeptEntryId: event.firstKeptEntryId
       }
 
     case 'chat:delta':

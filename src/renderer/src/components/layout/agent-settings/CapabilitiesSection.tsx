@@ -64,7 +64,7 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
                     className: 'w-3.5 h-3.5'
                   })}
                 </div>
-                <span className="text-[11px] font-bold text-foreground/80 tracking-tight">
+                <span className="text-sm font-bold text-foreground/80 tracking-tight">
                   {cap.label}
                 </span>
               </div>
@@ -98,11 +98,11 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors shrink-0" />
-                    <span className="text-[10px] font-black text-foreground/70 group-hover:text-primary transition-colors truncate">
+                    <span className="text-xs font-black text-foreground/70 group-hover:text-primary transition-colors truncate">
                       {tool.name}
                     </span>
                   </div>
-                  <p className="text-[9px] text-muted-foreground/60 line-clamp-1 group-hover:line-clamp-none transition-all">
+                  <p className="text-[10px] text-muted-foreground/60 line-clamp-1 group-hover:line-clamp-none transition-all">
                     {tool.description}
                   </p>
                 </div>
@@ -138,10 +138,10 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
                       <FileCode className="w-3 h-3" />
                     </div>
                     <div className="flex flex-col min-w-0">
-                      <span className="text-[10px] font-bold text-foreground/80 truncate">
+                      <span className="text-xs font-bold text-foreground/80 truncate">
                         {skill.name}
                       </span>
-                      <span className="text-[8px] text-muted-foreground/40 font-mono truncate">
+                      <span className="text-[10px] text-muted-foreground/40 font-mono truncate">
                         {skill.path.split(/[\\/]/).slice(-3).join('/')}
                       </span>
                     </div>

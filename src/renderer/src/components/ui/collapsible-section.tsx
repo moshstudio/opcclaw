@@ -34,7 +34,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
           type="button"
           className={cn(
             'w-full flex items-center justify-between px-4 py-3 transition-all active:scale-[0.99] outline-none border-none focus-visible:ring-2 focus-visible:ring-primary/20',
-            'sticky top-0 z-20 bg-background/95 backdrop-blur-md',
+            'sticky top-0 z-20 bg-background',
             isOpen ? 'rounded-t-2xl border-b border-border/10 shadow-sm' : 'rounded-2xl'
           )}
         >

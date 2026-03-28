@@ -5,14 +5,13 @@ import ToolBlock from '../ToolBlock'
 interface ToolInteractionProps {
   blocks: AgentToolCallBlock[]
   allResults?: Map<string, ToolResultMessage>
-  isExecuting: boolean
 }
 
 /**
  * 工具调用交互组件
  * 直接渲染 ToolBlock 列表，避免过深的折叠嵌套
  */
-const ToolInteraction: React.FC<ToolInteractionProps> = ({ blocks, allResults, isExecuting }) => {
+const ToolInteraction: React.FC<ToolInteractionProps> = ({ blocks, allResults }) => {
   if (blocks.length === 0) return null
 
   return (
@@ -37,9 +36,7 @@ const ToolInteraction: React.FC<ToolInteractionProps> = ({ blocks, allResults, i
           ? result.isError
             ? ('error' as const)
             : ('success' as const)
-          : isExecuting
-            ? ('loading' as const)
-            : ('success' as const)
+          : ('loading' as const)
 
         return (
           <ToolBlock

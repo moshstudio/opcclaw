@@ -13,5 +13,9 @@
     "managed": "共享",
     "workspace": "私有"
   },
-  "activated": "⚡ **技能已激活**: {{name}}"
-}
+    "activated": "⚡ **技能已激活**: {{name}}",
+    "detail": "技能详情",
+    "built_in_group": "系统内置基础技能",
+    "managed_group": "全局共享托管技能",
+    "agent_specific": "智能体专属扩展技能"
+  }

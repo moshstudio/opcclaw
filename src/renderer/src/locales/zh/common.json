@@ -217,5 +217,6 @@
   "duplicate_message": "重复消息抑制",
   "callback_error": "执行逻辑错误",
   "requests_in_flight": "任务合并中",
-  "scheduled_start": "计划启动"
+  "scheduled_start": "计划启动",
+  "path": "路径"
 }

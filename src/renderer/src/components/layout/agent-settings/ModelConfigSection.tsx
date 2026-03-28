@@ -11,6 +11,7 @@ import {
 } from '@renderer/components/ui/select'
 import { CollapsibleSection } from '@renderer/components/ui/collapsible-section'
 import { useModelStore } from '@renderer/store/useModelStore'
+import { MIN_CONTEXT_TOKENS, CONTEXT_RESERVE_TOKENS } from '@shared/types/agent'
 import { SettingsSectionProps } from './types'
 
 export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
@@ -31,22 +32,22 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
     >
       <div className="space-y-4">
         <div className="space-y-1.5">
-          <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
+          <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
             {t('common.model_select')}
           </label>
           <Select
             value={formData.modelSelectId}
             onValueChange={(v) => setFormData((prev) => ({ ...prev, modelSelectId: v }))}
           >
-            <SelectTrigger className="h-9 rounded-xl text-xs bg-muted/20 border-border/40">
+            <SelectTrigger className="h-9 rounded-xl text-sm bg-muted/20 border-border/40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="default" className="text-xs">
+              <SelectItem value="default" className="text-sm">
                 {t('common.use_default_model')}
               </SelectItem>
               {models.map((m) => (
-                <SelectItem key={m.id} value={m.id} className="text-xs">
+                <SelectItem key={m.id} value={m.id} className="text-sm">
                   {m.name}
                 </SelectItem>
               ))}
@@ -55,7 +56,7 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
+            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
               {t('settings.temperature_label')}
             </label>
             <Input
@@ -65,23 +66,23 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, temperature: parseFloat(e.target.value) }))
               }
-              className="h-9 bg-muted/20 border-border/40 rounded-xl text-xs"
+              className="h-9 bg-muted/20 border-border/40 rounded-xl text-sm"
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
+            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
               {t('common.reasoning')}
             </label>
             <Select
               value={formData.reasoning}
               onValueChange={(v) => setFormData((prev) => ({ ...prev, reasoning: v }))}
             >
-              <SelectTrigger className="h-9 rounded-xl text-xs bg-muted/20 border-border/40">
+              <SelectTrigger className="h-9 rounded-xl text-sm bg-muted/20 border-border/40">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {['minimal', 'low', 'medium', 'high', 'xhigh'].map((r) => (
-                  <SelectItem key={r} value={r} className="text-xs uppercase font-bold">
+                  <SelectItem key={r} value={r} className="text-sm uppercase font-bold">
                     {r}
                   </SelectItem>
                 ))}
@@ -89,31 +90,85 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
             </Select>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
-              {t('common.context_tokens')}
-            </label>
+        <div className="grid grid-cols-1 gap-4 pt-2">
+          <div className="space-y-2">
+            <div className="flex flex-col gap-1 px-1">
+              <label className="text-xs font-black uppercase tracking-widest text-foreground/80">
+                {t('common.context_tokens')}
+              </label>
+              <p className="text-xs leading-relaxed text-muted-foreground/50 font-medium italic">
+                决定智能体的“记忆上限”。系统会自动预留约{' '}
+                <span className="text-primary/60 font-black">
+                  {Math.round(CONTEXT_RESERVE_TOKENS / 1000)}k
+                </span>{' '}
+                作为缓冲，因此设置值建议不低于{' '}
+                <span className="text-primary/60 font-black">
+                  {Math.round(MIN_CONTEXT_TOKENS / 1000)}k
+                </span>
+                。
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1.5 px-1 py-1">
+              {[32000, 128000, 256000, 512000, 1000000].map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setFormData((prev) => ({ ...prev, contextTokens: v }))}
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-black transition-all border ${
+                    formData.contextTokens === v
+                      ? 'bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/20'
+                      : 'bg-muted/30 text-muted-foreground/60 border-transparent hover:border-border'
+                  }`}
+                >
+                  {v >= 1000000 ? `${v / 1000000}M` : `${v / 1000}K`}
+                </button>
+              ))}
+            </div>
             <Input
               type="number"
+              min={MIN_CONTEXT_TOKENS}
+              max={2000000}
               value={formData.contextTokens}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, contextTokens: parseInt(e.target.value) }))
-              }
-              className="h-9 bg-muted/20 border-border/40 rounded-xl text-xs"
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0
+                setFormData((prev) => ({
+                  ...prev,
+                  contextTokens: Math.min(2000000, Math.max(0, val))
+                }))
+              }}
+              onBlur={(e) => {
+                const val = parseInt(e.target.value) || MIN_CONTEXT_TOKENS
+                setFormData((prev) => ({
+                  ...prev,
+                  contextTokens: Math.min(2000000, Math.max(MIN_CONTEXT_TOKENS, val))
+                }))
+              }}
+              className="h-9 bg-muted/20 border-border/40 rounded-xl text-sm font-mono tracking-tight ring-offset-background focus-visible:ring-primary/30"
             />
           </div>
-          <div className="space-y-1.5">
-            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
-              {t('settings.maxTokens_label')}
-            </label>
+
+          <div className="space-y-2">
+            <div className="flex flex-col gap-1 px-1">
+              <label className="text-xs font-black uppercase tracking-widest text-foreground/80">
+                {t('settings.maxTokens_label')}
+              </label>
+              <p className="text-xs leading-relaxed text-muted-foreground/50 font-medium italic">
+                限制单次模型回复的最大长度。较高的值允许长篇大论，但也可能消耗更多 Token。
+              </p>
+            </div>
             <Input
               type="number"
+              min={1}
+              max={128000}
               value={formData.maxTokens}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, maxTokens: parseInt(e.target.value) }))
-              }
-              className="h-9 bg-muted/20 border-border/40 rounded-xl text-xs"
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0
+                setFormData((prev) => ({ ...prev, maxTokens: Math.min(128000, Math.max(0, val)) }))
+              }}
+              onBlur={(e) => {
+                const val = parseInt(e.target.value) || 1
+                setFormData((prev) => ({ ...prev, maxTokens: Math.min(128000, Math.max(1, val)) }))
+              }}
+              className="h-9 bg-muted/20 border-border/40 rounded-xl text-sm font-mono tracking-tight ring-offset-background focus-visible:ring-primary/30"
             />
           </div>
         </div>

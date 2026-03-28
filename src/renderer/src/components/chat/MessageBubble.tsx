@@ -159,7 +159,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
             key={`tools-${group.startIndex}`}
             blocks={group.blocks}
             allResults={allToolResults}
-            isExecuting={status === 'toolExecuting'}
           />
         )
       }

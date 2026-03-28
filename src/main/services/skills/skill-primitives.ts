@@ -52,16 +52,24 @@ export interface Skill {
  * - 根目录: 任意 .md 文件
  * - 子目录（递归）: 仅 SKILL.md
  * - 跳过 dotfiles 和 node_modules
+ *
+ * 返回值包含发现的 skills 和所有扫描过的目录及其 mtime（用于上层脏检查）
  */
-export async function loadSkillsFromDir(params: { dir: string; source: string }): Promise<Skill[]> {
+export async function loadSkillsFromDir(params: {
+  dir: string
+  source: string
+}): Promise<{ skills: Skill[]; scannedDirs: Map<string, number> }> {
   const { dir, source } = params
   const skills: Skill[] = []
+  const scannedDirs = new Map<string, number>()
 
   let entries: Dirent[]
   try {
+    const stats = await fs.stat(dir)
+    scannedDirs.set(path.resolve(dir), stats.mtimeMs)
     entries = await fs.readdir(dir, { withFileTypes: true })
   } catch {
-    return skills
+    return { skills, scannedDirs }
   }
 
   for (const entry of entries) {
@@ -69,27 +77,35 @@ export async function loadSkillsFromDir(params: { dir: string; source: string })
     const fullPath = path.join(dir, entry.name)
 
     if (entry.isDirectory()) {
-      const skill = await loadSkillFromFile(path.join(fullPath, 'SKILL.md'), fullPath, source)
+      const skillPath = path.join(fullPath, 'SKILL.md')
+      const skill = await loadSkillFromFile(skillPath, fullPath, source)
       if (skill) skills.push(skill)
       // 递归子目录
       const sub = await scanSubdirs(fullPath, source)
-      skills.push(...sub)
+      skills.push(...sub.skills)
+      sub.scannedDirs.forEach((mtime, p) => scannedDirs.set(p, mtime))
     } else if (entry.name.endsWith('.md')) {
       const skill = await loadSkillFromFile(fullPath, dir, source)
       if (skill) skills.push(skill)
     }
   }
-  return skills
+  return { skills, scannedDirs }
 }
 
 /** 递归子目录扫描（仅查找 SKILL.md） */
-async function scanSubdirs(dir: string, source: string): Promise<Skill[]> {
+async function scanSubdirs(
+  dir: string,
+  source: string
+): Promise<{ skills: Skill[]; scannedDirs: Map<string, number> }> {
   const skills: Skill[] = []
+  const scannedDirs = new Map<string, number>()
   let entries: Dirent[]
   try {
+    const stats = await fs.stat(dir)
+    scannedDirs.set(path.resolve(dir), stats.mtimeMs)
     entries = await fs.readdir(dir, { withFileTypes: true })
   } catch {
-    return skills
+    return { skills, scannedDirs }
   }
   for (const entry of entries) {
     if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
@@ -98,9 +114,10 @@ async function scanSubdirs(dir: string, source: string): Promise<Skill[]> {
     const skill = await loadSkillFromFile(path.join(fullPath, 'SKILL.md'), fullPath, source)
     if (skill) skills.push(skill)
     const sub = await scanSubdirs(fullPath, source)
-    skills.push(...sub)
+    skills.push(...sub.skills)
+    sub.scannedDirs.forEach((mtime, p) => scannedDirs.set(p, mtime))
   }
-  return skills
+  return { skills, scannedDirs }
 }
 
 /**

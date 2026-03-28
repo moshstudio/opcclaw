@@ -81,15 +81,19 @@ export type MiniAgentEvent =
       isError: boolean
     }
 
-  // 业务状态
   | {
-      type: 'chat:notice'
+      type: 'notice:compact'
       runId: string
       sessionKey: string
-      text?: string
       summaryChars?: number
       droppedMessages?: number
       firstKeptEntryId?: string
+    }
+  | {
+      type: 'notice:info'
+      runId: string
+      sessionKey: string
+      text: string
     }
   | { type: 'agent:context-overflow'; runId: string; sessionKey: string; error: string }
   | {

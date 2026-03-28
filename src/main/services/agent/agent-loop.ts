@@ -172,7 +172,7 @@ export function runAgentLoop(
                 .join('').length
             }
             stream.push({
-              type: 'chat:notice',
+              type: 'notice:compact',
               runId,
               sessionKey,
               summaryChars: summaryLen,

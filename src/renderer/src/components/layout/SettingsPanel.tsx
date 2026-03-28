@@ -227,9 +227,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
               duration: 0.35,
               ease: [0.22, 1, 0.36, 1]
             }}
-            className="fixed top-0 right-0 h-full bg-background border-l z-[70] flex flex-col shadow-2xl overflow-hidden max-w-full will-change-transform"
+            className="fixed top-0 right-0 h-full bg-background border-l z-[70] flex flex-col shadow-2xl overflow-hidden max-w-full"
           >
-            <header className="h-16 flex items-center justify-between px-6 border-b shrink-0 bg-background/80 backdrop-blur-md sticky top-0 z-10">
+            <header className="h-16 flex items-center justify-between px-6 border-b shrink-0 bg-background sticky top-0 z-10">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary shadow-sm">
                   <motion.div
@@ -240,10 +240,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                   </motion.div>
                 </div>
                 <div className="flex flex-col">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-foreground/90">
+                  <h3 className="text-sm font-black uppercase tracking-widest text-foreground/90">
                     {t('common.agent_settings_title')}
                   </h3>
-                  <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-tighter truncate max-w-[150px]">
+                  <span className="text-[11px] font-bold text-muted-foreground/60 uppercase tracking-tight truncate max-w-[150px]">
                     {editingAgent?.config.name || 'Settings'}
                   </span>
                 </div>
@@ -287,13 +287,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
             <div className="px-6 border-b shrink-0 flex gap-6">
               <button
                 onClick={() => setActiveTab('settings')}
-                className={`h-12 text-[10px] font-black uppercase tracking-widest transition-all relative flex items-center gap-2 ${
+                className={`h-12 text-xs font-black uppercase tracking-widest transition-all relative flex items-center gap-2 ${
                   activeTab === 'settings'
                     ? 'text-primary'
                     : 'text-muted-foreground/60 hover:text-muted-foreground'
                 }`}
               >
-                <Settings2 className="w-3 h-3" />
+                <Settings2 className="w-3.5 h-3.5" />
                 {t('common.settings')}
                 {activeTab === 'settings' && (
                   <motion.div
@@ -304,13 +304,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
               </button>
               <button
                 onClick={() => setActiveTab('usage')}
-                className={`h-12 text-[10px] font-black uppercase tracking-widest transition-all relative flex items-center gap-2 ${
+                className={`h-12 text-xs font-black uppercase tracking-widest transition-all relative flex items-center gap-2 ${
                   activeTab === 'usage'
                     ? 'text-primary'
                     : 'text-muted-foreground/60 hover:text-muted-foreground'
                 }`}
               >
-                <Activity className="w-3 h-3" />
+                <Activity className="w-3.5 h-3.5" />
                 {t('common.usage_stats')}
                 {activeTab === 'usage' && (
                   <motion.div
@@ -388,52 +388,52 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                         <div className="grid grid-cols-1 gap-4">
                           <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10 flex flex-col gap-1">
                             <div className="flex items-center gap-2 text-primary">
-                              <Zap className="w-3 h-3" />
-                              <span className="text-[10px] font-black uppercase tracking-tighter">
+                              <Zap className="w-3.5 h-3.5" />
+                              <span className="text-xs font-black uppercase tracking-tighter">
                                 {t('common.usage_total_tokens')}
                               </span>
                             </div>
-                            <div className="text-xl font-black">
+                            <div className="text-2xl font-black">
                               {(usageStats?.totalTokens ?? 0).toLocaleString()}
                             </div>
                           </div>
                         </div>
 
                         <div className="space-y-2">
-                          <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1">
+                          <div className="text-xs font-black uppercase tracking-widest text-muted-foreground/60 px-1">
                             {t('common.usage_details')}
                           </div>
                           <div className="rounded-2xl border bg-muted/30 divide-y overflow-hidden">
                             <div className="p-4 flex justify-between items-center">
                               <div className="flex items-center gap-3">
                                 <TrendingUp className="w-4 h-4 text-emerald-500" />
-                                <span className="text-[11px] font-bold">
+                                <span className="text-sm font-bold">
                                   {t('common.usage_throughput')}
                                 </span>
                               </div>
-                              <span className="text-xs font-black">
+                              <span className="text-sm font-black">
                                 {(usageStats?.avgThroughput ?? 0).toFixed(2)} t/s
                               </span>
                             </div>
                             <div className="p-4 flex justify-between items-center">
                               <div className="flex items-center gap-3">
                                 <Clock className="w-4 h-4 text-blue-500" />
-                                <span className="text-[11px] font-bold">
+                                <span className="text-sm font-bold">
                                   {t('common.usage_avg_latency')}
                                 </span>
                               </div>
-                              <span className="text-xs font-black">
+                              <span className="text-sm font-black">
                                 {(usageStats?.avgLatencyMs ?? 0).toFixed(0)} ms
                               </span>
                             </div>
                             <div className="p-4 flex justify-between items-center text-muted-foreground/60">
                               <div className="flex items-center gap-3">
                                 <Bot className="w-4 h-4" />
-                                <span className="text-[11px] font-bold">
+                                <span className="text-sm font-bold">
                                   {t('common.usage_total_runs')}
                                 </span>
                               </div>
-                              <span className="text-xs font-black">
+                              <span className="text-sm font-black">
                                 {usageStats?.runCount ?? 0}
                               </span>
                             </div>
@@ -441,23 +441,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                         </div>
 
                         <div className="space-y-2">
-                          <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1">
+                          <div className="text-xs font-black uppercase tracking-widest text-muted-foreground/60 px-1">
                             {t('common.usage_cache_performance')}
                           </div>
                           <div className="p-4 rounded-2xl border bg-muted/30 grid grid-cols-2 gap-8 ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                             <div className="flex flex-col gap-1">
-                              <span className="text-[10px] font-bold text-muted-foreground italic tracking-tight">
+                              <span className="text-xs font-bold text-muted-foreground italic tracking-tight">
                                 {t('common.usage_cache_read')}
                               </span>
-                              <div className="text-lg font-black text-emerald-500">
+                              <div className="text-xl font-black text-emerald-500">
                                 {(usageStats?.cacheReadTokens ?? 0).toLocaleString()}
                               </div>
                             </div>
                             <div className="flex flex-col gap-1">
-                              <span className="text-[10px] font-bold text-muted-foreground italic tracking-tight">
+                              <span className="text-xs font-bold text-muted-foreground italic tracking-tight">
                                 {t('common.usage_cache_write')}
                               </span>
-                              <div className="text-lg font-black text-amber-500">
+                              <div className="text-xl font-black text-amber-500">
                                 {(usageStats?.cacheWriteTokens ?? 0).toLocaleString()}
                               </div>
                             </div>
@@ -468,10 +468,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                           <div className="p-4 rounded-2xl border border-destructive/20 bg-destructive/5 flex items-center gap-3">
                             <AlertTriangle className="w-4 h-4 text-destructive" />
                             <div className="flex flex-col">
-                              <span className="text-[10px] font-black uppercase text-destructive tracking-widest">
+                              <span className="text-xs font-black uppercase text-destructive tracking-widest">
                                 {t('common.usage_anomalies')}
                               </span>
-                              <span className="text-xs font-bold">
+                              <span className="text-sm font-bold">
                                 {usageStats.errorCount} {t('common.usage_errors_recorded')}
                               </span>
                             </div>
@@ -483,9 +483,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                           size="sm"
                           onClick={fetchUsageStats}
                           disabled={loadingUsage}
-                          className="w-full rounded-xl text-[10px] font-black uppercase tracking-widest h-9"
+                          className="w-full rounded-xl text-xs font-black uppercase tracking-widest h-10"
                         >
-                          {loadingUsage ? <Loader2 className="w-3 h-3 animate-spin mr-2" /> : null}
+                          {loadingUsage ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />
+                          ) : null}
                           {t('common.usage_refresh')}
                         </Button>
                       </>
@@ -496,7 +498,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
             </ScrollArea>
 
             {editingAgent && (
-              <div className="p-6 border-t bg-background/80 backdrop-blur-md sticky bottom-0 z-10 flex flex-col gap-3">
+              <div className="p-6 border-t bg-background sticky bottom-0 z-10 flex flex-col gap-3">
                 <Button
                   onClick={handleSave}
                   disabled={loading || !isChanged}
@@ -511,7 +513,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                   ) : (
                     <>
                       <Save className="w-4 h-4" />
-                      <span className="uppercase tracking-widest text-[11px]">
+                      <span className="uppercase tracking-widest text-xs">
                         {t('common.save_settings')}
                       </span>
                     </>
@@ -535,7 +537,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                     className="w-full h-11 font-black shadow-xl shadow-destructive/20 rounded-2xl gap-2 transition-all active:scale-[0.98] group relative overflow-hidden"
                   >
                     <Trash2 className="w-4 h-4" />
-                    <span className="uppercase tracking-widest text-[11px]">
+                    <span className="uppercase tracking-widest text-xs">
                       {t('common.delete')}
                     </span>
                   </Button>

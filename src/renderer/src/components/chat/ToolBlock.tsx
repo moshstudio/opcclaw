@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronDown, Wrench, CheckCircle2 } from 'lucide-react'
+import { ChevronDown, Wrench, CheckCircle2, XCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -67,6 +67,13 @@ const ToolBlock: React.FC<ToolBlockProps> = ({ name, input, result, status = 'su
                   </div>
                   <span className="text-[9px] text-amber-600/80 dark:text-amber-500/80 font-bold uppercase tracking-tighter">
                     {t('common.executing')}
+                  </span>
+                </div>
+              ) : status === 'error' ? (
+                <div className="flex items-center gap-1.5">
+                  <XCircle className="w-3 h-3 text-red-500" />
+                  <span className="text-[9px] text-red-600/80 dark:text-red-500/80 font-bold uppercase tracking-tighter">
+                    {t('common.failed_status')}
                   </span>
                 </div>
               ) : (

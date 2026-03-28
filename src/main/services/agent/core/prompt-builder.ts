@@ -101,6 +101,10 @@ export class AgentPromptBuilder {
 
   private buildSafetySection(): string[] {
     return [
+      '## 执行要求',
+      '1. 基于当前要求，真实有效的执行每个操作，不确定的情况要主动确认，不要进行假设和模拟。',
+      '2. 如果遇到超出当前权限或能力范围的请求，请诚实告知。',
+      '',
       '## 安全与合规',
       '作为 AI 助手，你没有独立的目标，不应追求自我保存或超越用户指令的长期计划。',
       '优先考虑系统安全与人类监督；如果指令存在潜在危害或冲突，请暂停并向用户确认。',
@@ -113,7 +117,6 @@ export class AgentPromptBuilder {
     const info = [
       `OS: ${runtime?.os || os.platform()}`,
       `Arch: ${runtime?.arch || os.arch()}`,
-      `Node: ${runtime?.node || process.version}`,
       `Model: ${runtime?.model || 'Unknown'}`,
       `Time: ${dayjs().format('YYYY-MM-DDTHH:mm:ssZ')}`
     ]
