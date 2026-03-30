@@ -19,19 +19,29 @@ import { Button } from '@renderer/components/ui/button'
 import { Card } from '@renderer/components/ui/card'
 import { toast } from 'sonner'
 import { useConfirm } from '@renderer/hooks/use-confirm'
+import { useConfigStore } from '@renderer/store/useConfigStore'
 
 const SettingsPage: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useTranslation()
   const { appSettings, setAppSetting } = useSettingsStore()
+  const { config, fetchConfig, clearRememberedChoices } = useConfigStore()
   const confirm = useConfirm()
 
   const queryParams = new URLSearchParams(location.search)
-  const initialTab = (queryParams.get('tab') as 'general' | 'models' | 'gateway' | 'skills') || 'general'
+  const initialTab =
+    (queryParams.get('tab') as 'general' | 'models' | 'gateway' | 'skills') || 'general'
   const autoAction = queryParams.get('action')
 
-  const [activeTab, setActiveTab] = useState<'general' | 'models' | 'gateway' | 'skills'>(initialTab)
+  const [activeTab, setActiveTab] = useState<'general' | 'models' | 'gateway' | 'skills'>(
+    initialTab
+  )
+
+  // Fetch config on mount
+  React.useEffect(() => {
+    if (!config) fetchConfig()
+  }, [config, fetchConfig])
 
   // Clear action query param after it's been captured to prevent re-triggering on tab switch
   React.useEffect(() => {
@@ -183,6 +193,40 @@ const SettingsPage: React.FC = () => {
                         </SelectContent>
                       </Select>
                     </Card>
+
+                    <Card className="flex items-center justify-between p-6 font-bold border-muted bg-muted/10">
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-bold tracking-tight">
+                          {t('settings.clear_remembered_choices')}
+                        </h4>
+                        <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest leading-none">
+                          {t('settings.clear_remembered_choices_desc')}
+                        </p>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="h-9 px-4 rounded-xl text-xs font-extrabold shadow-sm active:scale-95 transition-all"
+                        onClick={async () => {
+                          const isConfirmed = await confirm({
+                            title: t('settings.clear_remembered_choices'),
+                            description: t('settings.clear_remembered_choices_confirm'),
+                            confirmText: t('common.confirm')
+                          })
+                          if (isConfirmed) {
+                            try {
+                              await clearRememberedChoices()
+                              toast.success(t('common.success'))
+                            } catch (err) {
+                              console.error('Failed to clear choices:', err)
+                              toast.error('Failed to clear: ' + err)
+                            }
+                          }
+                        }}
+                      >
+                        {t('common.clear')}
+                      </Button>
+                    </Card>
                   </div>
 
                   <div className="space-y-6 pt-10 border-t border-destructive/20">
@@ -215,7 +259,7 @@ const SettingsPage: React.FC = () => {
                           if (isConfirmed) {
                             try {
                               await window.api.app.reset()
-                              toast.success(t('common.success') || 'Reset successfully')
+                              toast.success(t('common.success'))
                             } catch (err) {
                               console.error('Failed to reset app:', err)
                               toast.error('Reset failed: ' + err)

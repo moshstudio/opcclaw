@@ -97,15 +97,11 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
                 {t('common.context_tokens')}
               </label>
               <p className="text-xs leading-relaxed text-muted-foreground/50 font-medium italic">
-                决定智能体的“记忆上限”。系统会自动预留约{' '}
-                <span className="text-primary/60 font-black">
-                  {Math.round(CONTEXT_RESERVE_TOKENS / 1000)}k
-                </span>{' '}
-                作为缓冲，因此设置值建议不低于{' '}
-                <span className="text-primary/60 font-black">
-                  {Math.round(MIN_CONTEXT_TOKENS / 1000)}k
-                </span>
-                。
+                {t('common.context_tokens_desc', {
+                  reserve: Math.round(CONTEXT_RESERVE_TOKENS / 1000),
+                  min: Math.round(MIN_CONTEXT_TOKENS / 1000)
+                })}{' '}
+                {t('common.context_tokens_warning')}
               </p>
             </div>
             <div className="flex flex-wrap gap-1.5 px-1 py-1">

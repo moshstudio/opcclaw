@@ -334,7 +334,7 @@ export class SkillManager {
 
   /**
    * @param workspaceDir 工作目录（最高优先级 skill 来源）
-   * @param managedDir 用户全局目录（~/.opcclaw/skills/）
+   * @param managedDir 用户全局目录（OPCCLAW_ROOT/skills/）
    * @param builtInDir 内置技能目录 (src/main/resources/skills)
    */
   constructor(workspaceDir: string, managedDir?: string, builtInDir?: string) {
@@ -440,7 +440,8 @@ export class SkillManager {
     name: string,
     content: string
   ): Promise<void> {
-    const parentDir = target === 'workspace' ? path.join(this.workspaceDir, 'skills') : this.managedDir
+    const parentDir =
+      target === 'workspace' ? path.join(this.workspaceDir, 'skills') : this.managedDir
     const skillDirName = sanitizeCommandName(name) // 使用 sanitized name 作为目录名
     const skillDir = path.join(parentDir, skillDirName)
 

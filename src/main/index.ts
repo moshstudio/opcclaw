@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Tray, Menu } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -7,6 +7,36 @@ import { ConfigService } from './services/config/config-service'
 import { AgentRegistry } from './services/agent/registry'
 import { setSystemClosing } from './services/common/logger'
 import { initIpcServices } from './ipc'
+import { t, initI18n, changeLanguage } from './i18n'
+
+let tray: Tray | null = null
+
+function updateTrayMenu(): void {
+  if (!tray) return
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: t('common:show_window'),
+      click: (): void => {
+        const windows = BrowserWindow.getAllWindows()
+        if (windows.length > 0) {
+          windows[0].show()
+        } else {
+          createWindow()
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: t('common:quit'),
+      click: (): void => {
+        app.quit()
+      }
+    }
+  ])
+  tray.setToolTip(t('common:chat') + ' (opcclaw)')
+  tray.setContextMenu(contextMenu)
+}
 
 function createWindow(): void {
   // Create the browser window.
@@ -15,7 +45,8 @@ function createWindow(): void {
     height: 800,
     show: false,
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    title: '猫爪 (opcclaw)',
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -40,18 +71,43 @@ function createWindow(): void {
   }
 }
 
+app.setName('opcclaw')
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // --- 初始化 i18n ---
+  const locale = app.getLocale().toLowerCase()
+  await initI18n(locale.startsWith('zh') ? 'zh' : 'en')
+
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.opcclaw')
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
   // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
+  })
+
+  // --- 初始化 系统托盘 ---
+  tray = new Tray(icon)
+  updateTrayMenu()
+
+  tray.on('double-click', () => {
+    const windows = BrowserWindow.getAllWindows()
+    if (windows.length > 0) {
+      windows[0].show()
+    } else {
+      createWindow()
+    }
+  })
+
+  // --- 语言切换监听 ---
+  ipcMain.handle('app:change-language', async (_, lang: string) => {
+    await changeLanguage(lang)
+    updateTrayMenu()
   })
 
   // IPC test

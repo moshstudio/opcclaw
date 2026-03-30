@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { getGatewayClient } from '@renderer/services/gateway-client'
-import { Agent, AgentConfig, Skill } from '@shared/types/agent'
+import { Agent, AgentConfig } from '@shared/types/agent'
 import { AgentEventPayload } from '@shared/types/gateway'
 
 interface AgentState {

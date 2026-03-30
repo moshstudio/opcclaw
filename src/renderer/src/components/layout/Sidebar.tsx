@@ -84,7 +84,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
           className="flex flex-col whitespace-nowrap overflow-hidden shrink-0"
         >
           <h1 className="text-[18px] leading-[26px] font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
-            OpcClaw
+            {t('common.app_name')}
           </h1>
           <div className="flex items-center gap-[6px] mt-[2px] ml-[2px]">
             <div
@@ -98,7 +98,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
               )}
             />
             <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest shrink-0">
-              Gateway {connStatus}
+              {t('gateway.status_label')} {connStatus}
             </span>
           </div>
         </motion.div>

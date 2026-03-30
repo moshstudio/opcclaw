@@ -1,58 +1,32 @@
-import type { ContentBlock, Message } from '@shared/types/agent'
+import type { Message } from '@shared/types/agent'
+import { getEncoding } from 'js-tiktoken'
 
-export const CHARS_PER_TOKEN_ESTIMATE = 4
-
-function estimateBlockChars(block: ContentBlock): number {
-  if (block.type === 'text') {
-    return block.text?.length ?? 0
-  }
-  if (block.type === 'thinking') {
-    return block.thinking?.length ?? 0
-  }
-  if (block.type === 'toolCall') {
-    const base = block.name?.length ?? 0
-    try {
-      const args = block.arguments ? JSON.stringify(block.arguments) : ''
-      return base + args.length + 16
-    } catch {
-      return base + 128
-    }
-  }
-  if (block.type === 'toolResult') {
-    return estimateContentChars(block.content)
-  }
-  if (block.type === 'subagent') {
-    return (block.subagent?.task?.length || 0) + (block.subagent?.summary?.length || 0) + 32
-  }
-  return 0
-}
-
-function estimateContentChars(content: any): number {
-  if (typeof content === 'string') return content.length
-  if (Array.isArray(content)) {
-    return content.reduce((sum, b) => sum + estimateBlockChars(b as ContentBlock), 0)
-  }
-  return 0
-}
-
-export function estimateMessageChars(message: Message): number {
-  if (typeof message.content === 'string') {
-    return message.content.length
-  }
-  let total = 0
-  for (const block of message.content) {
-    total += estimateBlockChars(block)
-  }
-  return total
-}
-
-export function estimateMessagesChars(messages: Message[]): number {
-  return messages.reduce((sum, msg) => sum + estimateMessageChars(msg), 0)
-}
+const tokenizer = getEncoding('cl100k_base')
 
 export function estimateMessageTokens(message: Message): number {
-  const chars = estimateMessageChars(message)
-  return Math.max(1, Math.ceil(chars / CHARS_PER_TOKEN_ESTIMATE))
+  if (message.usage && typeof message.usage.output === 'number' && message.usage.output > 0) {
+    return message.usage.output
+  }
+  let rawText = ''
+  if (typeof message.content === 'string') {
+    rawText = message.content
+  } else {
+    // 对于复杂的 Array 结构（包含 ToolCall, ToolResult, Thinking 等），
+    // 采用全量 JSON 序列化能最真实地模拟传输给 LLM 的 Payload 体积及 Token 权重。
+    try {
+      rawText = JSON.stringify(message.content)
+    } catch {
+      rawText = String(message.content)
+    }
+  }
+
+  // 加上一点通信开销 (role, framings 等)
+  try {
+    return Math.max(1, tokenizer.encode(rawText).length + 4)
+  } catch (err) {
+    // 降级使用传统的粗糙长度估算
+    return Math.max(1, Math.ceil(rawText.length / 4))
+  }
 }
 
 export function estimateMessagesTokens(messages: Message[]): number {

@@ -68,15 +68,16 @@ export const handleChatRespondInteraction: Handler = async (params, _client, ctx
   const check = ensureParams(params, {
     agentId: 'string',
     interactionId: 'string',
-    result: 'boolean'
+    result: 'boolean',
+    remember: 'boolean?'
   })
   if (!check.ok) return check
 
-  const { agentId, interactionId, result } = check.values
+  const { agentId, interactionId, result, remember } = check.values
   const res = getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
   const { agent } = res
-  agent.respondInteraction(interactionId, !!result)
+  agent.respondInteraction(interactionId, !!result, !!remember)
   return { ok: true, payload: { agentId, interactionId } }
 }

@@ -9,6 +9,7 @@
   "refresh_token_title": "重置令牌",
   "refresh_token_confirm": "确定要重置网关令牌吗？外部应用将需要更新配置。",
   "external_access_only": "仅用于外部接入",
+  "status_label": "网关",
   "documentation": "对接文档",
   "doc_title": "BEM 接口对接文档",
   "doc_subtitle": "JSON Metadata API",

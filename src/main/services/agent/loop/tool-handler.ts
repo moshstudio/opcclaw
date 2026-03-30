@@ -1,4 +1,5 @@
 import type { ToolResultMessage, ToolCall } from '@mariozechner/pi-ai'
+import { newShortId } from '@shared/utils/id'
 
 import type { Tool, ToolContext } from '@main/services/tools/types'
 import type { EventStream } from '@mariozechner/pi-ai'
@@ -36,6 +37,8 @@ export async function executeToolCalls(
       isError = true
     }
 
+    const messageId = newShortId()
+
     stream.push({
       type: 'chat:toolResult',
       runId,
@@ -43,18 +46,20 @@ export async function executeToolCalls(
       toolCallId: call.id,
       toolName: call.name,
       content: [{ type: 'text', text: result }],
-      isError
+      isError,
+      messageId: messageId
     })
 
     metrics.recordToolCall()
     toolResults.push({
+      id: messageId,
       role: 'toolResult',
       toolCallId: call.id,
       toolName: call.name,
       content: [{ type: 'text', text: result }],
       isError,
       timestamp: Date.now()
-    })
+    } as ToolResultMessage)
   }
 
   return toolResults

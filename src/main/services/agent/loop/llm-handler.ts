@@ -19,6 +19,7 @@ import type { MetricsTracker } from './metrics'
 export interface ExecuteLlmParams {
   runId: string
   sessionKey: string
+  messageId: string
   modelDef: Model<Api>
   streamFn: StreamFunction
   apiKey?: string
@@ -47,6 +48,7 @@ export async function executeLlmCall(
   const {
     runId,
     sessionKey,
+    messageId,
     modelDef,
     streamFn,
     apiKey,
@@ -79,7 +81,8 @@ export async function executeLlmCall(
               type: 'chat:thinking',
               runId,
               sessionKey,
-              delta: event.delta
+              delta: event.delta,
+              messageId
             })
             break
 
@@ -89,7 +92,8 @@ export async function executeLlmCall(
               type: 'chat:delta',
               runId,
               sessionKey,
-              delta: event.delta
+              delta: event.delta,
+              messageId
             })
             break
 
@@ -100,7 +104,8 @@ export async function executeLlmCall(
               sessionKey,
               toolCallId: event.toolCall.id,
               toolName: event.toolCall.name,
-              arguments: event.toolCall.arguments
+              arguments: event.toolCall.arguments,
+              messageId
             })
             break
 
@@ -139,7 +144,8 @@ export async function executeLlmCall(
           sessionKey,
           attempt,
           delay,
-          error: describeError(error)
+          error: describeError(error),
+          messageId
         })
       }
     }

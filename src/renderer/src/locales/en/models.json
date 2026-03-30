@@ -13,5 +13,6 @@
   "save_config": "Save Configuration",
   "supports_vision": "Multi-modal Vision",
   "supports_vision_desc": "Indicate if this specific model supports vision tasks. The system will enable image features accordingly.",
-  "empty": "No models configured"
+  "empty": "No models configured",
+  "vision_badge": "Vision"
 }

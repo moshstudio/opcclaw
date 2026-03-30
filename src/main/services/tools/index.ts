@@ -16,6 +16,7 @@ export {
   memoryGetTool,
   memorySaveTool,
   sessionsSpawnTool,
-  scheduleTaskTool
+  scheduleTaskTool,
+  browserTool
 } from './builtin'
 export { combineAbortSignals, wrapToolWithAbortSignal, abortable } from './abort'

@@ -38,6 +38,8 @@ function AppContent(): React.JSX.Element {
   useEffect(() => {
     if (i18n.language !== appSettings.language) {
       i18n.changeLanguage(appSettings.language)
+      // 同步给主进程 (用于托盘菜单等)
+      window.api.app.changeLanguage(appSettings.language)
     }
   }, [appSettings.language, i18n])
 

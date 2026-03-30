@@ -79,7 +79,10 @@ export const ToolSection: React.FC<SettingsSectionProps> = ({
               onClick={() => refresh()}
             >
               <RefreshCw
-                className={cn('w-3.5 h-3.5 mr-1.5 text-muted-foreground/40', loading && 'animate-spin')}
+                className={cn(
+                  'w-3.5 h-3.5 mr-1.5 text-muted-foreground/40',
+                  loading && 'animate-spin'
+                )}
               />
               {t('common.refresh_config')}
             </Button>

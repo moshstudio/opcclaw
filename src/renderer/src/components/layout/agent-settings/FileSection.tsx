@@ -162,9 +162,9 @@ export const FileSection: React.FC<SettingsSectionProps & { agentId: string }> =
                     <SelectItem key={file.name} value={file.name} className="text-sm py-2.5">
                       <div className="flex items-center justify-between w-full gap-4">
                         <span className="truncate">{file.name}</span>
-                         {file.missing && (
+                        {file.missing && (
                           <span className="text-[9px] font-bold uppercase text-destructive/80 bg-destructive/10 px-1 py-0.5 rounded border border-destructive/20 ml-2">
-                             {t('common.missing')}
+                            {t('common.missing')}
                           </span>
                         )}
                       </div>

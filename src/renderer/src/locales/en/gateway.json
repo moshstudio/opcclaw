@@ -13,5 +13,6 @@
   "doc_title": "BEM API Documentation",
   "doc_subtitle": "JSON Metadata API",
   "view_now": "View Now",
-  "copy_link": "Copy Link"
+  "copy_link": "Copy Link",
+  "status_label": "Gateway"
 }

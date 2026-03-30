@@ -136,7 +136,7 @@ export class ConfigService {
     return path.join(this.getAgentsRootDir(), agentId)
   }
 
-  /** 获取全局技能目录 (~/.opcclaw/skills) */
+  /** 获取全局技能目录 (OPCCLAW_ROOT/skills) */
   public getGlobalSkillsDir(): string {
     return path.join(OPCCLAW_ROOT, 'skills')
   }

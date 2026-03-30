@@ -68,6 +68,8 @@
   "name_exists": "Name already exists",
   "reasoning": "Reasoning Level",
   "context_tokens": "Context Window (Tokens)",
+  "context_tokens_desc": "Sets the memory limit with a {{reserve}}k reserve. History is auto-compressed when exceeded.",
+  "context_tokens_warning": "Note: Token counts are estimates; small values cause frequent compression.",
   "max_turns": "Max Turns",
   "enable_memory": "Memory (LTR/STR)",
   "enable_skills": "Skills System",
@@ -213,5 +215,10 @@
   "duplicate_message": "Duplicate",
   "callback_error": "Logic Error",
   "requests_in_flight": "In Flight",
-  "path": "Path"
+  "path": "Path",
+  "clear": "Clear",
+  "remember_choice": "Remember my choice",
+  "show_window": "Show Window",
+  "quit": "Quit",
+  "app_name": "OpcClaw"
 }

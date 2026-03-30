@@ -1,13 +1,6 @@
-import {
-  Message,
-  AssistantMessage,
-  ChatStatus,
-  ToolResultMessage,
-  AgentThinkingBlock,
-  AgentTextBlock
-} from '@shared/types/agent'
+import { Message, AssistantMessage, ChatStatus, ToolResultMessage } from '@shared/types/agent'
 import { ChatPayload, ChatState as GatewayChatState } from '@shared/types/gateway'
-import { normalizeMessage } from '@shared/utils/message'
+import { normalizeMessage, normalizeContentBlock } from '@shared/utils/message'
 
 // ============================================================================
 // 1. Types & Constants
@@ -47,25 +40,30 @@ const STATUS_MAP: Partial<Record<GatewayChatState, ChatStatus>> = {
 // 2. Atomic Utilities
 // ============================================================================
 
+// ============================================================================
+// 2. Atomic Utilities
+// ============================================================================
+
 /** 历史消息解析与类型归一化 */
 export const mapHistoryMessage = (m: Record<string, unknown>): Message => normalizeMessage(m)
 
-/** 寻找指定运行中最后一条匹配类型的 Assistant 消息 */
-const findLastSequenceMessage = (
-  messages: Message[],
-  runId: string | undefined,
-  contentType: 'text' | 'thinking'
-): AssistantMessage | null => {
-  const last = messages[messages.length - 1]
-  if (
-    last?.role === 'assistant' &&
-    (!runId || last.runId === runId) &&
-    last.content.length > 0 &&
-    last.content[last.content.length - 1].type === contentType
-  ) {
-    return last as AssistantMessage
-  }
-  return null
+/** 查找或创建一个用于追加内容的 Assistant 消息 (非纯函数，直接操作 msgs 数组) */
+function ensureAssistant(p: ChatPayload, msgs: Message[]): AssistantMessage {
+  const target = (p.messageId ? msgs.find((m) => m.id === p.messageId) : undefined) as
+    | AssistantMessage
+    | undefined
+
+  if (target) return target
+
+  // 如果没找到，创建一个初始占位
+  const newMsg = normalizeMessage({
+    id: p.messageId,
+    role: 'assistant',
+    runId: p.runId,
+    content: []
+  }) as AssistantMessage
+  msgs.push(newMsg)
+  return newMsg
 }
 
 // ============================================================================
@@ -78,11 +76,12 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
   userMessage: (p, msgs) => {
     if (p.message && !msgs.some((m) => m.id === p.message?.id)) {
       msgs.push(normalizeMessage({ ...p.message, timestamp: p.message.timestamp || Date.now() }))
+      // 保持消息列表按发生时间的自然顺序排列
+      msgs.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0))
     }
   },
 
   start: (p, msgs) => {
-    // 启动时不一定有消息，但如果带了消息包，作为该次运行的基础
     if (p.message) {
       msgs.push(normalizeMessage({ ...p.message, runId: p.runId }))
     }
@@ -90,61 +89,45 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
 
   thinking: (p, msgs) => {
     const text = p.delta || ''
-    const existing = findLastSequenceMessage(msgs, p.runId, 'thinking')
-    if (existing) {
-      const lastBlock = existing.content[existing.content.length - 1] as AgentThinkingBlock
+    const msg = ensureAssistant(p, msgs)
+    const lastBlock = msg.content[msg.content.length - 1]
+
+    if (lastBlock?.type === 'thinking') {
       lastBlock.thinking = (lastBlock.thinking || '') + text
     } else {
-      msgs.push(
-        normalizeMessage({
-          role: 'assistant',
-          runId: p.runId,
-          content: [{ type: 'thinking', thinking: text }]
-        })
-      )
+      msg.content.push({ type: 'thinking', thinking: text })
     }
   },
 
   delta: (p, msgs) => {
     const text = p.delta || ''
-    const existing = findLastSequenceMessage(msgs, p.runId, 'text')
-    if (existing) {
-      const lastBlock = existing.content[existing.content.length - 1] as AgentTextBlock
+    const msg = ensureAssistant(p, msgs)
+    const lastBlock = msg.content[msg.content.length - 1]
+
+    if (lastBlock?.type === 'text') {
       lastBlock.text = (lastBlock.text || '') + text
     } else {
-      msgs.push(
-        normalizeMessage({
-          role: 'assistant',
-          runId: p.runId,
-          content: [{ type: 'text', text }]
-        })
-      )
+      msg.content.push({ type: 'text', text })
     }
   },
 
   retrying: (p, msgs, patch) => {
-    // 重试通常可以视为一种特殊的 thinking 片段
     ChatSubHandlers.thinking?.(p, msgs, patch)
   },
 
   toolCall: (p, msgs) => {
-    if (p.toolCall) {
-      msgs.push(
-        normalizeMessage({
-          role: 'assistant',
-          runId: p.runId,
-          content: [{ type: 'toolCall', ...p.toolCall }]
-        })
-      )
-    }
+    if (!p.toolCall) return
+    const msg = ensureAssistant(p, msgs)
+    msg.content.push({ type: 'toolCall', ...p.toolCall })
   },
 
   toolResult: (p, msgs, patch) => {
     if (!p.toolResult) return
-    const { toolCallId, content, toolName, isError } = p.toolResult
+    const { toolCallId, content, toolName, isError, messageId } = p.toolResult
     patch.toolResults[toolCallId] = content
 
     const resultMsg = normalizeMessage({
+      id: messageId,
       role: 'toolResult',
       runId: p.runId,
       toolCallId,
@@ -154,7 +137,6 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
       timestamp: Date.now()
     }) as ToolResultMessage
 
-    // 搜索 toolCall 所在的消息位置（按商用标准，从后往前查找同 runId 下的对应 call）
     const callIdx = msgs.findLastIndex(
       (m) =>
         m.role === 'assistant' &&
@@ -163,7 +145,6 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
     )
 
     if (callIdx !== -1) {
-      // 插入到 toolCall 消息的下一条
       msgs.splice(callIdx + 1, 0, resultMsg)
     } else {
       msgs.push(resultMsg)
@@ -171,24 +152,25 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
   },
 
   final: (p, msgs) => {
-    // 运行结束，将 performance 指标附加到该运行产生的最后一条 Assistant 消息上
-    const lastAsst = msgs.findLast(
-      (m) => m.role === 'assistant' && (!p.runId || m.runId === p.runId)
-    ) as AssistantMessage | undefined
-    if (lastAsst) {
-      if (p.performance) lastAsst.performance = p.performance
+    const target = (p.messageId ? msgs.find((m) => m.id === p.messageId) : undefined) as
+      | AssistantMessage
+      | undefined
+
+    if (target) {
+      if (p.performance) target.performance = p.performance
       if (p.message) {
-        const { id, content, ...rest } = p.message as AssistantMessage
-        Object.assign(lastAsst, rest)
+        const { content, ...rest } = p.message as AssistantMessage
+        Object.assign(target, rest)
+        if (content?.length > 0) {
+          target.content = content.map(normalizeContentBlock)
+        }
       }
-      lastAsst._isFinished = true
+      target._isFinished = true
     }
   },
 
   interaction: (p, _msgs, patch) => {
-    if (p.interaction) {
-      patch.interaction = p.interaction
-    }
+    if (p.interaction) patch.interaction = p.interaction
   }
 }
 

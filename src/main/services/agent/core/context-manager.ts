@@ -8,6 +8,8 @@ import type { SessionManager, Message } from '@main/services/session/session'
 import { estimateMessagesTokens } from '@main/services/context/index'
 import type { Model, Api } from '@mariozechner/pi-ai'
 import type { MiniAgentEvent } from '../agent-events'
+import { CONTEXT_RESERVE_TOKENS } from '@shared/types/agent'
+import { Logger } from '@main/services/common/logger'
 
 export interface ContextManagerOptions {
   sessionManager: SessionManager
@@ -23,6 +25,7 @@ export interface ContextManagerOptions {
  * 负责会话消息的压缩、裁剪与总结，确保不超出 LLM 的 Token 限制。
  */
 export class AgentContextManager {
+  private logger = new Logger('[ContextManager]')
   constructor(private options: ContextManagerOptions) {}
 
   /**
@@ -37,10 +40,12 @@ export class AgentContextManager {
     summary?: string
     summaryMessage?: Message
   }> {
+    const effectiveLimit = Math.max(0, this.options.contextTokens - CONTEXT_RESERVE_TOKENS)
+
     const compacted = await compactHistoryIfNeeded({
       summarize: this.createSummarizeFn(),
       messages: params.messages,
-      contextWindowTokens: this.options.contextTokens
+      contextWindowTokens: effectiveLimit
     })
 
     // 如果产生了总结，则执行持久化
@@ -64,21 +69,21 @@ export class AgentContextManager {
   ): Promise<void> {
     if (!result.summary) return
 
-    let firstKeptEntryId: string | undefined
+    let firstKeptId: string | undefined
     for (const msg of result.pruneResult.messages) {
       const candidate = this.options.sessionManager.resolveMessageEntryId(params.sessionKey, msg)
       if (candidate) {
-        firstKeptEntryId = candidate
+        firstKeptId = msg.id || candidate
         break
       }
     }
 
-    if (firstKeptEntryId) {
+    if (firstKeptId) {
       const tokensBefore = estimateMessagesTokens(params.messages)
       await this.options.sessionManager.appendCompaction(
         params.sessionKey,
         result.summary,
-        firstKeptEntryId,
+        firstKeptId,
         tokensBefore
       )
 
@@ -89,7 +94,7 @@ export class AgentContextManager {
         sessionKey: params.sessionKey,
         summaryChars: result.summary.length,
         droppedMessages: result.pruneResult.droppedMessages.length,
-        firstKeptEntryId
+        firstKeptId
       })
 
       // 2. 发出总结消息事件（用于 UI 渲染总结卡片）
@@ -98,11 +103,12 @@ export class AgentContextManager {
           type: 'chat:userMessage',
           runId: params.runId,
           sessionKey: params.sessionKey,
-          message: result.summaryMessage
+          message: result.summaryMessage,
+          messageId: result.summaryMessage.id!
         })
       }
     } else {
-      console.warn('[ContextManager] 无法定位 compaction 的 firstKeptEntryId，已跳过持久化。')
+      console.warn('[ContextManager] 无法定位 compaction 的 firstKeptId，已跳过持久化。')
     }
   }
 
@@ -139,5 +145,70 @@ export class AgentContextManager {
     if (config.modelDef !== undefined) this.options.modelDef = config.modelDef
     if (config.apiKey !== undefined) this.options.apiKey = config.apiKey
     if (config.contextTokens !== undefined) this.options.contextTokens = config.contextTokens
+  }
+
+  /**
+   * 统一的：上下文容量溢出检查、主动压缩与新消息注入的流水线。
+   * 支持外部循环和主入口分别调用。
+   */
+  async enforceContextLimitsAndInject(params: {
+    messages: Message[]
+    pendingMessages: Message[]
+    sessionKey: string
+    runId: string
+    protectLastMessage?: boolean
+    compactionSummary?: Message
+  }): Promise<{
+    currentMessages: Message[]
+    compactionSummary?: Message
+  }> {
+    const effectiveLimit = Math.max(0, this.options.contextTokens - CONTEXT_RESERVE_TOKENS)
+
+    // 计算 Token (如果保护最后一条物理消息，则切出再算，并补充已有 summary的占用)
+    const messagesToMeasure = params.protectLastMessage
+      ? params.messages.slice(0, -1)
+      : params.messages
+    const historyTokens =
+      estimateMessagesTokens(messagesToMeasure) +
+      (params.compactionSummary ? estimateMessagesTokens([params.compactionSummary]) : 0)
+
+    let compactionSummary = params.compactionSummary
+    let currentMessages = [...params.messages]
+
+    const shouldCompact = historyTokens >= effectiveLimit
+    this.logger.debug(
+      `[EnforceContext] 历史 Token: ${historyTokens}, 限制: ${effectiveLimit}, 是否需要压缩: ${shouldCompact}`
+    )
+
+    if (shouldCompact) {
+      // 执行压缩
+      const compact = await this.prepareMessages({
+        messages: currentMessages,
+        sessionKey: params.sessionKey,
+        runId: params.runId
+      })
+
+      if (compact.summaryMessage) {
+        compactionSummary = compact.summaryMessage
+        // 重新挂载被 sessionManager 物理修剪过的内容，以确保当前内存和 DB 同步
+        const updatedHistory = await this.options.sessionManager.load(params.sessionKey)
+        currentMessages = [...updatedHistory.messages]
+
+        const afterTokens = estimateMessagesTokens(currentMessages)
+        this.logger.debug(
+          `[EnforceContext] 压缩完成！压缩后历史 Token 为: ${afterTokens} (之前: ${historyTokens})`
+        )
+      }
+    }
+
+    // 正式注入并持久化所有新待办的消息
+    if (params.pendingMessages.length > 0) {
+      for (const msg of params.pendingMessages) {
+        await this.options.sessionManager.append(params.sessionKey, msg)
+        currentMessages.push(msg)
+      }
+    }
+
+    return { currentMessages, compactionSummary }
   }
 }

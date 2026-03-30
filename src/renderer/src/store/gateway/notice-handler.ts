@@ -1,35 +1,50 @@
 import { NoticePayload } from '@shared/types/gateway'
 import { SessionPatch } from './chat-handler'
+import { toast } from 'sonner'
 
 /**
  * Notice 事件专门处理器
  * 职责：处理 notice:compact, notice:info 等业务提示类事件，实现与主聊天逻辑解耦。
  */
 export const applyNoticeEvent = (payload: NoticePayload, patch: SessionPatch): SessionPatch => {
-  const { type } = payload
+  const { type, firstKeptId, text, delta, error } = payload
 
   switch (type) {
-    case 'notice:compact':
-      // 逻辑：如果有 firstKeptEntryId，则从消息列表中裁剪掉该 ID 之前的消息
-      if (payload.firstKeptEntryId) {
-        const { messages } = patch
-        const idx = messages.findIndex((m) => m.id === (payload.firstKeptEntryId as string))
-        if (idx !== -1) {
-          // 修改 patch 中的 messages 引用
-          patch.messages = messages.slice(idx)
-        }
+    case 'notice:compact': {
+      if (!firstKeptId) break
+
+      const idx = patch.messages.findIndex((m) => m.id === firstKeptId)
+      // 如果找到索引且不是第 0 条（说明有消息需要被裁掉）
+      if (idx > 0) {
+        patch.messages = patch.messages.slice(idx)
+      }
+      toast.info('对话历史由于过长已被归档压缩', {
+        position: 'top-center',
+        duration: 3000
+      })
+      break
+    }
+
+    case 'notice:info':
+      if (text || delta) {
+        toast.success(text || delta, { position: 'bottom-right' })
       }
       break
 
-    case 'notice:info':
-      // 处理普通信息提示，例如“指令已注入”
-      // 在这里可以通过 console 记录，未来可扩展为全局 Toast 或 Snackbar
-      console.info(
-        `[Notice:Info] ${payload.text || payload.delta || payload.error || 'Notification received'}`
-      )
+    case 'notice:warning':
+      if (text || delta) {
+        toast.warning(text || delta, { position: 'bottom-right' })
+      }
+      break
+
+    case 'notice:error':
+      if (error || text) {
+        toast.error(error || text, { position: 'bottom-right', duration: 5000 })
+      }
       break
 
     default:
+      if (text || delta) console.log(`[Notice:${type}]`, text || delta)
       break
   }
 

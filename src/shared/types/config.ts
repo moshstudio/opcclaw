@@ -17,4 +17,5 @@ export interface AppConfig {
   models: AIModelConfig[]
   gateway: GatewaySettings
   defaultModelId?: string
+  rememberedChoices?: Record<string, boolean>
 }

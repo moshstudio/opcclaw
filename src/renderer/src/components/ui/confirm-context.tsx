@@ -6,10 +6,16 @@ export interface ConfirmOptions {
   confirmText?: string
   cancelText?: string
   variant?: 'default' | 'destructive'
+  showRemember?: boolean
+}
+
+export interface ConfirmResult {
+  confirmed: boolean
+  remember: boolean
 }
 
 export interface ConfirmContextType {
-  confirm: (options: ConfirmOptions) => Promise<boolean>
+  confirm: (options: ConfirmOptions) => Promise<ConfirmResult>
 }
 
 export const ConfirmContext = React.createContext<ConfirmContextType | undefined>(undefined)
@@ -18,16 +24,16 @@ export const ConfirmContext = React.createContext<ConfirmContextType | undefined
  * 全局提示服务单例 (Commercial Singleton)
  * 允许在 Zustand Store 或非 React 环境中调用 UI 对话框
  */
-let globalConfirmFn: ((options: ConfirmOptions) => Promise<boolean>) | null = null
+let globalConfirmFn: ((options: ConfirmOptions) => Promise<ConfirmResult>) | null = null
 
 export const ConfirmService = {
   _set(fn: typeof globalConfirmFn) {
     globalConfirmFn = fn
   },
-  async confirm(options: ConfirmOptions): Promise<boolean> {
+  async confirm(options: ConfirmOptions): Promise<ConfirmResult> {
     if (!globalConfirmFn) {
       console.warn('[ConfirmService] confirm called before its provider was mounted.')
-      return Promise.resolve(false)
+      return Promise.resolve({ confirmed: false, remember: false })
     }
     return globalConfirmFn(options)
   }

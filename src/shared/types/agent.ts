@@ -73,7 +73,11 @@ export interface ToolContext {
     stop: () => void
     trigger: () => Promise<any>
   }
-  confirm?: (prompt: string, options?: string[]) => Promise<boolean>
+  confirmUI?: (
+    prompt: string,
+    options?: string[],
+    rememberKey?: string
+  ) => Promise<{ result: boolean; remember: boolean }>
   allowedPaths?: string[]
   abortSignal?: AbortSignal
 }

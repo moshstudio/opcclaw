@@ -138,16 +138,23 @@ export const applyGatewayEvent = (
       }
       break
 
-    case 'chat':
-    case 'notice': {
-      const p = payload as ChatPayload | NoticePayload
+    case 'chat': {
+      const p = payload as ChatPayload
       if (p.sessionKey) {
         const sk = p.sessionKey
         const snapshot = getSessionSnapshot(state, updates, sk)
-        const patch =
-          event === 'chat'
-            ? applyChatEvent(p as ChatPayload, snapshot)
-            : applyNoticeEvent(p as NoticePayload, snapshot)
+        const patch = applyChatEvent(p, snapshot)
+        mergePatch(state, updates, sk, patch)
+      }
+      break
+    }
+
+    case 'notice': {
+      const p = payload as NoticePayload
+      if (p.sessionKey) {
+        const sk = p.sessionKey
+        const snapshot = getSessionSnapshot(state, updates, sk)
+        const patch = applyNoticeEvent(p, snapshot)
         mergePatch(state, updates, sk, patch)
       }
       break

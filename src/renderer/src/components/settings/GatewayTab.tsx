@@ -18,17 +18,13 @@ import { Card } from '@renderer/components/ui/card'
 import { cn } from '@renderer/lib/utils'
 
 import { useConfirm } from '@renderer/hooks/use-confirm'
-
-interface GatewaySettings {
-  port: number
-  token: string
-}
+import { useConfigStore } from '@renderer/store/useConfigStore'
 
 const GatewayTab: React.FC = () => {
   const { t } = useTranslation()
   const confirm = useConfirm()
-  const [config, setConfig] = useState<{ gateway: GatewaySettings } | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { config, loading, updateConfig, fetchConfig } = useConfigStore()
+
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showToken, setShowToken] = useState(false)
@@ -55,40 +51,23 @@ const GatewayTab: React.FC = () => {
       if (isConfirmed) {
         const newToken =
           Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-        setConfig({ ...config, gateway: { ...config.gateway, token: newToken } })
+        updateConfig({ gateway: { ...config.gateway, token: newToken } })
       }
     }
   }
 
   useEffect(() => {
-    const fetchConfig = async () => {
-      try {
-        const { getGatewayClient } = await import('@renderer/services/gateway-client')
-        const res = await getGatewayClient().request<any>('config:get', {})
-        if (res) {
-          setConfig(res)
-        }
-      } catch (err) {
-        console.error('Failed to fetch config via gateway:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchConfig()
-  }, [])
+    if (!config) fetchConfig()
+  }, [config, fetchConfig])
 
   const handleSave = async () => {
     if (!config) return
     setSaving(true)
 
     try {
+      // 触发重连 (由于 store 已经更新了 config)
       const { getGatewayClient } = await import('@renderer/services/gateway-client')
       const client = getGatewayClient()
-
-      // 1. 通过 Gateway 保存新配置
-      await client.request('config:save', config)
-
-      // 2. 触发重连 (因为修改了端口或 Token)
       client.close()
     } catch (err) {
       console.warn('Failed to save config via gateway:', err)
@@ -153,9 +132,7 @@ const GatewayTab: React.FC = () => {
               <label className="text-xs text-muted-foreground ml-1">{t('gateway.port')}</label>
               <NumberInput
                 value={config.gateway.port}
-                onChange={(val) =>
-                  setConfig({ ...config, gateway: { ...config.gateway, port: val } })
-                }
+                onChange={(val) => updateConfig({ gateway: { ...config.gateway, port: val } })}
               />
             </div>
 

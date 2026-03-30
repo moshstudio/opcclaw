@@ -3,7 +3,7 @@
  */
 
 import type { ContentBlock, Message, AgentToolResultBlock } from '@shared/types/agent'
-import { CHARS_PER_TOKEN_ESTIMATE, estimateMessageChars, estimateMessagesChars } from './tokens'
+import { estimateMessageTokens, estimateMessagesTokens } from './tokens'
 
 // ============== 工具可修剪性判定 ==============
 
@@ -77,10 +77,10 @@ export type PruneResult = {
   droppedMessages: Message[]
   trimmedToolResults: number
   hardClearedToolResults: number
-  totalChars: number
-  keptChars: number
-  droppedChars: number
-  budgetChars: number
+  totalTokens: number
+  keptTokens: number
+  droppedTokens: number
+  budgetTokens: number
 }
 
 export function resolvePruningSettings(
@@ -193,11 +193,11 @@ function applyHardClear(
   messages: Message[],
   settings: ContextPruningSettings,
   isPrunable: (toolName: string) => boolean,
-  charWindow: number
+  contextWindowTokens: number
 ): { messages: Message[]; hardClearedToolResults: number } {
   if (!settings.hardClear.enabled) return { messages, hardClearedToolResults: 0 }
-  let totalChars = estimateMessagesChars(messages)
-  if (totalChars / charWindow < settings.hardClearRatio)
+  let totalTokens = estimateMessagesTokens(messages)
+  if (totalTokens / contextWindowTokens < settings.hardClearRatio)
     return { messages, hardClearedToolResults: 0 }
   if (countPrunableToolChars(messages, isPrunable) < settings.minPrunableToolChars)
     return { messages, hardClearedToolResults: 0 }
@@ -210,11 +210,23 @@ function applyHardClear(
       if (block.type === 'toolResult' && !isBlockProtected(block)) {
         const textLen = getContentText(block.content).length
         if ((!block.toolName || isPrunable(block.toolName)) && textLen > 0) {
-          if (totalChars / charWindow >= settings.hardClearRatio) {
+          if (totalTokens / contextWindowTokens >= settings.hardClearRatio) {
             hardClearedToolResults++
-            totalChars -= textLen - settings.hardClear.placeholder.length
+
+            const oldTokens = estimateMessageTokens({
+              role: 'toolResult',
+              content: block.content
+            } as Message)
+            const newContent = [{ type: 'text', text: settings.hardClear.placeholder }]
+            const newTokens = estimateMessageTokens({
+              role: 'toolResult',
+              content: newContent as ContentBlock[]
+            } as Message)
+
+            totalTokens -= oldTokens - newTokens
+
             didChange = true
-            return { ...block, content: [{ type: 'text', text: settings.hardClear.placeholder }] }
+            return { ...block, content: newContent }
           }
         }
       }
@@ -239,14 +251,14 @@ function findAssistantCutoffIndex(messages: Message[], keepLastAssistants: numbe
   return null
 }
 
-function sliceWithinBudget(messages: Message[], budgetChars: number): Message[] {
+function sliceWithinBudget(messages: Message[], budgetTokens: number): Message[] {
   const kept: Message[] = []
-  let used = 0
+  let usedTokens = 0
   for (let i = messages.length - 1; i >= 0; i--) {
-    const chars = estimateMessageChars(messages[i])
-    if (used + chars > budgetChars && kept.length > 0) break
+    const tokens = estimateMessageTokens(messages[i])
+    if (usedTokens + tokens > budgetTokens && kept.length > 0) break
     kept.push(messages[i])
-    used += chars
+    usedTokens += tokens
   }
   return kept.reverse()
 }
@@ -259,68 +271,92 @@ export function pruneContextMessages(params: {
   settings?: Partial<ContextPruningSettings>
 }): PruneResult {
   const settings = resolvePruningSettings(params.settings)
-  const charWindow = params.contextWindowTokens * CHARS_PER_TOKEN_ESTIMATE
-  const budgetChars = Math.floor(charWindow * settings.maxHistoryShare)
+  // 我们弃用 charWindow，全面改用基于 estimateMessagesTokens 的真实 Token 数量进行预算裁剪
+  const currentTokens = estimateMessagesTokens(params.messages)
+  const budgetTokens = Math.floor(params.contextWindowTokens * settings.maxHistoryShare)
   const isPrunable = makeToolPrunablePredicate(settings.tools)
 
   let current = params.messages
   let trimmedToolResults = 0
   let hardClearedToolResults = 0
 
-  if (estimateMessagesChars(current) / charWindow > settings.softTrimRatio) {
+  if (currentTokens / params.contextWindowTokens > settings.softTrimRatio) {
     const res = applySoftTrim(current, settings, isPrunable)
     current = res.messages
     trimmedToolResults = res.trimmedToolResults
   }
 
-  if (estimateMessagesChars(current) / charWindow > settings.hardClearRatio) {
-    const res = applyHardClear(current, settings, isPrunable, charWindow)
+  if (estimateMessagesTokens(current) / params.contextWindowTokens > settings.hardClearRatio) {
+    const res = applyHardClear(current, settings, isPrunable, params.contextWindowTokens)
     current = res.messages
     hardClearedToolResults = res.hardClearedToolResults
   }
 
-  const afterClearChars = estimateMessagesChars(current)
-  if (afterClearChars <= budgetChars) {
+  // ======== 统一修复提取断裂的 Tool 链条 ========
+  // 无论是从旧数据库加载上来的脏数据，还是当前截断产生的孤儿，都需要做一把梳理
+  const sanitizeOrphans = (msgs: Message[]): Message[] => {
+    const keptToolCalls = new Set<string>()
+    for (const m of msgs) {
+      if (m.role === 'assistant' && Array.isArray(m.content)) {
+        for (const b of m.content) {
+          if (b.type === 'toolCall' && b.id) keptToolCalls.add(b.id)
+        }
+      }
+    }
+    return msgs.filter((m) => {
+      if (m.role === 'toolResult') {
+        const tid = (m as any).toolCallId
+        if (tid && !keptToolCalls.has(tid)) return false
+      }
+      return true
+    })
+  }
+
+  const afterClearTokens = estimateMessagesTokens(current)
+  if (afterClearTokens <= budgetTokens) {
+    const finalCleaned = sanitizeOrphans(current)
     return {
-      messages: current,
-      droppedMessages: [],
+      messages: finalCleaned,
+      droppedMessages: current.filter((x) => !finalCleaned.includes(x)),
       trimmedToolResults,
       hardClearedToolResults,
-      totalChars: afterClearChars,
-      keptChars: afterClearChars,
-      droppedChars: 0,
-      budgetChars
+      totalTokens: afterClearTokens,
+      keptTokens: estimateMessagesTokens(finalCleaned),
+      droppedTokens: estimateMessagesTokens(current) - estimateMessagesTokens(finalCleaned),
+      budgetTokens
     }
   }
 
   const cutoffIndex = findAssistantCutoffIndex(current, settings.keepLastAssistants)
   const protectedMessages = current.slice(cutoffIndex ?? 0)
-  const protectedChars = estimateMessagesChars(protectedMessages)
+  const protectedTokens = estimateMessagesTokens(protectedMessages)
 
   let kept: Message[]
-  if (protectedChars > budgetChars) {
-    kept = sliceWithinBudget(current, budgetChars)
+  if (protectedTokens > budgetTokens) {
+    kept = sliceWithinBudget(current, budgetTokens)
   } else {
     kept = [...protectedMessages]
-    let remaining = budgetChars - protectedChars
+    let remainingTokens = budgetTokens - protectedTokens
     for (let i = (cutoffIndex ?? 0) - 1; i >= 0; i--) {
-      const chars = estimateMessageChars(current[i])
-      if (chars > remaining) break
+      const tokens = estimateMessageTokens(current[i])
+      if (tokens > remainingTokens) break
       kept.unshift(current[i])
-      remaining -= chars
+      remainingTokens -= tokens
     }
   }
 
+  kept = sanitizeOrphans(kept)
+
   const keptSet = new Set(kept)
-  const keptChars = estimateMessagesChars(kept)
+  const keptTokens = estimateMessagesTokens(kept)
   return {
     messages: kept,
     droppedMessages: current.filter((m) => !keptSet.has(m)),
     trimmedToolResults,
     hardClearedToolResults,
-    totalChars: afterClearChars,
-    keptChars,
-    droppedChars: afterClearChars - keptChars,
-    budgetChars
+    totalTokens: afterClearTokens,
+    keptTokens,
+    droppedTokens: afterClearTokens - keptTokens,
+    budgetTokens
   }
 }

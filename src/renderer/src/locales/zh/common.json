@@ -72,6 +72,8 @@
   "name_exists": "名称已存在",
   "reasoning": "思考级别",
   "context_tokens": "上下文窗口 (Tokens)",
+  "context_tokens_desc": "决定记忆上限，包含 {{reserve}}k 预留空位。超出窗口上限将触发自动历史压缩。",
+  "context_tokens_warning": "注意：Token 计数或有偏差；设置过小会导致频繁压缩，影响响应连贯性。",
   "max_turns": "最大循环轮次",
   "enable_memory": "长短期记忆",
   "enable_skills": "技能系统 (Skills)",
@@ -218,5 +220,10 @@
   "callback_error": "执行逻辑错误",
   "requests_in_flight": "任务合并中",
   "scheduled_start": "计划启动",
-  "path": "路径"
+  "path": "路径",
+  "clear": "清除",
+  "remember_choice": "记住我的选择",
+  "show_window": "显示窗口",
+  "quit": "退出",
+  "app_name": "猫爪"
 }

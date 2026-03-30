@@ -20,6 +20,14 @@ import { getGatewayClient } from '@renderer/services/gateway-client'
 import { UsageStats } from '@shared/types/usage'
 import { Activity, Zap, TrendingUp, Clock, AlertTriangle } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
+import { useLocalStorage } from '@renderer/hooks/use-local-storage'
+
+// 存储键名常量，统一管理，防止拼写错误
+const STORAGE_KEYS = {
+  IS_EXPANDED: 'opcclaw_settings_panel_expanded',
+  ACTIVE_TAB: 'opcclaw_settings_panel_active_tab',
+  EXPANDED_SECTIONS: 'opcclaw_settings_sections_expanded'
+} as const
 
 interface SettingsPanelProps {
   visible: boolean
@@ -32,8 +40,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
   const confirm = useConfirm()
   const { models } = useModelStore()
   const [loading, setLoading] = useState(false)
-  const [isExpanded, setIsExpanded] = useState(false)
-  const [activeTab, setActiveTab] = useState<'settings' | 'usage'>('settings')
+
+  // 使用自定义持久化 Hook，一键完成状态定义与 localStorage 同步
+  const [isExpanded, setIsExpanded] = useLocalStorage<boolean>(STORAGE_KEYS.IS_EXPANDED, false)
+  const [activeTab, setActiveTab] = useLocalStorage<'settings' | 'usage'>(
+    STORAGE_KEYS.ACTIVE_TAB,
+    'settings'
+  )
+
   const [usageStats, setUsageStats] = useState<UsageStats | null>(null)
   const [loadingUsage, setLoadingUsage] = useState(false)
 
@@ -60,15 +74,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
     isPinned: false
   })
 
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    base: false,
-    model: false,
-    file: false,
-    tool: false,
-    skill: false,
-    environment: false,
-    security: false
-  })
+  const [expandedSections, setExpandedSections] = useLocalStorage<Record<string, boolean>>(
+    STORAGE_KEYS.EXPANDED_SECTIONS,
+    {
+      base: false,
+      model: false,
+      file: false,
+      tool: false,
+      skill: false,
+      environment: false,
+      security: false
+    }
+  )
 
   const [initialFormData, setInitialFormData] = useState<AgentSettingsFormData | null>(null)
 
@@ -504,7 +521,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                   disabled={loading || !isChanged}
                   className={cn(
                     'w-full h-11 font-black rounded-2xl gap-2 transition-all active:scale-[0.98] group relative overflow-hidden',
-                    isChanged ? 'shadow-xl shadow-primary/20 bg-primary' : 'bg-primary/50 text-foreground/40 shadow-none cursor-default'
+                    isChanged
+                      ? 'shadow-xl shadow-primary/20 bg-primary'
+                      : 'bg-primary/50 text-foreground/40 shadow-none cursor-default'
                   )}
                 >
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out" />
@@ -537,9 +556,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                     className="w-full h-11 font-black shadow-xl shadow-destructive/20 rounded-2xl gap-2 transition-all active:scale-[0.98] group relative overflow-hidden"
                   >
                     <Trash2 className="w-4 h-4" />
-                    <span className="uppercase tracking-widest text-xs">
-                      {t('common.delete')}
-                    </span>
+                    <span className="uppercase tracking-widest text-xs">{t('common.delete')}</span>
                   </Button>
                 )}
               </div>

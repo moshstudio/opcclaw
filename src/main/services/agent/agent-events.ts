@@ -15,7 +15,13 @@ import {
   type HeartbeatLogStatus
 } from '@shared/types/gateway'
 
-export type { Message, AgentPerformance, HeartbeatTaskStatus, HeartbeatLogEntry, HeartbeatLogStatus }
+export type {
+  Message,
+  AgentPerformance,
+  HeartbeatTaskStatus,
+  HeartbeatLogEntry,
+  HeartbeatLogStatus
+}
 
 // ============== 事件类型（判别联合） ==============
 
@@ -41,15 +47,28 @@ export type MiniAgentEvent =
   | { type: 'agent:turn-end'; runId: string; sessionKey: string; turn: number }
 
   // 消息 (Chat 频道相关，对齐 ChatPayload.state)
-  | { type: 'chat:userMessage'; runId: string; sessionKey: string; message: Message }
-  | { type: 'chat:start'; runId: string; sessionKey: string; message: Message }
-  | { type: 'chat:delta'; runId: string; sessionKey: string; delta: string }
+  | {
+      type: 'chat:userMessage'
+      runId: string
+      sessionKey: string
+      messageId: string
+      message: Message
+    }
+  | {
+      type: 'chat:start'
+      runId: string
+      sessionKey: string
+      messageId: string
+      message: Message
+    }
+  | { type: 'chat:delta'; runId: string; sessionKey: string; delta: string; messageId: string }
   | {
       type: 'chat:final'
       runId: string
       sessionKey: string
       message: Message
       text: string
+      messageId: string
       usage?: Usage
       performance?: AgentPerformance
     }
@@ -60,6 +79,7 @@ export type MiniAgentEvent =
       runId: string
       sessionKey: string
       delta: string
+      messageId: string
     }
 
   // 工具执行
@@ -70,6 +90,7 @@ export type MiniAgentEvent =
       toolCallId: string
       toolName: string
       arguments: Record<string, unknown>
+      messageId: string
     }
   | {
       type: 'chat:toolResult'
@@ -79,15 +100,15 @@ export type MiniAgentEvent =
       toolName: string
       content: ContentBlock[] // 对应 pi-ai 的 ToolResultMessage.content
       isError: boolean
+      messageId: string
     }
-
   | {
       type: 'notice:compact'
       runId: string
       sessionKey: string
       summaryChars?: number
       droppedMessages?: number
-      firstKeptEntryId?: string
+      firstKeptId?: string
     }
   | {
       type: 'notice:info'
@@ -103,6 +124,7 @@ export type MiniAgentEvent =
       attempt: number
       delay: number
       error: string
+      messageId: string
     }
   // 管理事件
   | { type: 'session:deleted'; sessionKey: string }
@@ -126,6 +148,7 @@ export type MiniAgentEvent =
       prompt: string
       options?: string[]
       isComplete?: boolean
+      rememberKey?: string
     }
 
 // ============== 结果类型 ==============

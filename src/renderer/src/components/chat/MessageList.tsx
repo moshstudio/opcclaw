@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react'
+import React, { useMemo, useCallback, useRef, useEffect } from 'react'
 import { Bubble, Actions } from '@ant-design/x'
 import { useChatStore } from '@renderer/store/useChatStore'
 import { useAgentStore } from '@renderer/store/useAgentStore'
@@ -12,6 +12,7 @@ import {
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CheckOutlined, CopyOutlined } from '@ant-design/icons'
+import type { GetRef } from 'antd'
 import MessageBubble from './MessageBubble'
 import UsageStats from './parts/UsageStats'
 import type { BubbleItemType } from '@ant-design/x'
@@ -126,30 +127,57 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isTyping, isLoading
             <div
               className={`flex-1 flex items-center gap-3 ${isAi ? 'justify-start' : 'justify-end'}`}
             >
-              <span className="text-[10px] text-muted-foreground/30 font-medium leading-none flex items-center h-4">
-                {formatTime(m.timestamp)}
-              </span>
-              {isAi && <UsageStats usage={m.usage} performance={m.performance} />}
-              {isAi && (
-                <Actions
-                  items={[
-                    {
-                      key: 'copy',
-                      icon:
-                        copiedId === m.id ? (
-                          <CheckOutlined style={{ fontSize: 10 }} className="text-green-500/60" />
-                        ) : (
-                          <CopyOutlined
-                            style={{ fontSize: 10 }}
-                            className="text-muted-foreground/40"
-                          />
-                        ),
-                      label: copiedId === m.id ? t('common.copied') : t('common.copy'),
-                      onItemClick: () => handleCopy(m)
-                    }
-                  ]}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-muted-foreground/30 text-[9px] font-bold uppercase tracking-tight flex items-center h-4"
-                />
+              {isAi ? (
+                <>
+                  <span className="text-[10px] text-muted-foreground/30 font-medium leading-none flex items-center h-4">
+                    {formatTime(m.timestamp)}
+                  </span>
+                  <UsageStats usage={m.usage} performance={m.performance} />
+                  <Actions
+                    items={[
+                      {
+                        key: 'copy',
+                        icon:
+                          copiedId === m.id ? (
+                            <CheckOutlined style={{ fontSize: 10 }} className="text-green-500/60" />
+                          ) : (
+                            <CopyOutlined
+                              style={{ fontSize: 10 }}
+                              className="text-muted-foreground/40"
+                            />
+                          ),
+                        label: copiedId === m.id ? t('common.copied') : t('common.copy'),
+                        onItemClick: () => handleCopy(m)
+                      }
+                    ]}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-muted-foreground/30 text-[9px] font-bold uppercase tracking-tight flex items-center h-4"
+                  />
+                </>
+              ) : (
+                <>
+                  <Actions
+                    items={[
+                      {
+                        key: 'copy',
+                        icon:
+                          copiedId === m.id ? (
+                            <CheckOutlined style={{ fontSize: 10 }} className="text-green-500/60" />
+                          ) : (
+                            <CopyOutlined
+                              style={{ fontSize: 10 }}
+                              className="text-muted-foreground/40"
+                            />
+                          ),
+                        label: copiedId === m.id ? t('common.copied') : t('common.copy'),
+                        onItemClick: () => handleCopy(m)
+                      }
+                    ]}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-muted-foreground/30 text-[9px] font-bold uppercase tracking-tight flex items-center h-4"
+                  />
+                  <span className="text-[10px] text-muted-foreground/30 font-medium leading-none flex items-center h-4">
+                    {formatTime(m.timestamp)}
+                  </span>
+                </>
               )}
             </div>
           </div>
@@ -179,7 +207,22 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isTyping, isLoading
     return results
   }, [baseItems, isTyping, chatStatus])
 
-  /** 5. 渲染配置及回调 */
+  /** 5. 自动滚动到底部逻辑 */
+  const listRef = useRef<GetRef<typeof Bubble.List>>(null)
+
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1]
+    // 仅在用户发送消息时强制滚动到底部
+    if (lastMessage?.role !== 'user') return
+
+    const rafId = requestAnimationFrame(() => {
+      listRef.current?.scrollTo({ top: 'bottom', behavior: 'smooth' })
+    })
+
+    return () => cancelAnimationFrame(rafId)
+  }, [messages])
+
+  /** 6. 渲染配置及回调 */
   const roles = useMemo(
     () => ({
       ai: {
@@ -231,7 +274,8 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isTyping, isLoading
         <Bubble.List
           items={displayItems}
           role={roles}
-          autoScroll
+          autoScroll={true}
+          ref={listRef}
           onScroll={handleScroll}
           className="p-0 w-full h-full scroll-smooth custom-scrollbar"
         />

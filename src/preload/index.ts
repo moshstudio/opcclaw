@@ -7,7 +7,8 @@ const api = {
     info: () => ipcRenderer.invoke('gateway:info')
   },
   app: {
-    reset: () => ipcRenderer.invoke('app:reset')
+    reset: () => ipcRenderer.invoke('app:reset'),
+    changeLanguage: (lang: 'zh' | 'en') => ipcRenderer.invoke('app:change-language', lang)
   }
 }
 

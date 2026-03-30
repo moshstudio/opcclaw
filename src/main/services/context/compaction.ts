@@ -366,9 +366,19 @@ export async function compactHistoryIfNeeded(params: {
   const { readFiles, modifiedFiles } = computeFileLists(fileOps)
   summary += formatFileOperations(readFiles, modifiedFiles)
 
+  // 核心逻辑修正：摘要卡片的物理发生时间在当下，但其逻辑时间代表着“上古历史”的终结。
+  // 它必须恰好排在被部分保留下来的最老的一条原始消息的前面，否则 UI 会错乱。
+  let anchorTimestamp = Date.now()
+  if (pruneResult.messages.length > 0) {
+    const firstMsgTime = Number(pruneResult.messages[0].timestamp)
+    if (!Number.isNaN(firstMsgTime)) {
+      anchorTimestamp = firstMsgTime
+    }
+  }
+
   return {
     summary,
-    summaryMessage: createCompactionSummaryMessage(summary, Date.now()),
+    summaryMessage: createCompactionSummaryMessage(summary, anchorTimestamp - 1),
     pruneResult
   }
 }

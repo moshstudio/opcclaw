@@ -28,6 +28,9 @@ import { spawn, spawnSync } from 'node:child_process'
 import type { Tool, ToolContext } from './types'
 import { assertSandboxPath } from '@main/services/sandbox-paths'
 import { EnvironmentService } from '@main/services/runtime/environment'
+import { browserTool } from './browser'
+import { ConfirmProvider } from '../agent/core/confirm-provider'
+export { browserTool }
 import { extractReadableContent, htmlToMarkdown, markdownToText } from './web-fetch-utils'
 
 // ============== 辅助函数 ==============
@@ -317,11 +320,8 @@ export const execTool: Tool<{ command: string; timeout?: number }> = {
         if (!runtimeInfo.exists) envToInstall = 'python'
       }
 
-      if (envToInstall && ctx.confirm) {
-        const confirmed = await ctx.confirm(
-          `检测到本地未安装 ${envToInstall} 环境，是否现在尝试安装？（安装过程可能需要管理员权限且耗时较长）`,
-          ['立即安装', '取消执行']
-        )
+      if (envToInstall) {
+        const confirmed = await ConfirmProvider.confirmInstallEnv(ctx, envToInstall)
 
         if (confirmed) {
           const result = await envService.install(envToInstall)
@@ -904,7 +904,8 @@ export const webFetchTool: Tool<{
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
           'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
         }
       })
@@ -916,7 +917,7 @@ export const webFetchTool: Tool<{
       }
 
       const contentType = response.headers.get('content-type') || ''
-      
+
       // 处理 JSON 结果
       if (contentType.includes('application/json')) {
         const json = await response.json()
@@ -926,7 +927,7 @@ export const webFetchTool: Tool<{
 
       // 获取文本内容
       const html = await response.text()
-      
+
       // 3. 多级提取策略
       let result: { text: string; title?: string } | null = null
 
@@ -946,7 +947,10 @@ export const webFetchTool: Tool<{
 
       // C. 终极回退: 原始文本清理 (如果是纯文本或其他非 HTML 内容)
       if (!result || !result.text.trim()) {
-        const plainText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+        const plainText = html
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
         result = { text: plainText }
       }
 
@@ -1104,5 +1108,6 @@ export const builtinTools: Tool[] = [
   memoryDeleteTool,
   sessionsSpawnTool,
   scheduleTaskTool,
-  webFetchTool
+  webFetchTool,
+  browserTool
 ]

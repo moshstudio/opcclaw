@@ -90,6 +90,11 @@ export class Agent {
     })
     this.logger.debug(`Base system prompt hot-updated: ${this.config.systemPrompt || 'default'}`)
 
+    // 4. 同步上下文管理器配置
+    this.contextManager.updateConfig({
+      contextTokens: this.config.contextTokens
+    })
+
     // 如果启用了心跳，确保它正在运行；如果禁用了，确保停止
     if (this.config.enableHeartbeat) {
       this.heartbeat.start()
@@ -115,7 +120,10 @@ export class Agent {
   private readonly subagentService: SubagentService
   private interactionCallbacks = new Map<
     string,
-    { resolve: (res: boolean) => void; timer: NodeJS.Timeout }
+    {
+      resolve: (res: { result: boolean; remember: boolean }) => void
+      timer: NodeJS.Timeout
+    }
   >()
   private readonly onConfigChange?: (config: AgentConfig) => void
 
@@ -372,10 +380,14 @@ export class Agent {
         )
       }
       const finalApiKey = this.config.apiKey || resolvedApiKey
-      this.contextManager.updateConfig({ modelDef, apiKey: finalApiKey })
+      this.contextManager.updateConfig({
+        modelDef,
+        apiKey: finalApiKey,
+        contextTokens: this.config.contextTokens
+      })
 
       const history = await this.sessionManager.load(sk)
-      const currentMessages = [...history.messages]
+      let currentMessages = [...history.messages]
 
       this.emit({
         type: 'agent:run-start',
@@ -408,23 +420,36 @@ export class Agent {
         }
       }
 
-      // 2. 只有在 processedInput 非空时才注入并广播 User 消息
+      // 先行广播构建好的 userMessage，使得前端可以立刻展示用户敲出去的文字，
+      // 防止因为调用大模型执行历史摘要的时间过长而导致界面看似僵死。
+      const pendingMessages: Message[] = []
+      let optimisticUserMsg: Message | undefined
       if (processedInput) {
-        const userMessage: Message = {
+        optimisticUserMsg = {
+          id: newShortId(),
           role: 'user',
           content: processedInput,
           timestamp: Date.now()
         }
-        currentMessages.push(userMessage)
-        this.sessionManager.append(sk, userMessage)
-
-        // 注意：广播时可能需要告知 UI 触发了技能（可选）
+        pendingMessages.push(optimisticUserMsg)
         this.emit({
           type: 'chat:userMessage',
           runId,
           sessionKey: sk,
-          message: userMessage
+          message: optimisticUserMsg,
+          messageId: optimisticUserMsg.id!
         })
+      }
+
+      // 2. 检查现有的历史 Token 压力并顺势注入 Pending 的消息
+      if (this.config.contextTokens) {
+        const enforced = await this.contextManager.enforceContextLimitsAndInject({
+          messages: currentMessages,
+          pendingMessages,
+          sessionKey: sk,
+          runId
+        })
+        currentMessages = enforced.currentMessages
       }
 
       const systemPrompt = await this.promptBuilder.build({
@@ -468,8 +493,8 @@ export class Agent {
             stop: () => this.heartbeat.stop(),
             trigger: () => this.heartbeat.trigger()
           },
-          confirm: async (prompt, options) => {
-            return new Promise((resolve) => {
+          confirmUI: async (prompt, options, rememberKey) => {
+            return new Promise<{ result: boolean; remember: boolean }>((resolve) => {
               const interactionId = `int_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
 
               // 5 分钟超时处理
@@ -480,10 +505,7 @@ export class Agent {
                 5 * 60 * 1000
               )
 
-              this.interactionCallbacks.set(interactionId, {
-                resolve,
-                timer
-              })
+              this.interactionCallbacks.set(interactionId, { resolve, timer })
 
               this.emit({
                 type: 'chat:interaction',
@@ -492,7 +514,8 @@ export class Agent {
                 interactionId,
                 prompt,
                 options,
-                isComplete: false
+                isComplete: false,
+                rememberKey
               })
             })
           }
@@ -503,13 +526,15 @@ export class Agent {
         temperature: this.config.temperature,
         reasoning: this.config.reasoning,
         maxTurns: this.config.maxTurns || 10,
-        contextTokens: this.config.contextTokens || 4000,
+        maxTokens: this.config.maxTokens,
+        contextTokens: this.config.contextTokens || 128000,
         abortSignal: signal,
 
         // 回调
         getSteeringMessages: () => this.stateManager.drainSteering(sk),
         appendMessage: (key, msg) => this.sessionManager.append(key, msg),
         prepareCompaction: (params) => this.contextManager.prepareMessages(params),
+        enforceContextLimitsAndInject: (p) => this.contextManager.enforceContextLimitsAndInject(p),
         recordUsage: (record) => this.usageManager.recordRun(record)
       })
 
@@ -570,12 +595,12 @@ export class Agent {
     this.emit({ type: 'notice:info', sessionKey: sk, runId: 'steer', text: '指令已注入' })
   }
 
-  public respondInteraction(interactionId: string, result: boolean) {
+  public respondInteraction(interactionId: string, result: boolean, remember?: boolean) {
     const entry = this.interactionCallbacks.get(interactionId)
     if (entry) {
       this.interactionCallbacks.delete(interactionId)
       clearTimeout(entry.timer)
-      entry.resolve(result)
+      entry.resolve({ result, remember: !!remember })
     }
   }
 

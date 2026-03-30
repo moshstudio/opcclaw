@@ -13,5 +13,6 @@
   "save_config": "保存配置",
   "supports_vision": "支持视觉规范",
   "supports_vision_desc": "标识此具体模型是否具备多模态视觉处理能力，系统将据此决定是否允许发送图片。",
-  "empty": "暂无模型"
+  "empty": "暂无模型",
+  "vision_badge": "视觉"
 }

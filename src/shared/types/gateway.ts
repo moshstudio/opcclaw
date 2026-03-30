@@ -290,9 +290,8 @@ export interface ChatPayload {
   runId: string
   state: ChatState
 
-  /** 消息链管理 */
-  chunkId?: string
-  parentId?: string
+  /** 消息 ID (用于 delta/thinking/toolCall 实时同步) */
+  messageId?: string
 
   /** 数据内容载体 (用于 delta/thinking/final 文本摘要) */
   delta?: string
@@ -306,6 +305,7 @@ export interface ChatPayload {
 
   /** 工具执行结果 (对齐 pi-ai.ToolResultMessage) */
   toolResult?: {
+    messageId?: string
     toolCallId: string
     toolName: string
     content: unknown // (TextContent | ImageContent)[]
@@ -322,7 +322,7 @@ export interface ChatPayload {
   performance?: AgentPerformance
 
   /** 历史压缩后第一个保留的消息 ID (用于同步裁剪) */
-  firstKeptEntryId?: string
+  firstKeptId?: string
 
   /** 交互请求数据 (state: interaction) */
   interaction?: {
@@ -330,6 +330,7 @@ export interface ChatPayload {
     prompt: string
     options?: string[]
     isComplete?: boolean
+    rememberKey?: string
   }
 }
 
@@ -355,8 +356,8 @@ export interface NoticePayload {
   sessionKey: string
   agentId?: string
   runId?: string
-  /**notice:compact 特有字段 */
-  firstKeptEntryId?: string
+  /** notice:compact 特有字段 */
+  firstKeptId?: string
   summaryChars?: number
   droppedMessages?: number
   /** notice:info 特有字段 */

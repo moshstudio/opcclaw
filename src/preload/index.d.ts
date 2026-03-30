@@ -9,6 +9,7 @@ declare global {
       }
       app: {
         reset: () => Promise<{ ok: boolean; error?: string }>
+        changeLanguage: (lang: 'zh' | 'en') => Promise<void>
       }
     }
   }

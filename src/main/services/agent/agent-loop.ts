@@ -15,10 +15,11 @@ import type { Message, AgentPerformance } from '@main/services/agent/agent-event
 import type { Model, StreamFunction, ThinkingLevel } from '@mariozechner/pi-ai'
 import { describeError, isContextOverflowError } from '@main/services/provider/errors'
 import { createMiniAgentStream, type MiniAgentEvent, type MiniAgentResult } from './agent-events'
+import { newShortId } from '@shared/utils/id'
 
 // 导入解耦后的子模块
 import { MetricsTracker } from './loop/metrics'
-import { prepareContext } from './loop/context-handler'
+import { prepareContext, estimateMessagesTokens } from './loop/context-handler'
 import { executeLlmCall, LlmResult } from './loop/llm-handler'
 import { executeToolCalls } from './loop/tool-handler'
 
@@ -65,7 +66,7 @@ export interface AgentLoopParams {
   getFollowUpMessages?: () => Promise<Message[]>
   /** 消息持久化回调 */
   appendMessage: (sessionKey: string, msg: Message) => Promise<void>
-  /** Compaction 触发器 */
+  /** Compaction 触发器 (供超限回退时调用) */
   prepareCompaction: (params: {
     messages: Message[]
     sessionKey: string
@@ -73,6 +74,19 @@ export interface AgentLoopParams {
   }) => Promise<{
     summary?: string
     summaryMessage?: Message
+    pruned?: { droppedMessages: any[] }
+  }>
+  /** 统一拦截和修剪消息容器 */
+  enforceContextLimitsAndInject: (params: {
+    messages: Message[]
+    pendingMessages: Message[]
+    sessionKey: string
+    runId: string
+    protectLastMessage?: boolean
+    compactionSummary?: Message
+  }) => Promise<{
+    currentMessages: Message[]
+    compactionSummary?: Message
   }>
   /** 记录用量统计 */
   recordUsage?: (record: UsageRecord) => Promise<void>
@@ -100,7 +114,6 @@ export function runAgentLoop(
       runId,
       sessionKey,
       agentId,
-      currentMessages,
       systemPrompt,
       toolsForRun,
       toolCtx,
@@ -116,11 +129,12 @@ export function runAgentLoop(
       getFollowUpMessages,
       appendMessage,
       prepareCompaction,
+      enforceContextLimitsAndInject,
       recordUsage,
       abortSignal
     } = params
 
-    let { compactionSummary } = params
+    let { compactionSummary, currentMessages } = params
     let turns = 0
     let finalText = ''
     let overflowCompactionAttempted = false
@@ -140,18 +154,55 @@ export function runAgentLoop(
           metrics.startTurn()
           stream.push({ type: 'agent:turn-start', runId, sessionKey, turn: turns })
 
-          // 处理待响应消息（Steering 或 Follow-up）
+          // --- 主动 Token 溢出检查、压缩与待办消息注入 ---
+          const enforced = await enforceContextLimitsAndInject({
+            messages: currentMessages,
+            pendingMessages,
+            sessionKey,
+            runId,
+            protectLastMessage: true,
+            compactionSummary
+          })
+
+          currentMessages = enforced.currentMessages
+          if (enforced.compactionSummary) {
+            compactionSummary = enforced.compactionSummary
+          }
+
+          // 新的待办消息已经被 enforceContextLimitsAndInject 物理持久化到了 sessionManager
+          // 我们只需要进行 UI stream 的回放广播
           if (pendingMessages.length > 0) {
             for (const msg of pendingMessages) {
-              await appendMessage(sessionKey, msg)
-              currentMessages.push(msg)
-              stream.push({ type: 'chat:userMessage', runId, sessionKey, message: msg })
+              stream.push({
+                type: 'chat:userMessage',
+                runId,
+                sessionKey,
+                message: msg,
+                messageId: msg.id!
+              })
             }
             pendingMessages = []
           }
 
-          // 1. 上下文准备
-          const { piContext, prunedCount } = prepareContext({
+          // 预测硬性溢出：单条最新消息 + System Prompt 若超出总限额，必须直接报错
+          const baseTokens = estimateMessagesTokens([
+            { id: 'system-base', role: 'user', content: systemPrompt, timestamp: 0 }
+          ])
+          const lastMsgTokens =
+            currentMessages.length > 0
+              ? estimateMessagesTokens([currentMessages[currentMessages.length - 1]])
+              : 0
+
+          if (baseTokens + lastMsgTokens > contextTokens) {
+            throw new Error(
+              `[ContextOverflow] Current message and system prompt (${baseTokens + lastMsgTokens}) exceed context limit (${contextTokens}).`
+            )
+          }
+
+          // 1. 上下文准备 (由底层的 pruneContextMessages 保底)
+          // 这里的修剪是针对内存数组的物理切断，以防最新加入的内容极大导致依然超限。
+          // 真正的压缩已在历史溢出预检中完成。
+          const { piContext } = prepareContext({
             currentMessages,
             compactionSummary,
             systemPrompt,
@@ -160,33 +211,34 @@ export function runAgentLoop(
             modelDef
           })
 
-          // 推送压缩/清理事件
-          if (prunedCount > 0) {
-            const content = compactionSummary?.content
-            let summaryLen = 0
-            if (typeof content === 'string') {
-              summaryLen = content.length
-            } else if (Array.isArray(content)) {
-              summaryLen = content
-                .map((b) => ('text' in b ? String(b.text || '') : ''))
-                .join('').length
-            }
-            stream.push({
-              type: 'notice:compact',
-              runId,
-              sessionKey,
-              summaryChars: summaryLen,
-              droppedMessages: prunedCount
-            })
-          }
-
           // 2. LLM 流式调用
+          const assistantMessageId = newShortId()
+
+          // 发送正式的聊天启动事件，使得前端能够立即创建消息占位符
+          stream.push({
+            type: 'chat:start',
+            runId,
+            sessionKey,
+            message: {
+              id: assistantMessageId,
+              role: 'assistant',
+              content: [],
+              timestamp: Date.now(),
+              api: modelDef.api,
+              provider: modelDef.provider as string,
+              model: modelDef.id,
+              stopReason: 'stop'
+            } as Message,
+            messageId: assistantMessageId
+          })
+
           let llmOutput: LlmResult
           try {
             llmOutput = await executeLlmCall(
               {
                 runId,
                 sessionKey,
+                messageId: assistantMessageId,
                 modelDef,
                 streamFn,
                 apiKey,
@@ -226,6 +278,7 @@ export function runAgentLoop(
 
           // 3. 保存 Assistant 消息
           const assistantMsg = llmOutput.assistantMessage as Message
+          assistantMsg.id = assistantMessageId // 强制使用流式过程中预生成的正式 ID
           assistantMsg.performance = metrics.getTurnPerformance(llmOutput.usage?.output)
           if (llmOutput.usage) assistantMsg.usage = llmOutput.usage
           await appendMessage(sessionKey, assistantMsg)
@@ -238,6 +291,7 @@ export function runAgentLoop(
               sessionKey,
               message: assistantMsg,
               text: llmOutput.turnText,
+              messageId: assistantMessageId,
               usage: llmOutput.usage,
               performance: assistantMsg.performance
             })
@@ -245,34 +299,31 @@ export function runAgentLoop(
 
           hasMoreToolCalls = llmOutput.toolCalls.length > 0
 
-          // 核心内层循环结束条件
           if (!hasMoreToolCalls) {
+            // 本轮 LLM 没有工具调用，正常结束
             finalText = llmOutput.turnText
-            stream.push({ type: 'agent:turn-end', runId, sessionKey, turn: turns })
-            pendingMessages = await getSteeringMessages()
-            continue
+          } else {
+            // 执行工具调用并保存结果
+            const toolResults = await executeToolCalls(
+              llmOutput.toolCalls,
+              toolsForRun,
+              toolCtx,
+              runId,
+              sessionKey,
+              stream,
+              metrics
+            )
+
+            for (const res of toolResults) {
+              await appendMessage(sessionKey, res)
+              currentMessages.push(res)
+            }
           }
 
-          // 4. 执行工具调用
-          const toolResults = await executeToolCalls(
-            llmOutput.toolCalls,
-            toolsForRun,
-            toolCtx,
-            runId,
-            sessionKey,
-            stream,
-            metrics
-          )
-
-          // 5. 保存工具执行结果
-          for (const res of toolResults) {
-            await appendMessage(sessionKey, res)
-            currentMessages.push(res)
-          }
-
+          // 统一结束本轮并广播事件
           stream.push({ type: 'agent:turn-end', runId, sessionKey, turn: turns })
 
-          // 检查 Steering（如工具执行过程中产生的反馈或干预）
+          // 核心控制点：监听干预 (Steering)。如果有干预或工具产生，会自动进入下一轮 inner loop
           pendingMessages = await getSteeringMessages()
         } // end inner while
 

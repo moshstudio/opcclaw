@@ -41,7 +41,7 @@ export function initIpcServices(): void {
         ]
       })
 
-      // 3. 删除自定义数据文件夹 (.opcclaw / .opcclaw-dev)
+      // 3. 删除自定义数据文件夹 (OPCCLAW_ROOT)
       const opcclawRoot = ConfigService.getInstance().getRootPath()
       console.log(`[IPC] Cleaning opcclawRoot: ${opcclawRoot}`)
       if (fs.existsSync(opcclawRoot)) {

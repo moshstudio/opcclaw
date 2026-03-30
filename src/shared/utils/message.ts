@@ -8,7 +8,7 @@ import type {
 } from '../types/agent'
 
 /**
- * 规范化内容块：仅进行类型修正，不再兼容旧格式
+ * 规范化内容块
  */
 export function normalizeContentBlock(block: any): ContentBlock {
   if (!block || typeof block !== 'object') return block
@@ -17,8 +17,8 @@ export function normalizeContentBlock(block: any): ContentBlock {
   if (block.type === 'toolCall') {
     return {
       type: 'toolCall',
-      id: block.id || '',
-      name: block.name || '',
+      id: block.id,
+      name: block.name,
       arguments: block.arguments || {}
     } as AgentToolCallBlock
   }
@@ -27,8 +27,8 @@ export function normalizeContentBlock(block: any): ContentBlock {
   if (block.type === 'toolResult') {
     return {
       type: 'toolResult',
-      toolCallId: block.toolCallId || '',
-      toolName: block.toolName || '',
+      toolCallId: block.toolCallId,
+      toolName: block.toolName,
       content: Array.isArray(block.content)
         ? block.content
         : [{ type: 'text', text: String(block.content || '') }],
@@ -48,7 +48,7 @@ export function normalizeMessage(m: any): Message {
 
   const base = {
     ...m,
-    id: m.id || `msg_${Math.random().toString(36).slice(2, 9)}`,
+    id: m.id,
     timestamp
   }
 

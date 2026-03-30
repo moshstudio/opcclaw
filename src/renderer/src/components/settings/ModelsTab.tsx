@@ -232,7 +232,7 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
                   {model.supportsVision && (
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/5 text-primary border border-primary/10 text-[9px] font-bold">
                       <Eye className="w-3 h-3" />
-                      VISION
+                      {t('models.vision_badge')}
                     </div>
                   )}
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">

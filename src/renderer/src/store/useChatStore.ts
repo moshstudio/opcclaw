@@ -43,7 +43,8 @@ interface ChatState {
     agentId: string,
     sessionKey: string,
     interactionId: string,
-    result: boolean
+    result: boolean,
+    remember?: boolean
   ) => Promise<void>
 }
 
@@ -95,10 +96,17 @@ export const useChatStore = create<ChatState>()(
             title: 'AI 需要你的确认',
             description: payload.interaction.prompt,
             confirmText: payload.interaction.options?.[0],
-            cancelText: payload.interaction.options?.[1]
+            cancelText: payload.interaction.options?.[1],
+            showRemember: !!payload.interaction.rememberKey
           }).then((res) => {
             const agentId = payload.agentId || sk.split(':')[0] || 'main'
-            get().respondInteraction(agentId, sk, payload.interaction!.interactionId, res)
+            get().respondInteraction(
+              agentId,
+              sk,
+              payload.interaction!.interactionId,
+              res.confirmed,
+              res.remember
+            )
           })
         }
 
@@ -306,12 +314,13 @@ export const useChatStore = create<ChatState>()(
           console.error('Abort error:', err)
         }
       },
-      respondInteraction: async (agentId, sk, interactionId, result) => {
+      respondInteraction: async (agentId, sk, interactionId, result, remember) => {
         try {
           await getGatewayClient().request('chat:respondInteraction', {
             agentId,
             interactionId,
-            result
+            result,
+            remember
           })
           // 清理本地状态（或者等待后端通知清理，通常这里设为 null 响应更快）
           updateSubState(set, 'interactionMap', sk, null)

@@ -40,16 +40,17 @@ export interface MessageEntry extends SessionEntryBase {
 export interface CompactionEntry extends SessionEntryBase {
   type: 'compaction'
   summary: string
-  firstKeptEntryId: string
+  firstKeptId: string
+  /** @deprecated Use firstKeptId instead */
+  firstKeptEntryId?: string
   tokensBefore: number
 }
 
 export type SessionEntry = MessageEntry | CompactionEntry
 export type SessionFileEntry = SessionHeaderEntry | SessionEntry
 
-export const COMPACTION_SUMMARY_PREFIX =
-  'The conversation history before this point was compacted into the following summary:\n\n<summary>\n'
-export const COMPACTION_SUMMARY_SUFFIX = '\n</summary>'
+export const COMPACTION_SUMMARY_PREFIX = '在此之前的对话历史已被压缩，其核心摘要如下：\n\n<摘要>\n'
+export const COMPACTION_SUMMARY_SUFFIX = '\n</摘要>'
 
 export function createCompactionSummaryMessage(
   summary: string,
@@ -130,6 +131,8 @@ export class SessionManager {
     const store = new JsonlStore<SessionFileEntry>(state.filePath)
     const entryId = generateId(state.byId)
 
+    if (!message.id) message.id = entryId
+
     const entry: MessageEntry = {
       type: 'message',
       id: entryId,
@@ -141,7 +144,7 @@ export class SessionManager {
     state.byId.set(entry.id, entry)
     state.messageIdByRef.set(message, entry.id)
     state.leafId = entry.id
-    
+
     const lock = await acquireSessionWriteLock({ sessionFile: state.filePath })
     try {
       if (!state.flushed) {
@@ -158,7 +161,7 @@ export class SessionManager {
   async appendCompaction(
     sessionKey: string,
     summary: string,
-    firstKeptEntryId: string,
+    firstKeptId: string,
     tokensBefore: number
   ): Promise<void> {
     const state = await this.ensureState(sessionKey)
@@ -169,13 +172,13 @@ export class SessionManager {
       parentId: state.leafId,
       timestamp: dayjs().toISOString(),
       summary,
-      firstKeptEntryId,
+      firstKeptId,
       tokensBefore
     }
     state.entries.push(entry)
     state.byId.set(entry.id, entry)
     state.leafId = entry.id
-    
+
     const lock = await acquireSessionWriteLock({ sessionFile: state.filePath })
     try {
       if (!state.flushed) {
@@ -198,7 +201,7 @@ export class SessionManager {
     }
     const state = this.states.get(sessionKey)
     if (!state) return undefined
-    
+
     const direct = state.messageIdByRef.get(message)
     if (direct) return direct
 
@@ -402,19 +405,34 @@ function buildSessionContext(state: SessionState): Message[] {
   const messages: Message[] = []
   const appendMessage = (entry: SessionEntry) => {
     if (entry.type === 'message') {
+      if (!entry.message.id) entry.message.id = entry.id
       messages.push(entry.message)
     }
   }
 
   if (compaction) {
-    messages.push(createCompactionSummaryMessage(compaction.summary, compaction.timestamp))
     const compactionIdx = pathEntries.findIndex(
       (entry) => entry.type === 'compaction' && entry.id === compaction!.id
     )
+
     let foundFirstKept = false
+    let anchorTime = new Date(compaction.timestamp).getTime()
+
+    const anchorId = compaction.firstKeptId || compaction.firstKeptEntryId
     for (let i = 0; i < compactionIdx; i++) {
       const entry = pathEntries[i]
-      if (entry.id === compaction.firstKeptEntryId) {
+      if (entry.id === anchorId) {
+        anchorTime = new Date(entry.timestamp || compaction.timestamp).getTime()
+        break
+      }
+    }
+
+    // 严丝合缝：卡在一个恰好比所有旧历史都早 1 毫秒的时空
+    messages.push(createCompactionSummaryMessage(compaction.summary, anchorTime - 1))
+
+    for (let i = 0; i < compactionIdx; i++) {
+      const entry = pathEntries[i]
+      if (entry.id === anchorId) {
         foundFirstKept = true
       }
       if (foundFirstKept) {
@@ -466,7 +484,8 @@ async function loadSessionFile(
     if (
       typed.type === 'compaction' &&
       typeof (typed as CompactionEntry).summary === 'string' &&
-      typeof (typed as CompactionEntry).firstKeptEntryId === 'string'
+      (typeof (typed as CompactionEntry).firstKeptId === 'string' ||
+        typeof (typed as CompactionEntry).firstKeptEntryId === 'string')
     ) {
       entries.push(typed)
     }
