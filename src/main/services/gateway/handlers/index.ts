@@ -12,7 +12,8 @@ import {
   handleEventsDoc,
   handleSkillInstall,
   handleSkillUpdate,
-  handleSkillDelete
+  handleSkillDelete,
+  handleChannelTelegramTest
 } from './system-handler'
 import {
   handleHeartbeatList,
@@ -78,6 +79,7 @@ export const handlers: Record<string, Handler> = {
   'config:get': handleConfigGet,
   'config:save': handleConfigSave,
   'system:events-doc': handleEventsDoc,
+  'channel:telegram:test': handleChannelTelegramTest,
   'models:fetch': handleModelsFetch,
   'models:add': handleModelsAdd,
   'models:update': handleModelsUpdate,

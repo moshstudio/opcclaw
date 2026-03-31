@@ -56,6 +56,8 @@ export abstract class BaseGatewayClient implements IGatewayClient {
 
   constructor(opts: GatewayClientOptions) {
     this.opts = opts
+    if (opts.onEvent) this.addEventListener(opts.onEvent)
+    if (opts.onConnect) this.onConnect(opts.onConnect)
   }
 
   private eventListeners = new Set<(evt: EventFrame) => void>()
@@ -141,14 +143,25 @@ export abstract class BaseGatewayClient implements IGatewayClient {
   async connect(): Promise<HelloOk> {
     this.closed = false
     return new Promise((resolve, reject) => {
+      let handshakeResolved = false
+
+      // 设置连接超时保护 (5秒)
+      const connectionTimeout = setTimeout(() => {
+        if (!handshakeResolved) {
+          handshakeResolved = true
+          this.ws?.close()
+          reject(new Error('connection timeout: gateway server not responding'))
+        }
+      }, 5000)
+
       const ws = this.createSocket(this.opts.url)
       this.ws = ws
-      let handshakeResolved = false
 
       const onError = (evt: { message?: string } | any) => {
         const errorMsg = evt?.message || 'Connection failed'
         if (!handshakeResolved) {
           handshakeResolved = true
+          clearTimeout(connectionTimeout)
           reject(new Error(`connection failed: ${errorMsg}`))
         }
       }
@@ -190,7 +203,6 @@ export abstract class BaseGatewayClient implements IGatewayClient {
           if (evt.event === 'connect:challenge') {
             const nonce = (evt.payload as { nonce: string; ts: number }).nonce
             this.request<HelloOk>('connect' as GatewayMethod, { token: this.opts.token, nonce })
-
               .then((hello) => {
                 if (hello.policy?.tickIntervalMs) {
                   this.tickIntervalMs = hello.policy.tickIntervalMs
@@ -199,6 +211,7 @@ export abstract class BaseGatewayClient implements IGatewayClient {
                 this.startTickWatch()
                 if (!handshakeResolved) {
                   handshakeResolved = true
+                  clearTimeout(connectionTimeout)
                   resolve(hello)
                 }
                 this.onConnectListeners.forEach((l) => l(hello))
@@ -206,6 +219,7 @@ export abstract class BaseGatewayClient implements IGatewayClient {
               .catch((err) => {
                 if (!handshakeResolved) {
                   handshakeResolved = true
+                  clearTimeout(connectionTimeout)
                   reject(err)
                 }
               })
@@ -230,6 +244,14 @@ export abstract class BaseGatewayClient implements IGatewayClient {
         this.ws = null
         this.stopTickWatch()
         this.flushPendingErrors(new Error(`connection closed (${code})`))
+
+        // 关键修复：如果在握手阶段就关闭了，必须 reject 掉 promise
+        if (!handshakeResolved) {
+          handshakeResolved = true
+          clearTimeout(connectionTimeout)
+          reject(new Error(`connection closed before handshake (code: ${code})`))
+        }
+
         this.onCloseListeners.forEach((l) => l(code, reason))
         this.opts.onClose?.(code, reason)
         this.scheduleReconnect()

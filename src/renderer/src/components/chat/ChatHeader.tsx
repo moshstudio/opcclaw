@@ -168,7 +168,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                                 confirmText: t('common.delete'),
                                 variant: 'destructive'
                               })
-                              if (isConfirmed) {
+                              if (isConfirmed.confirmed) {
                                 deleteSession(activeAgentId, sk)
                               }
                             }}

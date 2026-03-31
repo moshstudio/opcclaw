@@ -21,6 +21,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   loading: false,
 
   fetchConfig: async () => {
+    if (get().loading) return
     set({ loading: true })
     try {
       const client = getGatewayClient()

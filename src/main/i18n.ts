@@ -4,8 +4,8 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { is } from '@electron-toolkit/utils'
 
 const localesDir = is.dev
-  ? join(__dirname, '../../src/renderer/src/locales')
-  : join(process.resourcesPath, 'app.asar.unpacked/src/renderer/src/locales')
+  ? join(__dirname, '../../src/shared/locales')
+  : join(process.resourcesPath, 'app.asar.unpacked/src/shared/locales')
 
 export async function initI18n(lang: string = 'zh'): Promise<void> {
   const resources: any = {}

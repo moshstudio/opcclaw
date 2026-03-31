@@ -33,7 +33,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="px-4 py-2 bg-destructive/10 text-destructive text-[10px] text-center border-t border-destructive/20 font-bold uppercase tracking-widest max-w-full overflow-hidden text-ellipsis shadow-[0_-4px_12px_rgba(220,38,38,0.1)]"
+            className="px-4 py-2 bg-destructive/10 text-destructive text-[10px] text-center border-t border-destructive/20 font-medium uppercase tracking-widest max-w-full overflow-hidden text-ellipsis shadow-[0_-4px_12px_rgba(220,38,38,0.1)]"
           >
             {currentError}
           </motion.div>
@@ -50,7 +50,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             loading={isTyping}
             onCancel={isTyping ? handleSend : undefined} // handleSend 内部已处理 isTyping 时的中止逻辑
             placeholder={t('common.message_assistant')}
-            className="rounded-2xl shadow-sm border-border/60 font-bold tracking-tight"
+            className="rounded-2xl shadow-sm border-border/60 font-medium tracking-tight"
             autoSize={{ minRows: 1, maxRows: 6 }}
           />
         </div>

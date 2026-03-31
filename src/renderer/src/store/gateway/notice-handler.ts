@@ -1,6 +1,7 @@
 import { NoticePayload } from '@shared/types/gateway'
 import { SessionPatch } from './chat-handler'
 import { toast } from 'sonner'
+import i18n from '@renderer/i18n'
 
 /**
  * Notice 事件专门处理器
@@ -18,7 +19,7 @@ export const applyNoticeEvent = (payload: NoticePayload, patch: SessionPatch): S
       if (idx > 0) {
         patch.messages = patch.messages.slice(idx)
       }
-      toast.info('对话历史由于过长已被归档压缩', {
+      toast.info(i18n.t('common.archived_compact'), {
         position: 'top-center',
         duration: 3000
       })

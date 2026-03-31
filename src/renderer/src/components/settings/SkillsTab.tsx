@@ -210,12 +210,12 @@ const SkillsTab: React.FC = () => {
       variant: 'destructive'
     })
 
-    if (isConfirmed) {
+    if (isConfirmed.confirmed) {
       try {
         await deleteSkill(agentId, name)
         toast.success(t('common.success'))
       } catch (err) {
-        toast.error('删除失败: ' + err)
+        toast.error(t('common.delete_failed') + ': ' + err)
       }
     }
   }
@@ -323,10 +323,19 @@ const SkillsTab: React.FC = () => {
           <h5 className="font-bold text-xs uppercase tracking-wider opacity-60">
             {t('skills.category_label')}
           </h5>
-          <p
-            className="text-muted-foreground leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: t('skills.category_desc') }}
-          />
+          <p className="text-muted-foreground leading-relaxed space-y-1">
+            {t('skills.category_desc')
+              .split('<br />')
+              .map((line, i) => (
+                <span key={i} className="block">
+                  {line
+                    .split('**')
+                    .map((part, index) =>
+                      index % 2 === 1 ? <strong key={index}>{part}</strong> : part
+                    )}
+                </span>
+              ))}
+          </p>
         </div>
       </div>
     </div>

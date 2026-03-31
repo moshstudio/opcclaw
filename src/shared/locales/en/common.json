@@ -220,5 +220,10 @@
   "remember_choice": "Remember my choice",
   "show_window": "Show Window",
   "quit": "Quit",
-  "app_name": "OpcClaw"
+  "app_name": "OpcClaw",
+  "archived_compact": "Chat history archived due to length",
+  "system_shutdown": "System Shutdown Warning",
+  "system_shutdown_desc": "The server is shutting down. Please save your work.",
+  "reset_failed": "Reset failed",
+  "clear_failed": "Clear failed"
 }

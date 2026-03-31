@@ -5,6 +5,7 @@ import { useModelStore } from '@renderer/store/useModelStore'
 import { useSystemStore } from '@renderer/store/useSystemStore'
 import { useHeartbeatStore } from '@renderer/store/useHeartbeatStore'
 import { useSkillStore } from '@renderer/store/useSkillStore'
+import { useConfigStore } from '@renderer/store/useConfigStore'
 import {
   ChatPayload,
   AgentEventPayload,
@@ -38,6 +39,7 @@ export const initGatewaySync = () => {
     useAgentStore.getState().fetchAgents()
     useHeartbeatStore.getState().fetchHeartbeatTasks()
     useModelStore.getState().fetchModels()
+    useConfigStore.getState().fetchConfig()
 
     // 如果有活跃 Agent，刷新其会话数据
     const activeAgentId = useAgentStore.getState().activeAgentId

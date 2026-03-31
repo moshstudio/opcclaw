@@ -244,9 +244,7 @@ export function createBroadcastFn(clients: Set<GwClient>, logger: Logger): Broad
     const frame = { type: 'event', event, payload, seq: ++seq } as EventFrame
     const data = JSON.stringify(frame)
 
-    if (logger.level === 'debug') {
-      logger.debug(`[GW-OUT] BROADCAST: ${formatGatewayDebugData(frame)}`)
-    }
+    logger.debug(`[GW-OUT] BROADCAST: ${formatGatewayDebugData(frame)}`)
 
     for (const c of clients) {
       if (!c.authed) continue

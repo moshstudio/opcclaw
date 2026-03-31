@@ -55,9 +55,7 @@ export function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
     if (!isRequestFrame(parsed)) return
     const req = parsed as RequestFrame
 
-    if (ctx.logger.level === 'debug') {
-      ctx.logger.debug(`[GW-IN] ${formatGatewayDebugData(req)}`)
-    }
+    ctx.logger.debug(`[GW-IN] ${formatGatewayDebugData(req)}`)
 
     // 安全检查：未认证时仅允许 connect
     if (!client.authed && req.method !== 'connect') {
@@ -133,9 +131,7 @@ function send(
   if (socket.readyState === WebSocket.OPEN) {
     const data = JSON.stringify(frame)
 
-    if (logger?.level === 'debug') {
-      logger.debug(`[GW-OUT] SEND: ${formatGatewayDebugData(frame)}`)
-    }
+    logger?.debug(`[GW-OUT] SEND: ${formatGatewayDebugData(frame)}`)
 
     socket.send(data)
   }

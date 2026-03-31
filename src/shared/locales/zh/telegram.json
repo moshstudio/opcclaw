@@ -1,0 +1,22 @@
+{
+  "welcome": "你好！我是 AI 机器人。\n\n默认智能体：{{agentId}}\n\n指令列表：\n/id - 获取当前群组/话题 ID\n/bind <agentId> - 绑定此对话到特定智能体\n/agents - 列出可用的智能体\n/reset - 重置当前会话\n/health - 检查网关状态",
+  "chat_info_title": "📌 *当前对话信息*",
+  "chat_id": "对话 ID: `{{chatId}}`",
+  "topic_id": "话题 ID: `{{threadId}}`",
+  "chat_type": "类型: {{type}}",
+  "bind_usage": "用法: /bind <agentId>\n示例: /bind main",
+  "agent_not_found": "找不到智能体 \"{{agentId}}\"。使用 /agents 查看可用列表。",
+  "bind_success": "✅ 已绑定到智能体：{{agentId}}\n目标：{{target}}",
+  "target_topic": "话题 {{threadId}}",
+  "target_current": "当前对话",
+  "available_agents": "可用智能体：\n{{list}}",
+  "no_agents": "暂无注册的智能体。",
+  "fetch_agents_failed": "获取智能体列表失败。",
+  "session_reset": "会话已重置。",
+  "reset_failed": "重置失败：{{error}}",
+  "gateway_status": "网关运行时间：{{uptime}}s，客户端数：{{clients}}",
+  "health_failed": "健康检查失败：{{error}}",
+  "thinking": "正在思考...",
+  "send_failed": "发送失败：{{error}}",
+  "error": "错误：{{error}}"
+}

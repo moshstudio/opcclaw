@@ -19,7 +19,10 @@ const DEFAULT_CONFIG: AppConfig = {
     token: 'openclaw-mini-secret',
     logLevel: 'info'
   },
-  defaultModelId: ''
+  defaultModelId: '',
+  channels: {
+    telegram: []
+  }
 }
 
 export class ConfigService {

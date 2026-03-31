@@ -118,7 +118,7 @@ const ScheduledTasks: React.FC = () => {
       cancelText: t('common.cancel')
     })
 
-    if (isConfirmed) {
+    if (isConfirmed.confirmed) {
       try {
         await deleteHeartbeatFile(agentId)
         toast.success(t('common.success'))

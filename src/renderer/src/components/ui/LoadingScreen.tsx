@@ -1,10 +1,19 @@
 import React from 'react'
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import icon from '../../assets/icon.png'
 
 export const LoadingScreen: React.FC = () => {
+  const { t } = useTranslation()
+
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-background/90 backdrop-blur-3xl overflow-hidden">
+    <motion.div
+      initial={false}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.4 }}
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-background/90 backdrop-blur-3xl overflow-hidden"
+    >
       {/* Decorative background glows */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 blur-[120px] rounded-full pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/10 blur-[120px] rounded-full pointer-events-none" />
@@ -45,16 +54,16 @@ export const LoadingScreen: React.FC = () => {
           className="text-center"
         >
           <div className="flex items-center justify-center gap-2 mb-3">
-            <h2 className="text-2xl font-black tracking-tight text-foreground/90 font-sans">
-              OPCCLAW
+            <h2 className="text-2xl font-black tracking-tight text-foreground/90 font-sans uppercase">
+              {t('common.app_name')}
             </h2>
             <div className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
           </div>
           <p className="text-sm font-medium text-muted-foreground/70 tracking-widest uppercase">
-            Preparing your workspace
+            {t('loading.preparing_workspace')}
           </p>
         </motion.div>
       </div>
-    </div>
+    </motion.div>
   )
 }

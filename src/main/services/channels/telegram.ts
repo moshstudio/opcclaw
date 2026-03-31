@@ -1,197 +1,492 @@
 /**
- * Telegram 频道适配器
+ * Telegram 频道类
  *
- * 对齐 OpenClaw:
- * - src/telegram/bot.ts → grammy Bot 初始化
- * - src/telegram/bot-handlers.ts → 消息处理
- * - src/telegram/bot-message-dispatch.ts → 调用 Agent
- * - src/telegram/bot/delivery.ts → 回复发送
- *
- * 与 openclaw 的区别:
- * - openclaw 的频道直接调用内嵌 Agent（不经过 Gateway）
- * - mini 版采用 Gateway 客户端模式（所有入口统一走 RPC）
- *
- * 架构:
- *   Telegram ──► Bot(grammy) ──► GatewayClient ──► Gateway ──► Agent
- *     ◄──── bot.api.sendMessage ◄──── onEvent("chat") ◄────
+ * 功能：
+ * - 封装 Telegram Bot 与 Gateway 的交互
+ * - 支持流式响应与打字状态同步
+ * - 支持论坛话题模式 (Topics/Threads)
+ * - 支持绑定特定智能体
+ * - 国际化支持 (i18n)
  */
 
-import { Bot } from 'grammy'
+import { Bot, Context } from 'grammy'
 import { GatewayClient } from '../gateway/client'
-import type { EventFrame } from '../gateway/protocol'
+import type { EventFrame, ChatPayload, Message, Agent } from '../gateway/protocol'
 import { Logger } from '@main/services/common/logger'
+import { ProxyUtils } from '@main/services/common/proxy'
+import i18next from 'i18next'
 
-// ============== 类型 ==============
+// --- 常量定义 ---
+const MAX_MESSAGE_LENGTH = 4096
+const TYPING_REFRESH_MS = 5000
+const EDIT_THROTTLE_MS = 1500
+const CHANNEL_ID = 'telegram'
 
-export type TelegramChannelOptions = {
+// --- 类型扩展 ---
+
+export interface TelegramChannelOptions {
   botToken: string
+  proxy?: string
   gatewayUrl?: string
   gatewayToken?: string
+  defaultAgentId?: string
+  agentBindings?: Record<string, string>
+  onBindingChange?: (bindings: Record<string, string>) => void
 }
 
-// ============== 常量 ==============
+/** 运行时的响应状态 */
+interface ActiveRun {
+  chatId: number
+  messageId?: number
+  accumulatedText: string
+  lastUpdateAt: number
+  lang?: string
+  isSending?: boolean
+  latestText?: string
+  lastSentText?: string
+  isUpdating?: boolean
+}
 
-const TG_MAX_LENGTH = 4096
-const TYPING_INTERVAL_MS = 5000
+/** 会话上下文记录 */
+interface SessionContext {
+  chatId: number
+  lang?: string
+}
 
-// ============== 启动 ==============
+export class TelegramChannel {
+  private readonly bot: Bot
+  private readonly client: GatewayClient
+  private readonly logger: Logger
+  private readonly opts: TelegramChannelOptions
 
-export async function startTelegramChannel(opts: TelegramChannelOptions) {
-  const logger = new Logger('[Telegram]')
-  const bot = new Bot(opts.botToken)
+  /** 状态追踪 */
+  private readonly activeRuns = new Map<string, ActiveRun>()
+  private readonly typingTimers = new Map<number, NodeJS.Timeout>()
+  private readonly sessionRegistry = new Map<string, SessionContext>()
+  private readonly agentBindings = new Map<string, string>()
 
-  // sessionKey → chatId 映射（用于从 gateway 事件找到对应的 Telegram 聊天）
-  const sessionChats = new Map<string, number>()
-  // chatId → typing interval（流式响应期间持续发送 typing 状态）
-  const typingTimers = new Map<number, ReturnType<typeof setInterval>>()
+  constructor(opts: TelegramChannelOptions) {
+    this.opts = opts
+    this.logger = new Logger(`Telegram:${opts.botToken.slice(0, 8)}...`)
 
-  function sessionKeyFor(chatId: number): string {
-    return `tg:${chatId}`
+    // 初始化动态绑定
+    if (opts.agentBindings) {
+      Object.entries(opts.agentBindings).forEach(([k, v]) => this.agentBindings.set(k, v))
+    }
+
+    // 初始化核心组件
+    this.bot = new Bot(opts.botToken, {
+      client: { baseFetchConfig: ProxyUtils.getBaseFetchConfig(opts.proxy) }
+    })
+
+    this.client = new GatewayClient({
+      url: opts.gatewayUrl ?? 'ws://localhost:18781',
+      token: opts.gatewayToken,
+      onEvent: (evt) => this.handleGatewayEvent(evt),
+      onConnect: (hello) => this.logger.info(`[Gateway] 已连接 (v${hello.protocol})`)
+    })
   }
 
-  // ============== Typing 管理 ==============
+  // ============== 生命周期 ==============
 
-  function startTyping(chatId: number): void {
-    stopTyping(chatId)
-    bot.api.sendChatAction(chatId, 'typing').catch(() => {})
-    typingTimers.set(
-      chatId,
-      setInterval(() => {
-        bot.api.sendChatAction(chatId, 'typing').catch(() => {})
-      }, TYPING_INTERVAL_MS)
-    )
+  async start(): Promise<void> {
+    // 异步启动网关和 Bot
+    this.client.connect().catch((err) => this.logger.error('网关连接失败:', err))
+    this.setupHandlers()
+    this.bot.start()
+
+    // 预加热 Bot 信息
+    this.bot
+      .init()
+      .then(() => this.logger.info(`Bot @${this.bot.botInfo.username} 启动成功`))
+      .catch((err) => this.logger.error('Bot 令牌可能无效:', err.message))
   }
 
-  function stopTyping(chatId: number): void {
-    const timer = typingTimers.get(chatId)
-    if (timer) {
-      clearInterval(timer)
-      typingTimers.delete(chatId)
+  async stop(): Promise<void> {
+    this.typingTimers.forEach(clearInterval)
+    this.typingTimers.clear()
+    this.activeRuns.clear()
+    this.sessionRegistry.clear()
+    await this.bot.stop()
+    this.client.close()
+    this.logger.info('Telegram 频道已停止')
+  }
+
+  // ============== 逻辑分发 ==============
+
+  private setupHandlers(): void {
+    this.bot.catch((err) => this.logger.error('Bot 运行时错误:', err))
+
+    // 基础指令
+    this.bot.command('start', (ctx) => this.cmdStart(ctx))
+    this.bot.command('reset', (ctx) => this.cmdReset(ctx))
+    this.bot.command('health', (ctx) => this.cmdHealth(ctx))
+    this.bot.command('bind', (ctx) => this.cmdBind(ctx))
+    this.bot.command('agents', (ctx) => this.cmdAgents(ctx))
+    this.bot.command('id', (ctx) => this.cmdId(ctx))
+
+    // 文本消息处理
+    this.bot.on('message:text', (ctx) => this.onMessageReceived(ctx))
+  }
+
+  /**
+   * 处理网关送达的消息事件
+   */
+  private async handleGatewayEvent(evt: EventFrame): Promise<void> {
+    if (evt.event !== 'chat') return
+    const payload = evt.payload as ChatPayload
+
+    const keyInfo = this.parseSessionKey(payload.sessionKey)
+    if (!keyInfo) return
+
+    // 如果指定了默认智能体且不匹配，则过滤（多实例环境）
+    if (this.opts.defaultAgentId && keyInfo.agentId !== this.opts.defaultAgentId) return
+
+    const run = this.activeRuns.get(payload.runId)
+    const context = this.sessionRegistry.get(payload.sessionKey)
+    const chatId = run?.chatId || context?.chatId || 0
+    if (!chatId) return
+
+    const lang = run?.lang || context?.lang
+
+    switch (payload.state) {
+      case 'start':
+      case 'thinking':
+        await this.onGatewayChatStart(payload, chatId, lang)
+        break
+      case 'delta':
+        if (run) await this.onGatewayChatDelta(payload, run)
+        break
+      case 'final':
+        await this.onGatewayChatFinal(payload, chatId, run)
+        break
+      case 'error':
+        await this.onGatewayChatError(payload, chatId, run)
+        break
     }
   }
 
-  // ============== 长消息分片发送 ==============
+  // ============== 消息入站 (Input) ==============
 
-  async function sendLongMessage(chatId: number, text: string): Promise<void> {
+  private async onMessageReceived(ctx: Context): Promise<void> {
+    if (!ctx.message?.text || !ctx.chat?.id) return
+    const { id: chatId, type } = ctx.chat
+    const text = ctx.message.text
+
+    // 群组内提到检查
+    if (type !== 'private') {
+      const botInfo = this.bot.botInfo
+      if (!botInfo) return
+      const isMentioned = text.includes(`@${botInfo.username}`)
+      const isReplyToMe = ctx.message.reply_to_message?.from?.id === botInfo.id
+      if (!isMentioned && !isReplyToMe) return
+    }
+
+    const threadId = ctx.message.message_thread_id
+    const sessionKey = this.getSessionKey(chatId, threadId)
+    const agentId = sessionKey.split(':')[0]
+
+    // 更新联系记录与打字状态
+    const lang = ctx.from?.language_code
+    this.sessionRegistry.set(sessionKey, { chatId, lang })
+    this.startTypingIndicator(chatId)
+
+    this.logger.debug(`[Input] From ${chatId}: "${text.slice(0, 30)}..." -> agent: ${agentId}`)
+
+    try {
+      await this.client.request('chat:send', { agentId, sessionKey, message: text })
+    } catch (err) {
+      this.logger.error(`[Input] 网关发送失败:`, err)
+      this.stopTypingIndicator(chatId)
+      const t = this.getTranslate(ctx)
+      await ctx.reply(t('telegram:error', { error: (err as Error).message }))
+    }
+  }
+
+  // ============== 消息出站 (Output) ==============
+
+  private async onGatewayChatStart(p: ChatPayload, chatId: number, lang?: string): Promise<void> {
+    // 同步刷新打字状态并初始化 Run
+    this.bot.api.sendChatAction(chatId, 'typing').catch(() => {})
+    if (this.activeRuns.has(p.runId)) return
+
+    this.activeRuns.set(p.runId, {
+      chatId,
+      accumulatedText: '',
+      lastUpdateAt: Date.now(),
+      lang
+    })
+  }
+
+  /**
+   * 处理网关送达的消息分段 (Delta)
+   */
+  private async onGatewayChatDelta(p: ChatPayload, run: ActiveRun): Promise<void> {
+    if (!p.delta) return
+    run.accumulatedText += p.delta
+    run.latestText = run.accumulatedText
+
+    const now = Date.now()
+    const shouldUpdate = now - run.lastUpdateAt > EDIT_THROTTLE_MS && run.accumulatedText.trim()
+
+    if (shouldUpdate) {
+      run.lastUpdateAt = now
+      this.scheduleUpdate(run)
+    }
+  }
+
+  /**
+   * 采用串行锁与双缓冲区（latestText）更新 Telegram 消息
+   * 功能：合并频繁更新，消除异步竞态导致的乱序
+   */
+  private async scheduleUpdate(run: ActiveRun): Promise<void> {
+    if (run.isUpdating) return
+    run.isUpdating = true
+
+    try {
+      while (run.latestText !== run.lastSentText) {
+        const textToSent = run.latestText || ''
+        const truncated = this.truncate(textToSent)
+
+        if (!run.messageId) {
+          // 首条消息发送保护
+          if (run.isSending) {
+            await new Promise((r) => setTimeout(r, 100))
+            continue
+          }
+          run.isSending = true
+          try {
+            const msg = await this.bot.api.sendMessage(run.chatId, truncated)
+            run.messageId = msg.message_id
+            run.lastSentText = textToSent
+          } catch (err) {
+            this.logger.error('[Output] 首次消息发送失败:', err)
+            break
+          } finally {
+            run.isSending = false
+          }
+        } else {
+          // 编辑现有消息
+          try {
+            await this.bot.api.editMessageText(run.chatId, run.messageId, truncated)
+            run.lastSentText = textToSent
+          } catch (err: any) {
+            const desc = err.description || ''
+            if (desc.includes('message is not modified')) {
+              run.lastSentText = textToSent
+              continue
+            }
+            if (desc.includes('message to edit not found')) break
+            this.logger.warn('[Output] 编辑消息失败:', desc)
+            await new Promise((r) => setTimeout(r, 500))
+          }
+        }
+        await new Promise((r) => setTimeout(r, 100))
+      }
+    } finally {
+      run.isUpdating = false
+    }
+  }
+
+  /**
+   * 处理网关送达的最终消息 (Final)
+   */
+  private async onGatewayChatFinal(p: ChatPayload, chatId: number, run?: ActiveRun): Promise<void> {
+    this.stopTypingIndicator(chatId)
+    const finalText = this.extractText(p.message) || run?.accumulatedText || ''
+    if (!finalText.trim()) {
+      if (p.runId) this.activeRuns.delete(p.runId)
+      return
+    }
+
+    if (run) {
+      run.latestText = finalText
+      // 最后一次更新确保送达
+      await this.scheduleUpdate(run)
+    } else {
+      // 对应快速响应场景
+      await this.sendFullMessage(chatId, finalText)
+    }
+
+    if (p.runId) {
+      // 延迟清理对象引用，允许正在进行的 scheduleUpdate 循环完成
+      setTimeout(() => this.activeRuns.delete(p.runId), 2000)
+    }
+  }
+
+  private async onGatewayChatError(p: ChatPayload, chatId: number, run?: ActiveRun): Promise<void> {
+    this.stopTypingIndicator(chatId)
+    const t = this.getTranslate(run?.lang)
+    const errorMsg = t('telegram:error', { error: p.error ?? 'unknown' })
+
+    if (run?.messageId) {
+      await this.bot.api.editMessageText(chatId, run.messageId, errorMsg).catch(() => {})
+    } else {
+      await this.bot.api.sendMessage(chatId, errorMsg).catch(() => {})
+    }
+
+    if (p.runId) this.activeRuns.delete(p.runId)
+  }
+
+  // ============== 指令逻辑 ==============
+
+  private cmdStart(ctx: Context): void {
+    const t = this.getTranslate(ctx)
+    ctx.reply(t('telegram:welcome', { agentId: this.opts.defaultAgentId || 'main' }))
+  }
+
+  private cmdId(ctx: Context): void {
+    const t = this.getTranslate(ctx)
+    const chatId = ctx.chat?.id
+    const threadId = ctx.message?.message_thread_id
+
+    let info = `*${t('telegram:chat_info_title')}*\n\n`
+    info += `${t('telegram:chat_id', { chatId })}\n`
+    if (threadId) info += `${t('telegram:topic_id', { threadId })}\n`
+    info += `\n${t('telegram:chat_type', { type: ctx.chat?.type })}`
+
+    ctx.reply(info, { parse_mode: 'Markdown' })
+  }
+
+  private async cmdBind(ctx: Context): Promise<void> {
+    const t = this.getTranslate(ctx)
+    const agentId = ctx.message?.text?.split(' ')[1]?.trim()
+    if (!agentId) return void ctx.reply(t('telegram:bind_usage'))
+
+    const chatId = ctx.chat!.id
+    const threadId = ctx.message?.message_thread_id
+    const key = threadId ? `${chatId}_${threadId}` : `${chatId}`
+
+    try {
+      const res = await this.client.request<{ agents: Agent[] }>('agent:list')
+      if (!res.agents.some((a) => a.id === agentId)) {
+        return void ctx.reply(t('telegram:agent_not_found', { agentId }))
+      }
+
+      this.agentBindings.set(key, agentId)
+      this.opts.onBindingChange?.(Object.fromEntries(this.agentBindings))
+
+      const target = threadId
+        ? t('telegram:target_topic', { threadId })
+        : t('telegram:target_current')
+      await ctx.reply(t('telegram:bind_success', { agentId, target }))
+    } catch (err) {
+      this.logger.error('绑定失败:', err)
+      await ctx.reply(t('telegram:error', { error: 'Gateway unreachable' }))
+    }
+  }
+
+  private async cmdAgents(ctx: Context): Promise<void> {
+    const t = this.getTranslate(ctx)
+    try {
+      const res = await this.client.request<{ agents: Agent[] }>('agent:list')
+      const list = res.agents.map((a) => `- \`${a.id}\` (${a.config.name || 'Unnamed'})`).join('\n')
+      await ctx.reply(t('telegram:available_agents', { list: list || t('telegram:no_agents') }), {
+        parse_mode: 'Markdown'
+      })
+    } catch (err) {
+      this.logger.error('获取列表失败:', err)
+      await ctx.reply(t('telegram:fetch_agents_failed'))
+    }
+  }
+
+  private async cmdReset(ctx: Context): Promise<void> {
+    const t = this.getTranslate(ctx)
+    const chatId = ctx.chat!.id
+    const threadId = ctx.message?.message_thread_id
+    const sessionKey = this.getSessionKey(chatId, threadId)
+    const agentId = sessionKey.split(':')[0]
+
+    try {
+      await this.client.request('sessions:reset', { agentId, sessionKey })
+      await ctx.reply(t('telegram:session_reset'))
+    } catch (err) {
+      await ctx.reply(t('telegram:reset_failed', { error: (err as Error).message }))
+    }
+  }
+
+  private async cmdHealth(ctx: Context): Promise<void> {
+    const t = this.getTranslate(ctx)
+    try {
+      const h = await this.client.request<{ uptimeMs: number; clients: number }>('health')
+      await ctx.reply(
+        t('telegram:gateway_status', {
+          uptime: Math.round(h.uptimeMs / 1000),
+          clients: h.clients
+        })
+      )
+    } catch (err) {
+      await ctx.reply(t('telegram:health_failed', { error: (err as Error).message }))
+    }
+  }
+
+  // ============== 私有辅助 ==============
+
+  private getSessionKey(chatId: number, threadId?: number): string {
+    const bindKey = threadId ? `${chatId}_${threadId}` : `${chatId}`
+    const agentId = this.agentBindings.get(bindKey) || this.opts.defaultAgentId || 'main'
+    return `${agentId}:${CHANNEL_ID}${threadId ? `:${threadId}` : ''}`
+  }
+
+  private parseSessionKey(key: string) {
+    const parts = key.split(':')
+    if (parts[1] !== CHANNEL_ID) return null
+    return {
+      agentId: parts[0],
+      threadId: parts[2] ? parseInt(parts[2], 10) : undefined
+    }
+  }
+
+  private getTranslate(source?: Context | string) {
+    let lang = 'en'
+    if (typeof source === 'string') {
+      lang = source.startsWith('zh') ? 'zh' : 'en'
+    } else if (source?.from?.language_code) {
+      lang = source.from.language_code.startsWith('zh') ? 'zh' : 'en'
+    }
+    return i18next.getFixedT(lang)
+  }
+
+  private extractText(message?: Message): string {
+    if (!message?.content) return ''
+    if (typeof message.content === 'string') return message.content
+    return message.content
+      .map((b) => {
+        if (b.type === 'text') return b.text
+        if (b.type === 'thinking') return b.thinking
+        return ''
+      })
+      .join('')
+  }
+
+  private truncate(text: string): string {
+    return text.length > MAX_MESSAGE_LENGTH ? text.slice(0, MAX_MESSAGE_LENGTH) : text
+  }
+
+  private async sendFullMessage(chatId: number, text: string): Promise<void> {
     if (!text) return
     let remaining = text
     while (remaining.length > 0) {
-      const chunk = remaining.slice(0, TG_MAX_LENGTH)
-      remaining = remaining.slice(TG_MAX_LENGTH)
-      await bot.api.sendMessage(chatId, chunk)
+      const chunk = remaining.slice(0, MAX_MESSAGE_LENGTH)
+      remaining = remaining.slice(MAX_MESSAGE_LENGTH)
+      await this.bot.api
+        .sendMessage(chatId, chunk)
+        .catch((e) => this.logger.error('发送分段失败:', e))
     }
   }
 
-  // ============== Gateway 客户端 ==============
+  private startTypingIndicator(chatId: number): void {
+    this.stopTypingIndicator(chatId)
+    const send = () => this.bot.api.sendChatAction(chatId, 'typing').catch(() => {})
+    send()
+    this.typingTimers.set(chatId, setInterval(send, TYPING_REFRESH_MS))
+  }
 
-  const client = new GatewayClient({
-    url: opts.gatewayUrl ?? 'ws://localhost:18781',
-    token: opts.gatewayToken,
-    onEvent: (evt: EventFrame) => {
-      if (evt.event !== 'chat') return
-      const p = evt.payload as {
-        sessionKey?: string
-        state?: string
-        text?: string
-        error?: string
-      }
-      // 仅处理 Telegram 会话的事件
-      if (!p.sessionKey?.startsWith('tg:')) return
-
-      const chatId = sessionChats.get(p.sessionKey)
-      if (!chatId) return
-
-      if (p.state === 'final') {
-        stopTyping(chatId)
-        if (p.text)
-          sendLongMessage(chatId, p.text).catch((err) => logger.error('Send failed:', err))
-      } else if (p.state === 'error') {
-        stopTyping(chatId)
-        bot.api
-          .sendMessage(chatId, `Error: ${p.error ?? 'unknown'}`)
-          .catch((err) => logger.error('Send failed:', err))
-      }
-      // delta 事件忽略（Telegram 不做流式编辑，等 final 一次性发送）
-    },
-    onConnect: (hello) => {
-      logger.info(`Gateway reconnected (v${hello.protocol})`)
-    }
-  })
-
-  const hello = await client.connect()
-
-  // 预先获取 bot 信息并缓存（避免每条群组消息都调用 API）
-  await bot.init()
-  const botInfo = bot.botInfo
-
-  // 全局错误处理
-  bot.catch((err) => {
-    logger.error('Bot error:', err)
-  })
-
-  // ============== Bot 命令 ==============
-
-  bot.command('start', (ctx) => ctx.reply("Hi! Send me a message and I'll reply via the AI agent."))
-
-  bot.command('reset', async (ctx) => {
-    const sessionKey = sessionKeyFor(ctx.chat.id)
-    try {
-      await client.request('sessions:reset', { sessionKey })
-      await ctx.reply('Session reset.')
-    } catch (err) {
-      await ctx.reply(`Reset failed: ${(err as Error).message}`)
-    }
-  })
-
-  bot.command('health', async (ctx) => {
-    try {
-      const h = await client.request<{ uptimeMs: number; clients: number }>('health')
-      await ctx.reply(`Gateway uptime: ${Math.round(h.uptimeMs / 1000)}s, clients: ${h.clients}`)
-    } catch (err) {
-      await ctx.reply(`Health check failed: ${(err as Error).message}`)
-    }
-  })
-
-  // ============== 消息处理 ==============
-
-  bot.on('message:text', async (ctx) => {
-    // 群组中仅响应 @bot 或回复 bot 的消息
-    if (ctx.chat.type !== 'private') {
-      const mentioned = ctx.message.text.includes(`@${botInfo.username}`)
-      const repliedToMe = ctx.message.reply_to_message?.from?.id === botInfo.id
-      if (!mentioned && !repliedToMe) return
-    }
-
-    const chatId = ctx.chat.id
-    const sessionKey = sessionKeyFor(chatId)
-    sessionChats.set(sessionKey, chatId)
-
-    startTyping(chatId)
-
-    try {
-      await client.request('chat:send', { sessionKey, message: ctx.message.text })
-      // 回复由 onEvent 回调处理
-    } catch (err) {
-      stopTyping(chatId)
-      await ctx.reply(`Error: ${(err as Error).message}`)
-    }
-  })
-
-  // ============== 启动 Bot ==============
-
-  bot.start()
-
-  logger.info('Telegram Channel started')
-  logger.info(`Gateway: ${opts.gatewayUrl ?? 'ws://localhost:18781'} (v${hello.protocol})`)
-  logger.info('Bot: polling')
-  logger.info('Commands: /start /reset /health')
-
-  return {
-    close: () => {
-      for (const timer of typingTimers.values()) clearInterval(timer)
-      typingTimers.clear()
-      bot.stop()
-      client.close()
+  private stopTypingIndicator(chatId: number): void {
+    const timer = this.typingTimers.get(chatId)
+    if (timer) {
+      clearInterval(timer)
+      this.typingTimers.delete(chatId)
     }
   }
 }

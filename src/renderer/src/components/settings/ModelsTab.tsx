@@ -152,7 +152,7 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
       description: t('models.delete_confirm'),
       variant: 'destructive'
     })
-    if (isConfirmed) {
+    if (isConfirmed.confirmed) {
       await deleteModel(id)
     }
   }

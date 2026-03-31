@@ -1075,6 +1075,52 @@ export const scheduleTaskTool: Tool<{
   }
 }
 
+/**
+ * 交互确认工具
+ *
+ * 允许 Agent 向用户发起询问并等待反馈。
+ * 支持带记忆的确认（如果用户勾选了"记住选择"）。
+ */
+export const confirmTool: Tool<{
+  prompt: string
+  options?: string[]
+  remember_key?: string
+}> = {
+  name: 'confirm',
+  category: 'runtime',
+  description: '向用户发起交互确认或选择请求，并等待用户回复。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      prompt: { type: 'string', description: '交互提示文案（支持中英文）' },
+      options: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '可选的操作按钮列表（例如 ["确定", "取消"]）。如果不填，前端通常会提供默认按钮。'
+      },
+      remember_key: {
+        type: 'string',
+        description: '持久化记忆 Key。如果提供，用户可以选择“以后不再询问”，Agent 将自动记住该选择。'
+      }
+    },
+    required: ['prompt']
+  },
+  async execute(input, ctx: ToolContext) {
+    try {
+      // 使用 ConfirmProvider 统一管理交互逻辑（包含记忆检查、UI 触发、记忆保存）
+      const result = await ConfirmProvider.run(ctx, {
+        key: input.remember_key || `generic:${Date.now()}`,
+        prompt: input.prompt,
+        options: input.options
+      })
+
+      return result ? '用户已确认/选择了肯定选项' : '用户已取消/选择了否定选项'
+    } catch (err) {
+      return `错误: ${(err as Error).message}`
+    }
+  }
+}
+
 // ============== 导出 ==============
 
 /**
@@ -1109,5 +1155,6 @@ export const builtinTools: Tool[] = [
   sessionsSpawnTool,
   scheduleTaskTool,
   webFetchTool,
-  browserTool
+  browserTool,
+  confirmTool
 ]

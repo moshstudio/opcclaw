@@ -21,7 +21,11 @@ const Code: FC<ComponentProps> = (props) => {
     return <code {...props} />
   }
 
-  return <CodeHighlighter lang={lang}>{children}</CodeHighlighter>
+  return (
+    <CodeHighlighter lang={lang} prismLightMode={false}>
+      {children}
+    </CodeHighlighter>
+  )
 }
 
 const MarkdownRenderer = memo(({ content, className }: MarkdownRendererProps) => {

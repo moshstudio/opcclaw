@@ -284,12 +284,12 @@ export class Agent {
     const def = createModelDef(modelConfig, {
       provider: this.config.provider,
       baseUrl: this.config.baseUrl,
-      reasoning: this.config.reasoning !== undefined,
+      reasoning: this.config.reasoning !== undefined ? !!this.config.reasoning : undefined,
       contextTokens: this.config.contextTokens,
       supportsVision: this.config.supportsVision
     })
 
-    return { modelDef: def, apiKey: modelConfig.apiKey }
+    return { modelDef: def, apiKey: this.config.apiKey || modelConfig.apiKey }
   }
 
   // --- 基础 Getter ---
@@ -494,29 +494,12 @@ export class Agent {
             trigger: () => this.heartbeat.trigger()
           },
           confirmUI: async (prompt, options, rememberKey) => {
-            return new Promise<{ result: boolean; remember: boolean }>((resolve) => {
-              const interactionId = `int_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-
-              // 5 分钟超时处理
-              const timer = setTimeout(
-                () => {
-                  this.respondInteraction(interactionId, false)
-                },
-                5 * 60 * 1000
-              )
-
-              this.interactionCallbacks.set(interactionId, { resolve, timer })
-
-              this.emit({
-                type: 'chat:interaction',
-                runId,
-                sessionKey: sk,
-                interactionId,
-                prompt,
-                options,
-                isComplete: false,
-                rememberKey
-              })
+            return this.requestInteraction({
+              runId,
+              sessionKey: sk,
+              prompt,
+              options,
+              rememberKey
             })
           }
         },
@@ -602,6 +585,43 @@ export class Agent {
       clearTimeout(entry.timer)
       entry.resolve({ result, remember: !!remember })
     }
+  }
+
+  /**
+   * 发起交互请求并等待回复
+   */
+  private async requestInteraction(params: {
+    runId: string
+    sessionKey: string
+    prompt: string
+    options?: string[]
+    rememberKey?: string
+  }): Promise<{ result: boolean; remember: boolean }> {
+    return new Promise<{ result: boolean; remember: boolean }>((resolve) => {
+      const interactionId = `int_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+
+      // 5 分钟超时处理：交互超时自动返回假
+      const timer = setTimeout(
+        () => {
+          this.respondInteraction(interactionId, false)
+        },
+        5 * 60 * 1000
+      )
+
+      this.interactionCallbacks.set(interactionId, { resolve, timer })
+
+      // 仅抛出交互事件，由对端的适配器（如 Telegram/Web）决定如何呈现 UI
+      this.emit({
+        type: 'chat:interaction',
+        runId: params.runId,
+        sessionKey: params.sessionKey,
+        interactionId,
+        prompt: params.prompt,
+        options: params.options,
+        isComplete: false,
+        rememberKey: params.rememberKey
+      })
+    })
   }
 
   // --- 辅助工具方法 ---

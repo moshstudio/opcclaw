@@ -52,7 +52,7 @@ export class ConfirmProvider {
    * @param ctx 工具上下文 (需包含真正的交互实现 confirmUI)
    * @param task 任务描述
    */
-  private static async run(ctx: any, task: ConfirmTask): Promise<boolean> {
+  public static async run(ctx: any, task: ConfirmTask): Promise<boolean> {
     // 1. 记忆拦截：如果已经记住过，直接走自动化
     const config = ConfigService.getInstance().getConfig()
     const remembered = config.rememberedChoices?.[task.key]

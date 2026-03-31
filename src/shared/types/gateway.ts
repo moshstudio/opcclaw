@@ -4,7 +4,7 @@
 
 import type { Usage } from '@mariozechner/pi-ai'
 import type { Agent, Message, AgentPerformance, SubagentInfo } from './agent'
-export type { Message, Usage, AgentPerformance, SubagentInfo }
+export type { Agent, Message, Usage, AgentPerformance, SubagentInfo }
 
 import type { AIModelConfig } from './models'
 
@@ -45,6 +45,7 @@ export const GATEWAY_METHODS = [
   'models:setDefault',
   'models:test',
   'models:providers',
+  'channel:telegram:test',
   'health',
   'system:events-doc',
   'heartbeat:list',

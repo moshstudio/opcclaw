@@ -19,6 +19,7 @@ import { cn } from '@renderer/lib/utils'
 
 import { useConfirm } from '@renderer/hooks/use-confirm'
 import { useConfigStore } from '@renderer/store/useConfigStore'
+import { getGatewayClient } from '@renderer/services/gateway-client'
 
 const GatewayTab: React.FC = () => {
   const { t } = useTranslation()
@@ -48,7 +49,7 @@ const GatewayTab: React.FC = () => {
         confirmText: t('common.confirm')
       })
 
-      if (isConfirmed) {
+      if (isConfirmed.confirmed) {
         const newToken =
           Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
         updateConfig({ gateway: { ...config.gateway, token: newToken } })
@@ -57,30 +58,24 @@ const GatewayTab: React.FC = () => {
   }
 
   useEffect(() => {
-    if (!config) fetchConfig()
-  }, [config, fetchConfig])
+    fetchConfig()
+  }, [fetchConfig])
 
   const handleSave = async () => {
     if (!config) return
     setSaving(true)
-
     try {
-      // 触发重连 (由于 store 已经更新了 config)
-      const { getGatewayClient } = await import('@renderer/services/gateway-client')
-      const client = getGatewayClient()
-      client.close()
+      // 触发重连（store 已更新 config，关闭后会自动用新配置重连）
+      getGatewayClient().close()
     } catch (err) {
-      console.warn('Failed to save config via gateway:', err)
+      console.warn('Failed to reconnect gateway:', err)
     }
-
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
 
-  if (!config) return null
-
-  if (loading) {
+  if (loading || !config) {
     return (
       <div className="flex items-center justify-center h-[400px]">
         <RefreshCw className="w-6 h-6 animate-spin text-primary/40" />
@@ -129,7 +124,11 @@ const GatewayTab: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <label className="text-xs text-muted-foreground ml-1">{t('gateway.port')}</label>
+              <div className="flex items-center justify-between h-5">
+                <label className="text-xs text-muted-foreground font-bold tracking-tight">
+                  {t('gateway.port')}
+                </label>
+              </div>
               <NumberInput
                 value={config.gateway.port}
                 onChange={(val) => updateConfig({ gateway: { ...config.gateway, port: val } })}
@@ -137,9 +136,11 @@ const GatewayTab: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between ml-1">
-                <label className="text-xs text-muted-foreground">{t('gateway.token')}</label>
-                <span className="text-[10px] text-muted-foreground/40 font-medium whitespace-nowrap">
+              <div className="flex items-center justify-between h-5">
+                <label className="text-xs text-muted-foreground font-bold tracking-tight">
+                  {t('gateway.token')}
+                </label>
+                <span className="text-[10px] text-muted-foreground/40 font-bold uppercase tracking-widest whitespace-nowrap leading-none">
                   {t('gateway.external_access_only')}
                 </span>
               </div>

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { toast } from 'sonner'
+import i18n from '@renderer/i18n'
 
 interface SystemState {
   lastTick: number
@@ -46,12 +47,12 @@ export const useSystemStore = create<SystemState>((set) => ({
   handleShutdown: (payload: any) => {
     set({
       isShuttingDown: true,
-      shutdownReason: payload.reason || 'Server is shutting down',
+      shutdownReason: payload.reason || i18n.t('common.system_shutdown_desc'),
       restartExpectedMs: payload.restartExpectedMs
     })
 
-    toast.error('System Shutdown Warning', {
-      description: payload.reason || 'The server is shutting down. Please save your work.',
+    toast.error(i18n.t('common.system_shutdown'), {
+      description: payload.reason || i18n.t('common.system_shutdown_desc'),
       duration: 10000
     })
   },

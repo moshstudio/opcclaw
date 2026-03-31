@@ -14,6 +14,7 @@ import { loadWorkspaceBootstrapFiles } from '../../context/bootstrap'
 import { ConfigService } from '../../config/config-service'
 import { AgentRegistry } from '../../agent/registry'
 import { GatewayManager } from '../manager'
+import { ChannelManager } from '../../channels/manager'
 import { type AppConfig } from '@shared/types/config'
 import { type Handler, safeEqual } from './types'
 import { GATEWAY_EVENTS_DOC } from '@shared/metadata/events'
@@ -261,24 +262,25 @@ export const handleConfigSave: Handler = async (params, _client, ctx) => {
   const configService = ConfigService.getInstance()
   const oldConfig = configService.getConfig()
   configService.saveConfig(config)
+  const newConfig = configService.getConfig()
 
-  // 1. 如果修改了网关配置，执行重启 (异步执行，不阻塞响应)
-  if (config.gateway) {
+  // 1. 判断并执行 Gateway 重启
+  const gatewayChanged = JSON.stringify(oldConfig.gateway) !== JSON.stringify(newConfig.gateway)
+  if (gatewayChanged) {
     // 延迟一秒重启，给响应留出时间
     setTimeout(async () => {
       await GatewayManager.getInstance().restart()
     }, 1000)
   }
 
-  // 2. 如果修改了模型配置，触发广播并重载智能体
+  // 2. 判断并重载智能体/配置模型
   const modelChanged =
-    config.defaultModelId !== undefined && config.defaultModelId !== oldConfig.defaultModelId
-  const modelsListChanged = config.models !== undefined
+    newConfig.defaultModelId !== oldConfig.defaultModelId ||
+    JSON.stringify(newConfig.models) !== JSON.stringify(oldConfig.models)
 
-  if (modelChanged || modelsListChanged) {
+  if (modelChanged) {
     await AgentRegistry.getInstance().loadAllAgents()
 
-    const newConfig = configService.getConfig()
     ctx.broadcaster.dispatch({
       type: 'models:list',
       models: newConfig.models,
@@ -286,5 +288,33 @@ export const handleConfigSave: Handler = async (params, _client, ctx) => {
     })
   }
 
+  // 3. 判断并重启外部频道
+  const channelsChanged = JSON.stringify(oldConfig.channels) !== JSON.stringify(newConfig.channels)
+  if (channelsChanged) {
+    setTimeout(async () => {
+      await ChannelManager.getInstance().restart()
+    }, 1000)
+  }
+
   return { ok: true }
+}
+
+/**
+ * channel:telegram:test
+ */
+export const handleChannelTelegramTest: Handler = async (params) => {
+  const check = ensureParams(params, { token: 'string', useProxy: 'boolean?' })
+  if (!check.ok) return check
+
+  const { token, useProxy } = check.values
+  const result = await ChannelManager.getInstance().validateTelegramBot(token, useProxy)
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: errorShape(ErrorCodes.UNAVAILABLE, result.error || 'Validation failed')
+    }
+  }
+
+  return { ok: true, payload: result }
 }

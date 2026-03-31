@@ -25,8 +25,6 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
   onEditFile,
   onEditConfig
 }) => {
-  console.log(task)
-
   const { t } = useTranslation()
 
   const formatTimeManual = (ms: number) => {

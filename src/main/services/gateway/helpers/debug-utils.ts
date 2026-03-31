@@ -13,10 +13,25 @@ export function formatGatewayDebugData(data: any): string {
     // 1. 处理事件帧 (event)
     if (frame?.type === 'event' || frame?.event) {
       const eventName = frame.event || frame.type
+      // 1.1 系统 Tick
       if (eventName === 'system:tick' || eventName === 'tick') {
         const ts = frame.payload?.ts || frame.ts
         const seq = frame.seq !== undefined ? ` seq=${frame.seq}` : ''
         return `[Tick${seq} ts=${ts}]`
+      }
+      // 1.2 聊天流 (Chat Event)
+      if (eventName === 'chat' && frame.payload) {
+        const { state, runId, delta, error } = frame.payload
+        const rid = String(runId || '').slice(0, 8)
+        if (state === 'start' || state === 'thinking') return `[C:T] rid=${rid}`
+        if (state === 'delta') {
+          const d = (delta || '').replace(/\n/g, '\\n')
+          const shortD = d.length > 20 ? d.slice(0, 20) + '...' : d
+          return `[C:D] rid=${rid} d="${shortD}"`
+        }
+        if (state === 'final') return `[C:F] rid=${rid}`
+        if (state === 'error') return `[C:E] rid=${rid} err=${error}`
+        return `[C:${String(state).toUpperCase().slice(0, 1)}] rid=${rid}`
       }
     }
 

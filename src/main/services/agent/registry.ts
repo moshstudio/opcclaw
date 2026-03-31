@@ -129,15 +129,7 @@ export class AgentRegistry {
     // 确定使用的模型配置
     const selectedModel = agentJson.modelId ? configService.getModel(agentJson.modelId) : undefined
 
-    // 全局默认模型
-    const appConfig = configService.getConfig()
-    const defaultModelId = appConfig.defaultModelId
-    const defaultModel = configService.getModel(defaultModelId || '')
-
-    // 确定生效的模型基准 (Agent 指定 > 全局默认)
-    const effectiveBaseModel = selectedModel || defaultModel
-
-    // 自动修复：如果配置的 modelId 指定了但找不到，且回退也没找到，则在运行时标记重置（但不一定立即写回磁盘）
+    // 自动修复逻辑：如果配置的 modelId 指定了但找不到，则标记回退
     if (agentJson.modelId && !selectedModel) {
       this.logger.warn(
         `Agent ${agentId} configured modelId ${agentJson.modelId} not found, using fallback or default.`
@@ -147,11 +139,11 @@ export class AgentRegistry {
     const agentConfig: AgentConfig = {
       agentId,
       name: agentJson.name || agentId,
-      modelId: agentJson.modelId || selectedModel?.id,
-      apiKey: agentJson.apiKey || effectiveBaseModel?.apiKey,
-      provider: agentJson.provider || effectiveBaseModel?.provider,
-      model: agentJson.model || effectiveBaseModel?.model,
-      baseUrl: agentJson.baseUrl || effectiveBaseModel?.baseUrl,
+      modelId: agentJson.modelId, // 仅保留配置中明确指定的 ID
+      apiKey: agentJson.apiKey,
+      provider: agentJson.provider,
+      model: agentJson.model,
+      baseUrl: agentJson.baseUrl,
       headers: agentJson.headers,
       systemPrompt: systemPrompt || undefined,
       toolPolicy,
@@ -176,7 +168,7 @@ export class AgentRegistry {
       contextTokens: agentJson.contextTokens,
       maxTokens: agentJson.maxTokens,
       maxConcurrentRuns: DEFAULT_MAX_CONCURRENT_RUNS,
-      supportsVision: agentJson.supportsVision ?? defaultModel?.supportsVision,
+      supportsVision: agentJson.supportsVision, // 保持原始意图
       // 沙箱配置
       sandbox: agentJson.sandbox,
       isPinned: agentJson.isPinned

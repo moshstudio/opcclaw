@@ -5,6 +5,8 @@ import gateway from './gateway.json'
 import onboarding from './onboarding.json'
 import chat from './chat.json'
 import skills from './skills.json'
+import loading from './loading.json'
+import telegram from './telegram.json'
 
 export default {
   common,
@@ -13,5 +15,7 @@ export default {
   gateway,
   onboarding,
   chat,
-  skills
+  skills,
+  loading,
+  telegram
 }

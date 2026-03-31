@@ -225,5 +225,12 @@
   "remember_choice": "记住我的选择",
   "show_window": "显示窗口",
   "quit": "退出",
-  "app_name": "猫爪"
+  "app_name": "猫爪",
+  "archived_compact": "对话历史由于过长已被归档压缩",
+  "system_shutdown": "系统停机警报",
+  "system_shutdown_desc": "服务器正在关闭，请保存您的工作。",
+  "reset_failed": "重置失败",
+  "clear_failed": "清除失败",
+  "undo": "撤销修改",
+  "reset_success": "已恢复初始配置"
 }

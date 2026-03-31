@@ -10,10 +10,11 @@ import { AgentSettingsFormData } from './agent-settings/types'
 import { BaseConfigSection } from './agent-settings/BaseConfigSection'
 import { ModelConfigSection } from './agent-settings/ModelConfigSection'
 import { EnvironmentSection } from './agent-settings/EnvironmentSection'
-import { SecuritySection } from './agent-settings/SecuritySection'
+// import { SecuritySection } from './agent-settings/SecuritySection'
 import { FileSection } from './agent-settings/FileSection'
 import { ToolSection } from './agent-settings/ToolSection'
 import { SkillSection } from './agent-settings/SkillSection'
+import { ChannelSection } from './agent-settings/ChannelSection'
 import { DEFAULT_MAX_CONCURRENT_RUNS } from '@shared/types/agent'
 import { useConfirm } from '@renderer/hooks/use-confirm'
 import { getGatewayClient } from '@renderer/services/gateway-client'
@@ -82,8 +83,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
       file: false,
       tool: false,
       skill: false,
-      environment: false,
-      security: false
+      channel: false,
+      environment: false
+      // security: false // 安全沙箱功能留待后续实现
     }
   )
 
@@ -226,7 +228,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/10 dark:bg-black/40 backdrop-blur-[2px] z-[60] cursor-default"
+            className="fixed inset-0 bg-black/10 dark:bg-black/40 backdrop-blur-sm z-[60] cursor-default"
           />
           <motion.div
             initial={{
@@ -381,18 +383,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                       onToggle={() => toggleSection('skill')}
                       agentId={activeAgentId!}
                     />
+                    <ChannelSection
+                      formData={formData}
+                      setFormData={setFormData}
+                      isOpen={expandedSections.channel}
+                      onToggle={() => toggleSection('channel')}
+                      agentId={activeAgentId!}
+                    />
                     <EnvironmentSection
                       formData={formData}
                       setFormData={setFormData}
                       isOpen={expandedSections.environment}
                       onToggle={() => toggleSection('environment')}
                     />
-                    <SecuritySection
+                    {/* 安全沙箱功能留待后续实现，暂时隐藏 */}
+                    {/* <SecuritySection
                       formData={formData}
                       setFormData={setFormData}
                       isOpen={expandedSections.security}
                       onToggle={() => toggleSection('security')}
-                    />
+                    /> */}
                   </>
                 ) : (
                   <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -548,7 +558,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                         confirmText: t('common.delete'),
                         variant: 'destructive'
                       })
-                      if (isConfirmed) {
+                      if (isConfirmed.confirmed) {
                         deleteAgent(editingAgent.id)
                         onClose()
                       }

@@ -5,9 +5,12 @@ import icon from '../../resources/icon.png?asset'
 import { GatewayManager } from './services/gateway/manager'
 import { ConfigService } from './services/config/config-service'
 import { AgentRegistry } from './services/agent/registry'
-import { setSystemClosing } from './services/common/logger'
+import { ChannelManager } from './services/channels/manager' // 新增导入
+import { setSystemClosing, Logger } from './services/common/logger'
 import { initIpcServices } from './ipc'
 import { t, initI18n, changeLanguage } from './i18n'
+
+const mainLogger = new Logger('[Main]')
 
 let tray: Tray | null = null
 
@@ -111,7 +114,7 @@ app.whenReady().then(async () => {
   })
 
   // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
+  ipcMain.on('ping', () => mainLogger.info('pong'))
 
   // --- 初始化 IPC 服务 ---
   initIpcServices()
@@ -121,10 +124,17 @@ app.whenReady().then(async () => {
   GatewayManager.getInstance()
     .start(config.gateway?.logLevel || 'info')
     .then(() => {
-      console.log('Gateway manager started successfully')
+      mainLogger.info('Gateway manager started successfully')
+
+      // 在后台初始化应用内置 Channel，不阻塞后续逻辑
+      ChannelManager.getInstance()
+        .startAll()
+        .catch((err) => {
+          mainLogger.error('Failed to start integrated channels:', err)
+        })
     })
     .catch((err) => {
-      console.error('Failed to start gateway manager:', err)
+      mainLogger.error('Failed to start core service:', err)
     })
 
   createWindow()
@@ -145,13 +155,14 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   setSystemClosing()
+  await ChannelManager.getInstance().stopAll() // 优雅停止外部频道
   GatewayManager.getInstance().stop()
   try {
     AgentRegistry.getInstance().stopAll()
   } catch (err) {
-    console.error('Failed to stop agents during quit:', err)
+    mainLogger.error('Failed to stop agents during quit:', err)
   }
 })
 
