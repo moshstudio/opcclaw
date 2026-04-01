@@ -23,13 +23,22 @@ export const applyAgentEvent = (
     chatStatuses: Record<string, string>
   }
 ): AgentStorePatch => {
-  const { type, agentId, agent, sessionKey: sk } = payload
+  // 使用宽松解构避免复杂联合类型的字段访问问题 (字段按需使用，运行时安全)
+  const p = payload as {
+    type: string
+    agentId?: string
+    agent?: Agent
+    id?: string
+    error?: string
+    skillName?: string
+    sessionKey?: string
+  }
+  const { type, agentId, agent: targetAgent, id, error, skillName, sessionKey: sk } = p
   const updates: AgentStorePatch = {}
 
   // 1. 生命周期处理 (Lifecycle)
   if (type === 'agent:created' || type === 'agent:updated' || type === 'agent:deleted') {
     let nextAgents = [...state.agents]
-    const targetAgent = agent as Agent | undefined
 
     switch (type) {
       case 'agent:created':
@@ -47,7 +56,7 @@ export const applyAgentEvent = (
         }
         break
       case 'agent:deleted': {
-        const idToDelete = agentId || (payload.id as string)
+        const idToDelete = agentId || id
         if (idToDelete) {
           nextAgents = nextAgents.filter((a) => a.id !== idToDelete)
         }
@@ -72,13 +81,12 @@ export const applyAgentEvent = (
 
       case 'agent:run-error':
         updates.chatStatuses = { ...state.chatStatuses, [sk]: 'error' }
-        if (payload.error) {
-          updates.errorMessages = { [sk]: String(payload.error) }
+        if (error) {
+          updates.errorMessages = { [sk]: String(error) }
         }
         break
 
       case 'agent:skill-triggered': {
-        const skillName = payload.skillName as string
         const currentMsgs = state.sessions[sk] || []
         const noticeMsg = normalizeMessage({
           role: 'assistant',

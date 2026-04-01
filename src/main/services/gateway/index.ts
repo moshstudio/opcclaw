@@ -10,7 +10,6 @@ export {
   type EventFrame,
   type HelloOk,
   type GatewayClientOptions,
-  type IGatewayClient,
   type ErrorShape,
   type GatewayFrame,
   ErrorCodes,

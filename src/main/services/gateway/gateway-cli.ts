@@ -118,26 +118,29 @@ async function connect() {
     token,
     autoReconnect: false, // CLI 模式不自动重连，手动控制
     onEvent: (evt: EventFrame) => {
-      if (evt.event === 'chat') {
-        const p = evt.payload as { state?: string; text?: string; error?: string }
-        if (p.state === 'delta') {
-          process.stdout.write(p.text ?? '')
-        } else if (p.state === 'final') {
-          process.stdout.write('\n')
-          showPrompt?.()
-        } else if (p.state === 'error') {
-          console.error(`\x1b[33m  error: ${p.error}\x1b[0m`)
-          showPrompt?.()
-        }
-      } else if (evt.event === 'agent') {
-        const p = evt.payload as { type?: string; toolName?: string }
-        if (p.type === 'tool_execution_end') {
-          console.log(`\x1b[2m  \u25cf ${p.toolName}\x1b[0m`)
-        }
+      const p = evt.payload as {
+        state?: string
+        text?: string
+        error?: string
+        delta?: string
+        type?: string
+        toolName?: string
+        reason?: string
+        restartExpectedMs?: number | null
+      }
+      if (evt.event === 'chat:delta') {
+        process.stdout.write(p.delta ?? '')
+      } else if (evt.event === 'chat:final') {
+        process.stdout.write('\n')
+        showPrompt?.()
+      } else if (evt.event === 'chat:error') {
+        console.error(`\x1b[33m  error: ${p.error}\x1b[0m`)
+        showPrompt?.()
+      } else if (evt.event === 'chat:toolCall') {
+        console.log(`\x1b[2m  ● ${p.toolName}\x1b[0m`)
       } else if (evt.event === 'system:tick') {
         // 心跳，静默
       } else if (evt.event === 'system:shutdown') {
-        const p = evt.payload as { reason?: string; restartExpectedMs?: number | null }
         const hint = p.restartExpectedMs
           ? ` (restart in ~${Math.round(p.restartExpectedMs / 1000)}s)`
           : ''

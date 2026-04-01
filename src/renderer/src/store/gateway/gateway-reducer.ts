@@ -23,7 +23,7 @@ import { applyAgentEvent } from './agent-handler'
  */
 export interface MinimalChatStore extends SessionStorePatch {
   // 会话领域
-  interactionMap?: Record<string, ChatPayload['interaction'] | null>
+  interactionMap?: Record<string, unknown>
   // 活跃智能体
   agents: Agent[]
   activeAgentId?: string | null
@@ -70,7 +70,9 @@ const getSessionSnapshot = (
   toolResults:
     updates.toolResultsMap?.[sk] ||
     (state.toolResultsMap?.[sk] ? { ...state.toolResultsMap[sk] } : {}),
-  interaction: updates.interactionMap?.[sk] || state.interactionMap?.[sk] || null
+  interaction: (updates.interactionMap?.[sk] ||
+    state.interactionMap?.[sk] ||
+    null) as SessionPatch['interaction']
 })
 
 /** 将领域 Patch 合并回 PartialStore */
@@ -168,11 +170,11 @@ export const applyGatewayEvent = (
       break
 
     case 'system:tick':
-      updates.lastTick = (payload as TickPayload).ts
+      updates.lastTick = (payload as unknown as TickPayload).ts
       break
 
     case 'system:shutdown':
-      updates.shutdownReason = (payload as ShutdownPayload).reason
+      updates.shutdownReason = (payload as unknown as ShutdownPayload).reason
       break
   }
 

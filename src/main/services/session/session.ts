@@ -54,7 +54,8 @@ export const COMPACTION_SUMMARY_SUFFIX = '\n</摘要>'
 
 export function createCompactionSummaryMessage(
   summary: string,
-  timestamp?: string | number
+  timestamp?: string | number,
+  id?: string
 ): Message {
   const resolvedTimestamp =
     typeof timestamp === 'string'
@@ -63,6 +64,7 @@ export function createCompactionSummaryMessage(
         ? timestamp
         : Date.now()
   return {
+    id: id || newShortId(8),
     role: 'user',
     content: [
       {
@@ -163,7 +165,7 @@ export class SessionManager {
     summary: string,
     firstKeptId: string,
     tokensBefore: number
-  ): Promise<void> {
+  ): Promise<string> {
     const state = await this.ensureState(sessionKey)
     const store = new JsonlStore<SessionFileEntry>(state.filePath)
     const entry: CompactionEntry = {
@@ -190,6 +192,7 @@ export class SessionManager {
     } finally {
       await lock.release()
     }
+    return entry.id
   }
 
   resolveMessageEntryId(sessionKey: string, message: Message): string | undefined {
@@ -428,7 +431,7 @@ function buildSessionContext(state: SessionState): Message[] {
     }
 
     // 严丝合缝：卡在一个恰好比所有旧历史都早 1 毫秒的时空
-    messages.push(createCompactionSummaryMessage(compaction.summary, anchorTime - 1))
+    messages.push(createCompactionSummaryMessage(compaction.summary, anchorTime - 1, compaction.id))
 
     for (let i = 0; i < compactionIdx; i++) {
       const entry = pathEntries[i]

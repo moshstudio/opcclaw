@@ -98,7 +98,9 @@ export const TelegramBotCard: React.FC<BotCardProps> = ({
             <Send className="w-4 h-4" />
           </div>
 
-          <span className="text-sm font-bold tracking-tight text-foreground/90">Telegram Bot #{index + 1}</span>
+          <span className="text-sm font-bold tracking-tight text-foreground/90">
+            Telegram Bot #{index + 1}
+          </span>
 
           {/* 状态点：在线时呼吸脉冲 */}
           <div

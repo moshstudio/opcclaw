@@ -1,5 +1,5 @@
 import { Message, AssistantMessage, ChatStatus, ToolResultMessage } from '@shared/types/agent'
-import { ChatPayload, ChatState as GatewayChatState } from '@shared/types/gateway'
+import { ChatPayload, ChatAction } from '@shared/types/gateway'
 import { normalizeMessage, normalizeContentBlock } from '@shared/utils/message'
 
 // ============================================================================
@@ -18,22 +18,34 @@ export interface SessionPatch {
   messages: Message[]
   status: ChatStatus
   errorMessage?: string | null
-  toolResults: Record<string, unknown> // id -> content
-  interaction?: ChatPayload['interaction'] | null
+  toolResults: Record<string, unknown>
+  interaction?: {
+    interactionId: string
+    prompt: string
+    options?: string[]
+    isComplete?: boolean
+    rememberKey?: string
+  } | null
 }
 
 /** 协议状态到 UI 状态的精确映射 */
-const STATUS_MAP: Partial<Record<GatewayChatState, ChatStatus>> = {
-  start: 'waiting',
-  userMessage: 'streaming',
-  thinking: 'thinking',
-  retrying: 'retrying',
-  delta: 'streaming',
-  toolCall: 'toolCalling',
-  toolResult: 'streaming',
-  interaction: 'waiting',
-  final: 'waiting',
-  error: 'error'
+const STATUS_MAP: Partial<Record<ChatAction, ChatStatus>> = {
+  'chat:start': 'waiting',
+  'chat:userMessage': 'streaming',
+  'chat:thinking': 'thinking',
+  'chat:retrying': 'retrying',
+  'chat:delta': 'streaming',
+  'chat:toolCall': 'toolCalling',
+  'chat:toolResult': 'streaming',
+  'chat:interaction': 'waiting',
+  'chat:final': 'completed',
+  'chat:error': 'error',
+  'chat:interaction-responded': 'waiting',
+  'agent:run-start': 'waiting',
+  'agent:run-end': 'completed',
+  'agent:run-error': 'error',
+  'agent:context-overflow': 'error',
+  'agent:skill-triggered': 'waiting'
 }
 
 // ============================================================================
@@ -59,7 +71,6 @@ function ensureAssistant(p: ChatPayload, msgs: Message[]): AssistantMessage {
   const newMsg = normalizeMessage({
     id: p.messageId,
     role: 'assistant',
-    runId: p.runId,
     content: []
   }) as AssistantMessage
   msgs.push(newMsg)
@@ -72,26 +83,24 @@ function ensureAssistant(p: ChatPayload, msgs: Message[]): AssistantMessage {
 
 type SubHandler = (payload: ChatPayload, messages: Message[], patch: SessionPatch) => void
 
-const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
-  userMessage: (p, msgs) => {
-    if (p.message && !msgs.some((m) => m.id === p.message?.id)) {
+const ChatSubHandlers: Partial<Record<ChatAction, SubHandler>> = {
+  'chat:userMessage': (p, msgs) => {
+    if (p.message && !msgs.some((m) => m.id === p.messageId)) {
       msgs.push(normalizeMessage({ ...p.message, timestamp: p.message.timestamp || Date.now() }))
-      // 保持消息列表按发生时间的自然顺序排列
       msgs.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0))
     }
   },
 
-  start: (p, msgs) => {
-    if (p.message) {
-      msgs.push(normalizeMessage({ ...p.message, runId: p.runId }))
+  'chat:start': (p, msgs) => {
+    if (p.message && !msgs.some((m) => m.id === p.messageId)) {
+      msgs.push(normalizeMessage({ ...p.message }))
     }
   },
 
-  thinking: (p, msgs) => {
+  'chat:thinking': (p, msgs) => {
     const text = p.delta || ''
     const msg = ensureAssistant(p, msgs)
     const lastBlock = msg.content[msg.content.length - 1]
-
     if (lastBlock?.type === 'thinking') {
       lastBlock.thinking = (lastBlock.thinking || '') + text
     } else {
@@ -99,11 +108,10 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
     }
   },
 
-  delta: (p, msgs) => {
+  'chat:delta': (p, msgs) => {
     const text = p.delta || ''
     const msg = ensureAssistant(p, msgs)
     const lastBlock = msg.content[msg.content.length - 1]
-
     if (lastBlock?.type === 'text') {
       lastBlock.text = (lastBlock.text || '') + text
     } else {
@@ -111,27 +119,32 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
     }
   },
 
-  retrying: (p, msgs, patch) => {
-    ChatSubHandlers.thinking?.(p, msgs, patch)
+  'chat:retrying': (p, msgs, patch) => {
+    ChatSubHandlers['chat:thinking']?.(p, msgs, patch)
   },
 
-  toolCall: (p, msgs) => {
-    if (!p.toolCall) return
+  'chat:toolCall': (p, msgs) => {
+    if (!p.toolCallId) return
     const msg = ensureAssistant(p, msgs)
-    msg.content.push({ type: 'toolCall', ...p.toolCall })
+    msg.content.push({
+      type: 'toolCall',
+      id: p.toolCallId,
+      name: p.toolName ?? '',
+      arguments: p.arguments ?? {}
+    })
   },
 
-  toolResult: (p, msgs, patch) => {
-    if (!p.toolResult) return
-    const { toolCallId, content, toolName, isError, messageId } = p.toolResult
-    patch.toolResults[toolCallId] = content
+  'chat:toolResult': (p, msgs, patch) => {
+    if (!p.toolCallId) return
+    const { toolCallId, content, toolName, isError, messageId } = p
+    if (toolCallId) patch.toolResults[toolCallId] = content
 
     const resultMsg = normalizeMessage({
       id: messageId,
       role: 'toolResult',
       runId: p.runId,
       toolCallId,
-      toolName,
+      toolName: toolName ?? '',
       isError,
       content: Array.isArray(content) ? content : [{ type: 'text', text: String(content) }],
       timestamp: Date.now()
@@ -143,7 +156,6 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
         (!p.runId || m.runId === p.runId) &&
         m.content.some((c) => c.type === 'toolCall' && c.id === toolCallId)
     )
-
     if (callIdx !== -1) {
       msgs.splice(callIdx + 1, 0, resultMsg)
     } else {
@@ -151,11 +163,10 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
     }
   },
 
-  final: (p, msgs) => {
+  'chat:final': (p, msgs) => {
     const target = (p.messageId ? msgs.find((m) => m.id === p.messageId) : undefined) as
       | AssistantMessage
       | undefined
-
     if (target) {
       if (p.performance) target.performance = p.performance
       if (p.message) {
@@ -169,8 +180,15 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
     }
   },
 
-  interaction: (p, _msgs, patch) => {
-    if (p.interaction) patch.interaction = p.interaction
+  'chat:interaction': (p, _msgs, patch) => {
+    if (p.interactionId)
+      patch.interaction = {
+        interactionId: p.interactionId,
+        prompt: p.prompt ?? '',
+        options: p.options,
+        isComplete: p.isComplete,
+        rememberKey: p.rememberKey
+      }
   }
 }
 
@@ -179,16 +197,15 @@ const ChatSubHandlers: Partial<Record<GatewayChatState, SubHandler>> = {
 // ============================================================================
 
 export const applyChatEvent = (payload: ChatPayload, patch: SessionPatch): SessionPatch => {
-  const { messages, status: currentStatus, toolResults, errorMessage, interaction } = patch
+  const { messages, status: currentStatus, toolResults, errorMessage } = patch
   let nextStatus = currentStatus
   let nextError = errorMessage ?? null
-  let nextInteraction = interaction ?? null
 
   // 1. 状态映射逻辑
   const mappedStatus = STATUS_MAP[payload.state]
   if (mappedStatus) {
     const isUserMsgInterrupt =
-      payload.state === 'userMessage' &&
+      payload.state === 'chat:userMessage' &&
       !['idle', 'completed', 'error', 'aborted'].includes(currentStatus)
     if (!isUserMsgInterrupt) nextStatus = mappedStatus
   }
@@ -197,7 +214,11 @@ export const applyChatEvent = (payload: ChatPayload, patch: SessionPatch): Sessi
   ChatSubHandlers[payload.state]?.(payload, messages, patch)
 
   // 3. 错误状态处理
-  if (payload.state === 'error') {
+  if (
+    payload.state === 'chat:error' ||
+    payload.state === 'agent:run-error' ||
+    payload.state === 'agent:context-overflow'
+  ) {
     const errText = String(payload.error || 'Unknown error')
     const isAbort = errText.toLowerCase().includes('abort')
     nextStatus = isAbort ? 'aborted' : 'error'
@@ -209,6 +230,6 @@ export const applyChatEvent = (payload: ChatPayload, patch: SessionPatch): Sessi
     status: nextStatus,
     errorMessage: nextError,
     toolResults: { ...toolResults },
-    interaction: nextInteraction
+    interaction: patch.interaction // 直接从 patch 获取更新后的值
   }
 }

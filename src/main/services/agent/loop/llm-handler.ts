@@ -17,6 +17,7 @@ import { abortable } from '@main/services/tools/abort'
 import type { MetricsTracker } from './metrics'
 
 export interface ExecuteLlmParams {
+  agentId: string
   runId: string
   sessionKey: string
   messageId: string
@@ -46,6 +47,7 @@ export async function executeLlmCall(
   metrics: MetricsTracker
 ): Promise<LlmResult> {
   const {
+    agentId,
     runId,
     sessionKey,
     messageId,
@@ -79,6 +81,7 @@ export async function executeLlmCall(
           case 'thinking_delta':
             stream.push({
               type: 'chat:thinking',
+              agentId,
               runId,
               sessionKey,
               delta: event.delta,
@@ -90,6 +93,7 @@ export async function executeLlmCall(
             metrics.onFirstToken()
             stream.push({
               type: 'chat:delta',
+              agentId,
               runId,
               sessionKey,
               delta: event.delta,
@@ -100,6 +104,7 @@ export async function executeLlmCall(
           case 'toolcall_end':
             stream.push({
               type: 'chat:toolCall',
+              agentId,
               runId,
               sessionKey,
               toolCallId: event.toolCall.id,
@@ -140,6 +145,7 @@ export async function executeLlmCall(
       onRetry: ({ attempt, delay, error }) => {
         stream.push({
           type: 'chat:retrying',
+          agentId,
           runId,
           sessionKey,
           attempt,

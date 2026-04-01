@@ -19,7 +19,7 @@ export type { Usage, StopReason, ThinkingLevel, StreamFunction, Model, Api }
 export type MemorySource = 'memory' | 'sessions'
 export const DEFAULT_MAX_CONCURRENT_RUNS = 1 // 锁定并发数为 1
 export const MIN_CONTEXT_TOKENS = 32000 // 最小上下文 Tokens (需大于 20k 预留)
-export const CONTEXT_RESERVE_TOKENS = 20000 // 后端压缩逻辑预留的缓冲 Tokens
+export const CONTEXT_RESERVE_TOKENS = 31800 // 后端压缩逻辑预留的缓冲 Tokens，调试改成了30000
 
 /**
  * 记忆条目 (Shared)

@@ -39,6 +39,9 @@ interface MessageListProps {
 // ============================================================================
 
 const MessageList: React.FC<MessageListProps> = ({ messages, isTyping, isLoading, chatStatus }) => {
+  console.log(messages)
+  console.log(isTyping)
+
   const { t } = useTranslation()
   const [copiedId, setCopiedId] = React.useState<string | null>(null)
   const { activeAgentId } = useAgentStore()

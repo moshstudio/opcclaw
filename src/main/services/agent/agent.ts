@@ -22,6 +22,7 @@ import { createModelDef } from '@main/services/provider/model-factory'
 import type { MiniAgentEvent } from './agent-events'
 import type { AgentConfig, RunResult, Message } from '@shared/types/agent'
 import { MIN_CONTEXT_TOKENS } from '@shared/types/agent'
+import type { EventOf } from '@shared/types/gateway'
 export type { AgentConfig, RunResult, Message }
 
 // 导入核心子服务
@@ -123,6 +124,8 @@ export class Agent {
     {
       resolve: (res: { result: boolean; remember: boolean }) => void
       timer: NodeJS.Timeout
+      runId: string
+      sessionKey: string
     }
   >()
   private readonly onConfigChange?: (config: AgentConfig) => void
@@ -173,6 +176,7 @@ export class Agent {
 
     const { modelDef, apiKey: resolvedApiKey } = this.resolveModelDef()
     this.contextManager = new AgentContextManager({
+      agentId: this.id,
       sessionManager: this.sessionManager,
       contextTokens: this.config.contextTokens!,
       modelDef,
@@ -415,6 +419,7 @@ export class Agent {
             type: 'agent:skill-triggered',
             runId,
             sessionKey: sk,
+            agentId: this.id,
             skillName: matchedSkillName
           })
         }
@@ -436,6 +441,7 @@ export class Agent {
           type: 'chat:userMessage',
           runId,
           sessionKey: sk,
+          agentId: this.id,
           message: optimisticUserMsg,
           messageId: optimisticUserMsg.id!
         })
@@ -550,7 +556,8 @@ export class Agent {
 
       return {
         runId,
-        text: lastResult.type === 'chat:final' ? lastResult.text : '',
+        text:
+          lastResult.type === 'chat:final' ? (lastResult as EventOf<'chat:final'>).text || '' : '',
         turns,
         toolCalls
       }
@@ -583,7 +590,21 @@ export class Agent {
     if (entry) {
       this.interactionCallbacks.delete(interactionId)
       clearTimeout(entry.timer)
+
+      // 1. 唤醒代码执行流 (Resolving the Tool)
       entry.resolve({ result, remember: !!remember })
+
+      // 2. 广播回执事件，让 Telegram/前端 能够主动清理对应 UI
+      this.emit({
+        type: 'chat:interaction-responded',
+        runId: entry.runId,
+        sessionKey: entry.sessionKey,
+        agentId: this.id,
+        interactionId,
+        prompt: '',
+        result,
+        remember: !!remember
+      })
     }
   }
 
@@ -608,13 +629,20 @@ export class Agent {
         5 * 60 * 1000
       )
 
-      this.interactionCallbacks.set(interactionId, { resolve, timer })
+      // 记录回调并包含上下文信息
+      this.interactionCallbacks.set(interactionId, {
+        resolve,
+        timer,
+        runId: params.runId,
+        sessionKey: params.sessionKey
+      })
 
       // 仅抛出交互事件，由对端的适配器（如 Telegram/Web）决定如何呈现 UI
       this.emit({
         type: 'chat:interaction',
         runId: params.runId,
         sessionKey: params.sessionKey,
+        agentId: this.id,
         interactionId,
         prompt: params.prompt,
         options: params.options,

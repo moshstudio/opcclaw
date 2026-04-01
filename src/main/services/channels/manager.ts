@@ -130,7 +130,7 @@ export class ChannelManager {
    * 停止所有频道
    */
   async stopAll() {
-    for (const [token, running] of this.runningTgBots.entries()) {
+    for (const [_token, running] of this.runningTgBots.entries()) {
       await running.instance.stop()
     }
     this.runningTgBots.clear()

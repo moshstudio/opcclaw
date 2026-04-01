@@ -56,7 +56,8 @@ export const useHeartbeatStore = create<HeartbeatState>((set, get) => ({
   },
 
   handleHeartbeatEvent: (payload: HeartbeatEventPayload) => {
-    const { type, agentId, status } = payload
+    const p = payload as { type: string; agentId?: string; status?: HeartbeatTaskStatus }
+    const { type, agentId, status } = p
 
     set((state) => {
       // 1. 查找现有任务索引并克隆任务列表 (遵循不可变更新原则)
@@ -80,8 +81,8 @@ export const useHeartbeatStore = create<HeartbeatState>((set, get) => ({
           // 自动发现：如果后端创建了新任务文件而前端还不在列表中，则新增一条
           const agent = useAgentStore.getState().agents.find((a) => a.id === agentId)
           tasks.push({
-            agentId,
-            agentName: agent?.config.name || agentId,
+            agentId: agentId ?? '',
+            agentName: agent?.config.name || agentId || '',
             status: status
           })
         }

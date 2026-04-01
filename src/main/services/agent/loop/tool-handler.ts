@@ -13,6 +13,7 @@ export async function executeToolCalls(
   toolCalls: ToolCall[],
   toolsForRun: Tool[],
   toolCtx: ToolContext,
+  agentId: string,
   runId: string,
   sessionKey: string,
   stream: EventStream<MiniAgentEvent, MiniAgentResult>,
@@ -41,6 +42,7 @@ export async function executeToolCalls(
 
     stream.push({
       type: 'chat:toolResult',
+      agentId,
       runId,
       sessionKey,
       toolCallId: call.id,

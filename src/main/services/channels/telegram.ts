@@ -9,7 +9,7 @@
  * - 国际化支持 (i18n)
  */
 
-import { Bot, Context } from 'grammy'
+import { Bot, Context, InlineKeyboard } from 'grammy'
 import { GatewayClient } from '../gateway/client'
 import type { EventFrame, ChatPayload, Message, Agent } from '../gateway/protocol'
 import { Logger } from '@main/services/common/logger'
@@ -64,6 +64,7 @@ export class TelegramChannel {
   private readonly typingTimers = new Map<number, NodeJS.Timeout>()
   private readonly sessionRegistry = new Map<string, SessionContext>()
   private readonly agentBindings = new Map<string, string>()
+  private readonly interactionMessages = new Map<string, { chatId: number; messageId: number }>()
 
   constructor(opts: TelegramChannelOptions) {
     this.opts = opts
@@ -127,13 +128,25 @@ export class TelegramChannel {
 
     // 文本消息处理
     this.bot.on('message:text', (ctx) => this.onMessageReceived(ctx))
+
+    // 交互回调处理
+    this.bot.on('callback_query:data', (ctx) => this.onCallbackQuery(ctx))
   }
 
   /**
-   * 处理网关送达的消息事件
+   * 处理网关送达的事件 (唯一的网关业务出口消费)
    */
   private async handleGatewayEvent(evt: EventFrame): Promise<void> {
-    if (evt.event !== 'chat') return
+    if (evt.type !== 'event') return
+
+    // Telegram 关注核心聊天与智能体运行态事件
+    const isChat = evt.event.startsWith('chat:')
+    const isAgentRun =
+      evt.event.startsWith('agent:run-') ||
+      evt.event.startsWith('agent:skill-') ||
+      evt.event === 'agent:context-overflow'
+
+    if (!isChat && !isAgentRun) return
     const payload = evt.payload as ChatPayload
 
     const keyInfo = this.parseSessionKey(payload.sessionKey)
@@ -149,19 +162,28 @@ export class TelegramChannel {
 
     const lang = run?.lang || context?.lang
 
-    switch (payload.state) {
-      case 'start':
-      case 'thinking':
+    switch (evt.event) {
+      case 'chat:start':
+      case 'chat:thinking':
+      case 'agent:run-start':
+      case 'agent:skill-triggered':
         await this.onGatewayChatStart(payload, chatId, lang)
         break
-      case 'delta':
+      case 'chat:delta':
         if (run) await this.onGatewayChatDelta(payload, run)
         break
-      case 'final':
+      case 'chat:final':
         await this.onGatewayChatFinal(payload, chatId, run)
         break
-      case 'error':
+      case 'chat:error':
+      case 'agent:context-overflow':
         await this.onGatewayChatError(payload, chatId, run)
+        break
+      case 'chat:interaction':
+        await this.onGatewayInteraction(payload, chatId, lang)
+        break
+      case 'chat:interaction-responded':
+        await this.onGatewayInteractionResponded(payload, chatId, lang)
         break
     }
   }
@@ -326,6 +348,88 @@ export class TelegramChannel {
     }
 
     if (p.runId) this.activeRuns.delete(p.runId)
+  }
+
+  // ============== 交互处理 (Interaction) ==============
+
+  private async onGatewayInteraction(
+    p: ChatPayload,
+    chatId: number,
+    _lang?: string
+  ): Promise<void> {
+    const interactionId = p.interactionId
+    if (!interactionId) return
+
+    const prompt = p.prompt || 'Confirm operation?'
+    const options = p.options || ['Confirm', 'Cancel']
+    // const t = this.getTranslate(lang)
+
+    const keyboard = new InlineKeyboard()
+    options.forEach((opt, idx) => {
+      // 约定：第一个选项为 true，其余为 false
+      const result = idx === 0
+      keyboard.text(opt, `int_res:${interactionId}:${result}`)
+      if (idx % 2 === 1) keyboard.row()
+    })
+
+    try {
+      const msg = await this.bot.api.sendMessage(chatId, `❓ *${prompt}*`, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      })
+      this.interactionMessages.set(interactionId, { chatId, messageId: msg.message_id })
+    } catch (err) {
+      this.logger.error('下发交互请求失败:', err)
+    }
+  }
+
+  private async onGatewayInteractionResponded(
+    p: ChatPayload,
+    _chatId: number,
+    lang?: string
+  ): Promise<void> {
+    const interactionId = p.interactionId
+    if (!interactionId) return
+
+    const it = this.interactionMessages.get(interactionId)
+    if (!it) return
+
+    this.interactionMessages.delete(interactionId)
+    const t = this.getTranslate(lang)
+    const isSuccess = p.result === true
+    const resultText = isSuccess ? '✅' : '❌'
+
+    try {
+      // 通过编辑消息移除按钮，表示交互已关闭
+      await this.bot.api.editMessageText(
+        it.chatId,
+        it.messageId,
+        `${resultText} *${t('telegram:interaction_completed')}* (Result: ${isSuccess})`
+      )
+    } catch (err) {
+      // ignore
+    }
+  }
+
+  private async onCallbackQuery(ctx: Context): Promise<void> {
+    const data = ctx.callbackQuery?.data
+    if (!data?.startsWith('int_res:')) return
+
+    const [, interactionId, resultStr] = data.split(':')
+    const result = resultStr === 'true'
+    const agentId = this.parseSessionKey(this.getSessionKey(ctx.chat!.id))?.agentId || 'main'
+
+    try {
+      await this.client.request('chat:respondInteraction', {
+        agentId,
+        interactionId,
+        result,
+        remember: false
+      })
+      await ctx.answerCallbackQuery()
+    } catch (err) {
+      await ctx.answerCallbackQuery({ text: 'Error responding to interaction' })
+    }
   }
 
   // ============== 指令逻辑 ==============

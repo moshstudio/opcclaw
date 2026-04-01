@@ -13,6 +13,8 @@ export const applyNoticeEvent = (payload: NoticePayload, patch: SessionPatch): S
   switch (type) {
     case 'notice:compact': {
       if (!firstKeptId) break
+      console.log('删掉之前的对话：', firstKeptId);
+
 
       const idx = patch.messages.findIndex((m) => m.id === firstKeptId)
       // 如果找到索引且不是第 0 条（说明有消息需要被裁掉）

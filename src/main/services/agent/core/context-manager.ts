@@ -12,6 +12,7 @@ import { CONTEXT_RESERVE_TOKENS } from '@shared/types/agent'
 import { Logger } from '@main/services/common/logger'
 
 export interface ContextManagerOptions {
+  agentId: string
   sessionManager: SessionManager
   contextTokens: number
   modelDef?: Model<Api>
@@ -80,12 +81,16 @@ export class AgentContextManager {
 
     if (firstKeptId) {
       const tokensBefore = estimateMessagesTokens(params.messages)
-      await this.options.sessionManager.appendCompaction(
+      const compactionId = await this.options.sessionManager.appendCompaction(
         params.sessionKey,
         result.summary,
         firstKeptId,
         tokensBefore
       )
+
+      if (result.summaryMessage) {
+        result.summaryMessage.id = compactionId
+      }
 
       // 1. 发出压缩元数据事件
       this.options.emit({
@@ -101,6 +106,7 @@ export class AgentContextManager {
       if (result.summaryMessage) {
         this.options.emit({
           type: 'chat:userMessage',
+          agentId: this.options.agentId,
           runId: params.runId,
           sessionKey: params.sessionKey,
           message: result.summaryMessage,

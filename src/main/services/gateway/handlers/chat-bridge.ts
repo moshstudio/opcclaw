@@ -1,97 +1,114 @@
-import { normalizeMessage } from '../../../../shared/utils/message'
-import type { MiniAgentEvent } from '../../agent/agent-events'
-import type { ChatPayload, ChatState } from '@shared/types/gateway'
+/**
+ * 桥接处理器 (The Bridge)
+ * 将引擎原子性的 MiniAgentEvent 转换为业务级的 ChatPayload。
+ */
 
-const STATE_MAP: Record<string, ChatState> = {
-  'agent:run-end': 'final',
-  'agent:run-error': 'error'
+import { normalizeMessage } from '@shared/utils/message'
+import type { ChatPayload, ChatAction, TaggedEvent, EventOf } from '@shared/types/gateway'
+
+const STATE_MAP: Record<string, ChatAction> = {
+  'agent:run-end': 'chat:final',
+  'agent:run-error': 'chat:error'
 }
 
-/** 转换事件类型前缀为网关状态名 */
-function toChatState(type: string): ChatState {
-  if (STATE_MAP[type]) return STATE_MAP[type]
-  return (type.startsWith('chat:') ? type.substring(5) : type.split(':')[1] || type) as ChatState
+function toChatState(type: string): ChatAction {
+  return (STATE_MAP[type] ?? type) as ChatAction
 }
 
-/** 将 MiniAgentEvent 映射为 ChatPayload 字段 */
-export function mapEventToChatFields(event: MiniAgentEvent): Partial<ChatPayload> | null {
+/** 将 TaggedEvent 映射为 ChatPayload 业务载荷 */
+export function mapEventToChatFields(event: TaggedEvent): Partial<ChatPayload> | null {
   const state = toChatState(event.type)
   const base: Partial<ChatPayload> = { state }
 
-  // 1. 提取通用字段: delta, messageId
-  if ('delta' in event) base.delta = event.delta
-  if ('text' in event) base.delta = event.text
-  if ('messageId' in event) base.messageId = event.messageId
-  if ('message' in event) {
-    base.message = normalizeMessage(event.message)
-    base.messageId = base.messageId || event.message.id
+  // 公共字段先期提取
+  const ev = event as Record<string, unknown>
+  if ('delta' in ev) base.delta = ev.delta as string
+  if ('messageId' in ev) base.messageId = ev.messageId as string
+  if ('message' in ev) {
+    const msg = ev.message as { id?: string }
+    base.message = normalizeMessage(ev.message)
+    base.messageId = base.messageId || msg?.id
   }
 
-  // 2. 针对特定状态补全私有对象
   switch (event.type) {
-    case 'chat:userMessage':
-    case 'chat:start':
-    case 'chat:delta':
-    case 'chat:thinking':
-      return base
-
-    case 'chat:final':
-      return { ...base, performance: (event as any).performance }
-
+    case 'chat:final': {
+      const e = event as EventOf<'chat:final'>
+      return { ...base, performance: e.performance, usage: e.usage, text: e.text }
+    }
     case 'agent:run-end': {
-      const lastMsg = event.messages[event.messages.length - 1]
+      const e = event as EventOf<'agent:run-end'>
+      const lastMsg = e.messages[e.messages.length - 1]
       return {
         state,
         message: normalizeMessage(lastMsg),
         messageId: lastMsg?.id,
-        performance: event.performance
+        performance: e.performance,
+        usage: e.usage
       }
     }
-
-    case 'agent:run-error':
-      return { state, error: (event as any).error }
-
-    case 'chat:toolCall':
-      return {
-        ...base,
-        toolCall: { id: event.toolCallId, name: event.toolName, arguments: event.arguments }
-      }
-
-    case 'chat:toolResult':
-      return {
-        ...base,
-        toolResult: {
-          messageId: event.messageId,
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          isError: event.isError,
-          content: Array.isArray(event.content)
-            ? event.content
-            : [{ type: 'text', text: String(event.content) }]
-        }
-      }
-
-    case 'chat:retrying':
-      return {
-        ...base,
-        delta: `[Retry] Attempt ${(event as any).attempt} (delay ${
-          (event as any).delay
-        }ms): ${(event as any).error}`
-      }
-
-    case 'chat:interaction':
+    case 'agent:run-error': {
+      const e = event as EventOf<'agent:run-error'>
+      return { state, error: e.error }
+    }
+    case 'chat:toolCall': {
+      const e = event as EventOf<'chat:toolCall'>
       return {
         state,
-        interaction: {
-          interactionId: event.interactionId,
-          prompt: event.prompt,
-          options: event.options,
-          isComplete: event.isComplete,
-          rememberKey: event.rememberKey
-        }
+        toolCallId: e.toolCallId,
+        toolName: e.toolName,
+        arguments: e.arguments,
+        messageId: e.messageId
       }
-
+    }
+    case 'chat:toolResult': {
+      const e = event as EventOf<'chat:toolResult'>
+      return {
+        state,
+        toolCallId: e.toolCallId,
+        toolName: e.toolName,
+        isError: e.isError,
+        content: e.content,
+        messageId: e.messageId
+      }
+    }
+    case 'chat:retrying': {
+      const e = event as EventOf<'chat:retrying'>
+      return { ...base, delta: `[Retry] Attempt ${e.attempt} (delay ${e.delay}ms): ${e.error}` }
+    }
+    case 'chat:interaction': {
+      const e = event as EventOf<'chat:interaction'>
+      return {
+        state,
+        interactionId: e.interactionId,
+        prompt: e.prompt,
+        options: e.options,
+        isComplete: e.isComplete,
+        rememberKey: e.rememberKey
+      }
+    }
+    case 'chat:interaction-responded': {
+      const e = event as EventOf<'chat:interaction-responded'>
+      return {
+        state,
+        interactionId: e.interactionId,
+        result: e.result,
+        remember: e.remember,
+        prompt: ''
+      }
+    }
+    case 'agent:run-start': {
+      const e = event as EventOf<'agent:run-start'>
+      return { state, model: e.model }
+    }
+    case 'agent:skill-triggered': {
+      const e = event as EventOf<'agent:skill-triggered'>
+      return { state, skillName: e.skillName }
+    }
+    case 'agent:context-overflow': {
+      const e = event as EventOf<'agent:context-overflow'>
+      return { state, error: e.error }
+    }
     default:
-      return null
+      return base.delta || base.message || base.error ? base : null
   }
 }

@@ -5,13 +5,11 @@ import {
   type HelloOk,
   type GatewayClientOptions,
   type ChatPayload,
+  type EventPayload,
+  type GatewayMethod,
   type AgentEventPayload,
-  type ModelsPayload,
-  type TickPayload,
-  type ShutdownPayload,
-  type HeartbeatEventPayload,
   type NoticePayload,
-  type GatewayMethod
+  type HeartbeatEventPayload
 } from '@shared/types/gateway'
 
 /**
@@ -68,9 +66,10 @@ export class RendererGatewayClient extends BaseGatewayClient {
     try {
       await this.ensureConnected()
       return await super.request(method, params)
-    } catch (err: any) {
-      console.error(`[RendererGatewayClient] Request failed: ${method}`, err)
-      this.handleError(err, `${i18n.t('operation_failed')}: ${method}`)
+    } catch (err: unknown) {
+      const e = err as Error
+      console.error(`[RendererGatewayClient] Request failed: ${method}`, e)
+      this.handleError(e, `${i18n.t('operation_failed')}: ${method}`)
       throw err
     }
   }
@@ -78,15 +77,10 @@ export class RendererGatewayClient extends BaseGatewayClient {
   /**
    * 统一错误处理
    */
-  private handleError(err: any, context: string) {
+  private handleError(err: Error, context: string) {
     const message = err?.message || String(err)
-    // 使用 sonner 的 id 特性，同样的错误消息在短时间内只显示一个
     const errorId = `gateway-error-${message}`
-
-    toast.error(context, {
-      description: message,
-      id: errorId
-    })
+    toast.error(context, { description: message, id: errorId })
   }
 
   /**
@@ -109,60 +103,39 @@ export class RendererGatewayClient extends BaseGatewayClient {
     // 2. 执行真正的连接逻辑
     return await super.connect()
   }
-  /**
-   * 领域特定事件订阅 - 聊天 (对齐 chat 频道)
-   */
+  /** 聊天流事件（接收所有 chat:* 事件）*/
   onChat(callback: (payload: ChatPayload) => void) {
-    return this.onChannel('chat', callback)
+    return this.onAction('chat', callback)
   }
 
-  /**
-   * 领域特定事件订阅 - 智能体状态 (对齐 agent 频道)
-   */
+  /** 智能体生命周期事件（接收所有 agent:* 事件）*/
   onAgent(callback: (payload: AgentEventPayload) => void) {
-    return this.onChannel('agent', callback)
+    return this.onAction('agent', callback)
   }
 
-  /**
-   * 领域特定事件订阅 - 业务通知 (对齐 notice 频道)
-   */
+  /** 业务通知事件（接收所有 notice:* 事件）*/
   onNotice(callback: (payload: NoticePayload) => void) {
-    return this.onChannel('notice', callback)
+    return this.onAction('notice', callback)
   }
 
-  /**
-   * 领域特定事件订阅 - 会话状态 (对齐 session 频道)
-   */
+  /** 会话事件（接收所有 session:* 事件）*/
   onSession(callback: (payload: AgentEventPayload) => void) {
-    return this.onChannel('session', callback)
+    return this.onAction('session', callback)
   }
 
-  /**
-   * 领域特定事件订阅 - 模型列表 (对齐 models 频道)
-   */
-  onModels(callback: (payload: ModelsPayload) => void) {
-    return this.onChannel('models', callback)
+  /** 心跳 tick 事件 */
+  onTick(callback: (payload: EventPayload<'system:tick'>) => void) {
+    return this.onAction('system:tick', callback)
   }
 
-  /**
-   * 领域特定事件订阅 - 系统心跳 (对齐 tick 频道)
-   */
-  onTick(callback: (payload: TickPayload) => void) {
-    return this.onChannel('system:tick', callback)
+  /** 停机事件 */
+  onShutdown(callback: (payload: EventPayload<'system:shutdown'>) => void) {
+    return this.onAction('system:shutdown', callback)
   }
 
-  /**
-   * 领域特定事件订阅 - 停机预警 (对齐 shutdown 频道)
-   */
-  onShutdown(callback: (payload: ShutdownPayload) => void) {
-    return this.onChannel('system:shutdown', callback)
-  }
-
-  /**
-   * 领域特定事件订阅 - 心跳任务 (对齐 heartbeat 频道)
-   */
+  /** 心跳任务事件（接收所有 heartbeat:* 事件） */
   onHeartbeat(callback: (payload: HeartbeatEventPayload) => void) {
-    return this.onChannel('heartbeat', callback)
+    return this.onAction('heartbeat', callback)
   }
 }
 

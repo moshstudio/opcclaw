@@ -1096,11 +1096,13 @@ export const confirmTool: Tool<{
       options: {
         type: 'array',
         items: { type: 'string' },
-        description: '可选的操作按钮列表（例如 ["确定", "取消"]）。如果不填，前端通常会提供默认按钮。'
+        description:
+          '可选的操作按钮列表（例如 ["确定", "取消"]）。如果不填，前端通常会提供默认按钮。'
       },
       remember_key: {
         type: 'string',
-        description: '持久化记忆 Key。如果提供，用户可以选择“以后不再询问”，Agent 将自动记住该选择。'
+        description:
+          '持久化记忆 Key。如果提供，用户可以选择“以后不再询问”，Agent 将自动记住该选择。'
       }
     },
     required: ['prompt']
@@ -1114,7 +1116,14 @@ export const confirmTool: Tool<{
         options: input.options
       })
 
-      return result ? '用户已确认/选择了肯定选项' : '用户已取消/选择了否定选项'
+      // 如果提供了自定义选项，根据结果返回具体的选项文本
+      if (input.options && input.options.length > 0) {
+        // 通常 true 对应第一个操作，false 对应第二个操作（若无则视为取消）
+        const selected = result ? input.options[0] : input.options[1] || '取消/拒绝 (Cancel/Deny)'
+        return `用户已选择: "${selected}"`
+      }
+
+      return result ? '用户已确认 (Confirmed)' : '用户已取消/拒绝 (Cancelled/Denied)'
     } catch (err) {
       return `错误: ${(err as Error).message}`
     }

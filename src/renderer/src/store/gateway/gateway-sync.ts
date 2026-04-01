@@ -6,14 +6,7 @@ import { useSystemStore } from '@renderer/store/useSystemStore'
 import { useHeartbeatStore } from '@renderer/store/useHeartbeatStore'
 import { useSkillStore } from '@renderer/store/useSkillStore'
 import { useConfigStore } from '@renderer/store/useConfigStore'
-import {
-  ChatPayload,
-  AgentEventPayload,
-  ModelsPayload,
-  TickPayload,
-  ShutdownPayload,
-  NoticePayload
-} from '@shared/types/gateway'
+import type { ChatPayload, EventPayloadMap } from '@shared/types/gateway'
 
 let isInitialized = false
 
@@ -55,11 +48,11 @@ export const initGatewaySync = () => {
     useSystemStore.getState().handleDisconnect()
   })
 
-  client.onTick((payload: TickPayload) => {
+  client.onTick((payload: EventPayloadMap['system:tick']) => {
     useSystemStore.getState().handleTick(payload)
   })
 
-  client.onShutdown((payload: ShutdownPayload) => {
+  client.onShutdown((payload: EventPayloadMap['system:shutdown']) => {
     useSystemStore.getState().handleShutdown(payload)
   })
 
@@ -70,32 +63,25 @@ export const initGatewaySync = () => {
   })
 
   // B. 业务通知独立频道
-  client.onNotice((payload: NoticePayload) => {
+  client.onNotice((payload) => {
     useChatStore.getState().handleNoticeEvent(payload)
   })
 
   // B. 智能体领域事件 (包含生命周期与运行态)
-  client.onAgent((payload: AgentEventPayload) => {
+  client.onAgent((payload) => {
     // 1. 同步到全局智能体列表 Store
     useAgentStore.getState().handleLifecycleEvent?.(payload)
-    // 2. 同步到各个会话的状态 Store (状态机逻辑已在 agent-handler 中解耦)
+    // 2. 同步到各个会话的状态 Store
     useChatStore.getState().handleAgentEvent(payload)
     // 3. 辅助分发给技能领域
     useSkillStore.getState().handleSkillEvent(payload)
   })
 
   // C. 会话领域事件 (创建、重置、删除)
-  client.onSession((payload: AgentEventPayload) => {
-    // 处理会话级变更事件 (逻辑已在 session-handler 中解耦)
+  client.onSession((payload) => {
     useChatStore.getState().handleSessionEvent(payload)
   })
 
-  // C. 模型同步事件
-  client.onModels((payload: ModelsPayload) => {
-    useModelStore.getState().handleModelsUpdate(payload)
-  })
-
-  // D. 心跳任务事件
   client.onHeartbeat((payload) => {
     useHeartbeatStore.getState().handleHeartbeatEvent(payload)
   })

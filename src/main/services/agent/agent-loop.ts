@@ -152,7 +152,7 @@ export function runAgentLoop(
 
           turns++
           metrics.startTurn()
-          stream.push({ type: 'agent:turn-start', runId, sessionKey, turn: turns })
+          stream.push({ type: 'agent:turn-start', agentId, runId, sessionKey, turn: turns })
 
           // --- 主动 Token 溢出检查、压缩与待办消息注入 ---
           const enforced = await enforceContextLimitsAndInject({
@@ -175,6 +175,7 @@ export function runAgentLoop(
             for (const msg of pendingMessages) {
               stream.push({
                 type: 'chat:userMessage',
+                agentId,
                 runId,
                 sessionKey,
                 message: msg,
@@ -217,6 +218,7 @@ export function runAgentLoop(
           // 发送正式的聊天启动事件，使得前端能够立即创建消息占位符
           stream.push({
             type: 'chat:start',
+            agentId,
             runId,
             sessionKey,
             message: {
@@ -236,6 +238,7 @@ export function runAgentLoop(
           try {
             llmOutput = await executeLlmCall(
               {
+                agentId,
                 runId,
                 sessionKey,
                 messageId: assistantMessageId,
@@ -258,6 +261,7 @@ export function runAgentLoop(
               overflowCompactionAttempted = true
               stream.push({
                 type: 'agent:context-overflow',
+                agentId,
                 runId,
                 sessionKey,
                 error: llmError instanceof Error ? llmError.message : String(llmError)
@@ -287,6 +291,7 @@ export function runAgentLoop(
           if (llmOutput.turnText) {
             stream.push({
               type: 'chat:final',
+              agentId,
               runId,
               sessionKey,
               message: assistantMsg,
@@ -308,6 +313,7 @@ export function runAgentLoop(
               llmOutput.toolCalls,
               toolsForRun,
               toolCtx,
+              agentId,
               runId,
               sessionKey,
               stream,
@@ -321,7 +327,7 @@ export function runAgentLoop(
           }
 
           // 统一结束本轮并广播事件
-          stream.push({ type: 'agent:turn-end', runId, sessionKey, turn: turns })
+          stream.push({ type: 'agent:turn-end', agentId, runId, sessionKey, turn: turns })
 
           // 核心控制点：监听干预 (Steering)。如果有干预或工具产生，会自动进入下一轮 inner loop
           pendingMessages = await getSteeringMessages()
@@ -356,6 +362,7 @@ export function runAgentLoop(
 
       stream.push({
         type: 'agent:run-end',
+        agentId,
         runId,
         sessionKey,
         messages: currentMessages,
@@ -372,7 +379,13 @@ export function runAgentLoop(
         performance
       })
     } catch (err) {
-      stream.push({ type: 'agent:run-error', runId, sessionKey, error: describeError(err) })
+      stream.push({
+        type: 'agent:run-error',
+        agentId,
+        runId,
+        sessionKey,
+        error: describeError(err)
+      })
       stream.end({
         finalText,
         turns,

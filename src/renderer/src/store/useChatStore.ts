@@ -18,7 +18,7 @@ interface ChatState {
   allSessions: Record<string, string[]> // agentId -> keys[]
   isLoadingSessions: Record<string, boolean> // agentId -> state
   toolResultsMap: Record<string, Record<string, unknown>> // sessionKey -> { toolCallId -> result }
-  interactionMap: Record<string, ChatPayload['interaction'] | null> // sessionKey -> active interaction
+  interactionMap: Record<string, unknown> // sessionKey -> active interaction payload
   agents: Agent[]
   activeAgentId: string | null
   models: ModelsPayload['models']
@@ -87,23 +87,19 @@ export const useChatStore = create<ChatState>()(
         set((s) => applyGatewayEvent(s as MinimalChatStore, payload, 'chat'))
 
         // 交互逻辑自动处理
-        if (
-          payload.state === 'interaction' &&
-          payload.interaction &&
-          !payload.interaction.isComplete
-        ) {
+        if (payload.state === 'chat:interaction' && payload.interactionId && !payload.isComplete) {
           ConfirmService.confirm({
             title: 'AI 需要你的确认',
-            description: payload.interaction.prompt,
-            confirmText: payload.interaction.options?.[0],
-            cancelText: payload.interaction.options?.[1],
-            showRemember: !!payload.interaction.rememberKey
+            description: payload.prompt,
+            confirmText: payload.options?.[0],
+            cancelText: payload.options?.[1],
+            showRemember: !!payload.rememberKey
           }).then((res) => {
-            const agentId = payload.agentId || sk.split(':')[0] || 'main'
+            const agentId = payload.agentId || sk?.split(':')?.[0] || 'main'
             get().respondInteraction(
               agentId,
               sk,
-              payload.interaction!.interactionId,
+              payload.interactionId!,
               res.confirmed,
               res.remember
             )
@@ -111,10 +107,13 @@ export const useChatStore = create<ChatState>()(
         }
 
         // 异步状态复位逻辑 (UI 体验优化)
-        if (payload.state === 'final' || payload.state === 'error') {
-          const timeout = payload.state === 'final' ? RESET_TIMEOUT.SUCCESS : RESET_TIMEOUT.ERROR
+        if (payload.state === 'chat:final' || payload.state === 'chat:error') {
+          const timeout =
+            payload.state === 'chat:final' ? RESET_TIMEOUT.SUCCESS : RESET_TIMEOUT.ERROR
           setTimeout(() => {
-            if (get().chatStatuses[sk] === (payload.state === 'final' ? 'completed' : 'error')) {
+            if (
+              get().chatStatuses[sk] === (payload.state === 'chat:final' ? 'completed' : 'error')
+            ) {
               updateSubState(set, 'chatStatuses', sk, 'idle')
             }
           }, timeout)
@@ -323,7 +322,7 @@ export const useChatStore = create<ChatState>()(
             remember
           })
           // 清理本地状态（或者等待后端通知清理，通常这里设为 null 响应更快）
-          updateSubState(set, 'interactionMap', sk, null)
+          updateSubState(set, 'interactionMap', sk, null as unknown)
         } catch (err) {
           console.error('Respond interaction error:', err)
         }

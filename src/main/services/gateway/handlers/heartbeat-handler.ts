@@ -1,7 +1,7 @@
 import type { Handler } from './types'
 import { ErrorCodes, errorShape } from '../protocol'
 import { ensureParams } from './handler-utils'
-import { HeartbeatLog } from '@shared/types/gateway'
+import type { HeartbeatLog } from '@shared/types/gateway'
 
 // ===================== Handlers =====================
 

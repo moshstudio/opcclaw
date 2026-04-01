@@ -1,49 +1,52 @@
+/**
+ * Gateway WebSocket 实体物理端口 (Port Handler)
+ */
+
 import { WebSocket } from 'ws'
 import {
-  type RequestFrame,
+  type GatewayMethod,
+  type RequestMethodMap,
+  type ErrorShape,
   isRequestFrame,
   ErrorCodes,
   errorShape,
-  newId,
   HANDSHAKE_TIMEOUT_MS
-} from './protocol'
+} from '@shared/types/gateway'
+import { newId } from './protocol'
 import { handlers, type GwClient, type HandlerContext } from './handlers/index'
-import { type EventFrame, type ResponseFrame } from './protocol'
 import { formatGatewayDebugData } from './helpers/debug-utils'
 import type { Logger } from '@main/services/common/logger'
 
 /**
- * 设置新的 WebSocket 连接 (对齐 openclaw ws-connection.ts)
+ * 设置新的 WebSocket 物理连接通道 (Entrance Port)
  */
 export function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
   const connId = newId()
   const client: GwClient = { id: connId, socket: socket as GwClient['socket'], authed: false }
   ctx.clients.add(client)
 
-  ctx.logger.info(`Client connected: ${connId}`)
+  ctx.logger.info(`Client physical port allocated: ${connId}`)
 
-  // 1. 发送 challenge (握手挑战)
+  // 1. 发送握手挑战
   const nonce = newId()
   ctx.nonces.set(connId, nonce)
-  send(
-    socket,
-    {
+
+  socket.send(
+    JSON.stringify({
       type: 'event',
       event: 'connect:challenge',
       payload: { nonce, ts: Date.now() },
       seq: 0
-    },
-    ctx.logger
+    })
   )
 
-  // 2. 握手超时控制
   const handshakeTimer = setTimeout(() => {
     if (!client.authed) {
-      socket.close(4000, 'handshake timeout')
+      socket.close(4001, 'Handshake timeout')
     }
   }, HANDSHAKE_TIMEOUT_MS)
 
-  // 3. 消息路由处理
+  // 2. 入口数据物理层消费
   socket.on('message', async (raw) => {
     let parsed: unknown
     try {
@@ -53,32 +56,30 @@ export function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
     }
 
     if (!isRequestFrame(parsed)) return
-    const req = parsed as RequestFrame
+    const req = parsed
 
-    ctx.logger.debug(`[GW-IN] ${formatGatewayDebugData(req)}`)
+    ctx.logger.debug(`[GW-IN] RAW: ${formatGatewayDebugData(req)}`)
 
-    // 安全检查：未认证时仅允许 connect
-    if (!client.authed && req.method !== 'connect') {
+    if (!client.authed && (req.method as string) !== 'connect') {
       respond(
         socket,
         req.id,
         false,
-        undefined,
-        errorShape(ErrorCodes.UNAUTHORIZED, 'not authenticated'),
+        undefined as any,
+        errorShape(ErrorCodes.UNAUTHORIZED, 'Auth required'),
         ctx.logger
       )
       return
     }
 
-    // RPC 方法路由
     const handler = handlers[req.method]
     if (!handler) {
       respond(
         socket,
         req.id,
         false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, `unknown method: ${req.method}`),
+        undefined as any,
+        errorShape(ErrorCodes.INVALID_REQUEST, 'Method not found'),
         ctx.logger
       )
       return
@@ -87,67 +88,38 @@ export function setupConnectionHandler(socket: WebSocket, ctx: HandlerContext) {
     try {
       const result = await handler(req.params, client, ctx)
       respond(socket, req.id, result.ok, result.payload, result.error, ctx.logger)
-      if (req.method === 'connect' && result.ok) {
-        clearTimeout(handshakeTimer)
-      }
+      if (req.method === 'connect' && result.ok) clearTimeout(handshakeTimer)
     } catch (err) {
       respond(
         socket,
         req.id,
         false,
-        undefined,
+        undefined as any,
         errorShape(ErrorCodes.UNAVAILABLE, String(err)),
         ctx.logger
       )
     }
   })
 
-  // 4. 连接清理逻辑
-  const cleanup = (code?: number, reason?: string) => {
+  socket.on('close', () => {
     clearTimeout(handshakeTimer)
-    if (ctx.clients.has(client)) {
-      const info = code ? `(code: ${code}${reason ? `, reason: ${reason}` : ''})` : ''
-      ctx.logger.info(`Client left: ${connId} ${info}`)
-      ctx.clients.delete(client)
-      ctx.nonces.delete(connId)
-    }
-  }
-
-  socket.on('close', (code, reason) => cleanup(code, String(reason)))
-  socket.on('error', (err) => {
-    ctx.logger.error(`Client socket error: ${connId}`, err)
-    cleanup()
+    ctx.clients.delete(client)
+    ctx.nonces.delete(connId)
   })
 }
 
-/**
- * 帮助函数：发送帧
- */
-function send(
-  socket: WebSocket,
-  frame: EventFrame | ResponseFrame,
-  logger: Logger | undefined
-): void {
-  if (socket.readyState === WebSocket.OPEN) {
-    const data = JSON.stringify(frame)
-
-    logger?.debug(`[GW-OUT] SEND: ${formatGatewayDebugData(frame)}`)
-
-    socket.send(data)
-  }
-}
-
-/**
- * 帮助函数：响应请求
- */
-function respond(
+/** 统一响应出口 */
+function respond<M extends GatewayMethod>(
   socket: WebSocket,
   id: string,
   ok: boolean,
-  payload: unknown,
-  error: import('./protocol.js').ErrorShape | undefined,
+  payload: RequestMethodMap[M]['result'],
+  error: ErrorShape | undefined,
   logger: Logger | undefined
 ) {
-  const frame: ResponseFrame = { type: 'res', id, ok, payload, error }
-  send(socket, frame, logger)
+  if (socket.readyState === WebSocket.OPEN) {
+    const frame = { type: 'res', id, ok, payload, error }
+    logger?.debug(`[GW-OUT] ACK: ${formatGatewayDebugData(frame as any)}`)
+    socket.send(JSON.stringify(frame))
+  }
 }

@@ -220,7 +220,10 @@ const GeneralTab: React.FC = () => {
                         <ChevronDown className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[260px] p-2 rounded-2xl shadow-2xl border-muted/50 backdrop-blur-xl bg-background/95">
+                    <DropdownMenuContent
+                      align="end"
+                      className="w-[260px] p-2 rounded-2xl shadow-2xl border-muted/50 backdrop-blur-xl bg-background/95"
+                    >
                       <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest leading-none mb-1">
                         Quick Presets
                       </div>
@@ -228,15 +231,22 @@ const GeneralTab: React.FC = () => {
                         { label: 'Clash / Stash (7890)', value: 'http://127.0.0.1:7890' },
                         { label: 'Clash Verge / Mihomo (7897)', value: 'http://127.0.0.1:7897' },
                         { label: 'V2Ray / SS / SSR (1080)', value: 'socks5://127.0.0.1:1080' },
-                        { label: 'v2rayN / V2Ray Desktop (10808)', value: 'socks5://127.0.0.1:10808' }
+                        {
+                          label: 'v2rayN / V2Ray Desktop (10808)',
+                          value: 'socks5://127.0.0.1:10808'
+                        }
                       ].map((p) => (
                         <DropdownMenuItem
                           key={p.value}
                           onClick={() => setLocalProxy(p.value)}
                           className="flex flex-col items-start gap-0.5 py-2 px-3 rounded-xl hover:bg-primary/5 cursor-pointer group"
                         >
-                          <span className="text-xs font-bold transition-colors group-hover:text-primary">{p.label}</span>
-                          <span className="text-[10px] font-mono text-muted-foreground/70 truncate w-full">{p.value}</span>
+                          <span className="text-xs font-bold transition-colors group-hover:text-primary">
+                            {p.label}
+                          </span>
+                          <span className="text-[10px] font-mono text-muted-foreground/70 truncate w-full">
+                            {p.value}
+                          </span>
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>

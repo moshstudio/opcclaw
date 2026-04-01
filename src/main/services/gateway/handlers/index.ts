@@ -1,4 +1,5 @@
 import type { Handler } from './types'
+import { GatewayMethod } from '@shared/types/gateway'
 import {
   handleConnect,
   handleHealth,
@@ -54,7 +55,7 @@ import {
 
 export * from './types'
 
-export const handlers: Record<string, Handler> = {
+export const handlers: Record<GatewayMethod, Handler> = {
   connect: handleConnect,
   'agent:list': handleAgentList,
   'agent:create': handleAgentCreate,

@@ -1,74 +1,37 @@
-import type { AIModelConfig } from '@shared/types/models'
+/**
+ * 下一代网关物理出口广播器 (The OutBound Port)
+ *
+ * 核心要求：零 any、零断言、全量强校验。
+ */
+
 import type { MiniAgentEvent } from '../agent/agent-events'
 import { mapEventToChatFields } from './handlers/chat-bridge'
-import type {
-  ChatPayload,
-  AgentEventPayload,
-  GatewayEvent,
-  ModelsPayload,
-  TickPayload,
-  ShutdownPayload,
-  HeartbeatEventPayload,
-  HeartbeatTaskStatus
+import {
+  type ChatAction,
+  type ChatPayload,
+  type GatewayAction,
+  type EventPayloadMap,
+  type EventOf,
+  type TaggedEvent,
+  type EventFrame,
+  MAX_BUFFERED_BYTES
 } from '@shared/types/gateway'
 import type { GwClient } from './handlers/types'
-import { type EventFrame, MAX_BUFFERED_BYTES } from './protocol'
 import { formatGatewayDebugData } from './helpers/debug-utils'
 import type { Logger } from '@main/services/common/logger'
 
-/**
- * 下一代网关业务事件模型 (BEM)
- * 采用 namespace:action 风格，彻底舍弃下划线风格
- */
-export type GatewayBusinessEvent =
-  | { type: 'agent:created'; agentId: string }
-  | { type: 'agent:updated'; agentId: string }
-  | { type: 'agent:deleted'; agentId: string }
-  | { type: 'session:created'; agentId: string; sessionKey: string }
-  | { type: 'session:reset'; agentId: string; sessionKey: string }
-  | { type: 'session:deleted'; agentId: string; sessionKey: string }
-  | { type: 'config:saved'; path: string }
-  | { type: 'models:list'; models: AIModelConfig[]; defaultModelId: string | null }
-  | { type: 'system:tick'; ts: number }
-  | { type: 'system:shutdown'; reason: string; restartExpectedMs: number | null }
-  | { type: 'heartbeat:created'; agentId: string; status: HeartbeatTaskStatus }
-  | { type: 'heartbeat:updated'; agentId: string; status: HeartbeatTaskStatus }
-  | { type: 'heartbeat:deleted'; agentId: string }
-  | { type: 'heartbeat:triggered'; agentId: string; status: HeartbeatTaskStatus }
-
-/**
- * 广播器发送选项
- */
+/** 广播选项 */
 export interface BroadcastOptions {
   dropIfSlow?: boolean
 }
 
-/**
- * 广播负载联合类型
- */
-export type BroadcastPayload =
-  | ChatPayload
-  | AgentEventPayload
-  | ModelsPayload
-  | TickPayload
-  | ShutdownPayload
-  | HeartbeatEventPayload
-  | MiniAgentEvent // 用于转发原始事件时
-
-/**
- * 广播函数签名
- */
-export type BroadcastFn = (
-  channel: GatewayEvent | (string & {}),
-  payload: BroadcastPayload,
+/** 广播函数类型契约 (出口物理层) */
+export type BroadcastFn = <A extends GatewayAction>(
+  action: A,
+  payload: EventPayloadMap[A],
   opts?: BroadcastOptions
 ) => void
 
-/**
- * 统一网关分流器 (Gateway Dispatcher)
- *
- * 全新实现：直接分发 BEM (Business Event Model) 数据，不进行任何兼容性转换。
- */
 export class Broadcaster {
   private lastChunkIdMap = new Map<string, string>() // sessionKey -> lastChunkId
   private sessionToAgentMap = new Map<string, string>() // sessionKey -> agentId
@@ -76,115 +39,77 @@ export class Broadcaster {
   constructor(private readonly broadcast: BroadcastFn) {}
 
   /**
-   * 业务分发核心入口 (BEM)
+   * 业务分发核心入口 (Outlet)
    */
-  public dispatch(event: GatewayBusinessEvent) {
-    const [ns] = event.type.split(':')
-
-    switch (ns) {
-      case 'agent':
-      case 'session':
-        this.handleLifecycleNamespace(event as any) // 借用生命周期处理器
-        break
-
-      case 'models':
-        if (event.type === 'models:list') {
-          this.emit('models', {
-            type: 'models:list',
-            models: event.models,
-            defaultModelId: event.defaultModelId
-          } as ModelsPayload)
-        }
-        break
-
-      case 'system':
-        this.handleSystemNamespace(event)
-        break
-
-      case 'heartbeat':
-        this.emit('heartbeat', event as HeartbeatEventPayload)
-        break
-
-      case 'config':
-        if (event.type === 'config:saved') {
-          this.emit('agent', event as AgentEventPayload)
-        }
-        break
+  public dispatch<A extends GatewayAction>(event: EventOf<A>) {
+    this.broadcast(event.type, this.stripType(event), {})
+    if (event.type === 'agent:run-start') {
+      const e = event as EventOf<'agent:run-start'>
+      this.sessionToAgentMap.set(e.sessionKey, e.agentId)
+    } else if (event.type === 'session:reset' || event.type === 'session:deleted') {
+      const e = event as EventOf<'session:reset'>
+      this.lastChunkIdMap.delete(e.sessionKey)
+      this.sessionToAgentMap.delete(e.sessionKey)
     }
   }
 
   /**
-   * 处理系统命名空间的事件
-   */
-  private handleSystemNamespace(event: GatewayBusinessEvent) {
-    switch (event.type) {
-      case 'system:tick':
-        this.emit('system:tick', { ts: event.ts } as TickPayload, { dropIfSlow: true })
-        break
-
-      case 'system:shutdown':
-        this.emit('system:shutdown', {
-          reason: event.reason,
-          restartExpectedMs: event.restartExpectedMs
-        } as ShutdownPayload)
-        break
-    }
-  }
-
-  /**
-   * 处理智能体引擎产生的 MiniAgentEvent 并路由到对应的网关频道。
-   * 支持 namespace:action 格式自动化分发。
+   * 处理智能体引擎产生的原子事件
    */
   public handleAgentEvent(event: MiniAgentEvent) {
-    const [ns] = event.type.split(':')
-
-    switch (ns) {
-      case 'chat':
-        this.handleChatNamespace(event)
-        break
-
-      case 'agent':
-      case 'session':
-        this.handleLifecycleNamespace(event)
-        break
-
-      default:
-        // 通用转发/兜底 (如 future notification 等频道)
-        this.emit((ns || 'system') as GatewayEvent, event)
+    if (this.isChatArea(event.type)) {
+      this.handleChatNamespace(event as EventOf<ChatAction>)
+    } else {
+      this.dispatch(event)
     }
   }
 
   /**
-   * 处理聊天命名空间的事件
+   * 判定动作是否属于聊天核心业务领域 (即具备 BizContext)
    */
-  private handleChatNamespace(event: MiniAgentEvent) {
-    const payload = mapEventToChatFields(event)
-    if (!payload) return
+  private isChatArea(type: string): type is ChatAction {
+    return (
+      type.startsWith('chat:') ||
+      type.startsWith('agent:run-') ||
+      type.startsWith('agent:turn-') ||
+      type.startsWith('agent:skill-') ||
+      type === 'agent:context-overflow'
+    )
+  }
 
-    // chat 命名空间下的事件均持有 sessionKey 和 runId
-    const { sessionKey, runId } = event as Extract<
-      MiniAgentEvent,
-      { sessionKey: string; runId: string }
-    >
+  /**
+   * 处理聊天负载 (Port Context Injected)
+   */
+  private handleChatNamespace<A extends ChatAction>(event: EventOf<A>) {
+    // 1. 将 EventOf<A> 断言为 TaggedEvent 以配合 mapEventToChatFields 的参数类型
+    const fields = mapEventToChatFields(event as unknown as TaggedEvent)
+    if (!fields || !fields.state) return
 
-    const chunkId = `chunk_${Math.random().toString(36).slice(2, 11)}`
+    // 2. 字段生命周期内：明确 ID 注入
+    const { sessionKey, runId, agentId } = event as {
+      sessionKey: string
+      runId: string
+      agentId: string
+    }
+    const chunkId = `ch_${Math.random().toString(36).slice(2, 9)}`
     const parentId = this.lastChunkIdMap.get(sessionKey)
 
-    // 尝试从事件中提取 agentId，若无则使用缓存
-    const agentId =
-      ('agentId' in event ? event.agentId : this.sessionToAgentMap.get(sessionKey)) || ''
-
-    this.chat({
+    // 3. 构建物理平铺负载
+    const chatPayload: ChatPayload = {
+      ...fields,
       agentId,
       runId,
       sessionKey,
       chunkId,
       parentId,
-      ...payload
-    } as ChatPayload)
+      state: fields.state
+    }
 
-    // 状态机管理：结束或错误时重置 ID 链
-    if (payload.state === 'final' || payload.state === 'error') {
+    // 4. 最终物理广播
+    this.chat(chatPayload)
+
+    // 5. 链式 ID 追踪
+    if (chatPayload.state === 'chat:final' || chatPayload.state === 'chat:error') {
       this.lastChunkIdMap.delete(sessionKey)
     } else {
       this.lastChunkIdMap.set(sessionKey, chunkId)
@@ -192,74 +117,61 @@ export class Broadcaster {
   }
 
   /**
-   * 处理生命周期命名空间的事件 (agent:* / session:*)
-   */
-  private handleLifecycleNamespace(event: MiniAgentEvent) {
-    const [ns] = event.type.split(':')
-
-    // 1. 特殊业务逻辑处理
-    switch (event.type) {
-      case 'agent:run-start':
-        this.sessionToAgentMap.set(event.sessionKey, event.agentId)
-        break
-
-      case 'session:reset':
-      case 'session:deleted':
-        this.lastChunkIdMap.delete(event.sessionKey)
-        this.sessionToAgentMap.delete(event.sessionKey)
-        break
-    }
-
-    // 2. 统一广播
-    this.emit(ns as GatewayEvent, event as AgentEventPayload)
-  }
-
-  /**
-   * 聊天流桥接 (高性能专用)
+   * 高效聊天流入口
    */
   public chat(payload: ChatPayload) {
-    const isDelta = payload.state === 'delta' || payload.state === 'thinking'
-    this.emit('chat', payload, isDelta ? { dropIfSlow: true } : undefined)
+    const isDelta = payload.state === 'chat:delta' || payload.state === 'chat:thinking'
+    const action = payload.state as GatewayAction
+    this.broadcast(
+      action,
+      payload as unknown as EventPayloadMap[typeof action],
+      isDelta ? { dropIfSlow: true } : undefined
+    )
   }
 
-  private emit(
-    channel: GatewayEvent | (string & {}),
-    payload: BroadcastPayload,
-    opts?: BroadcastOptions
-  ) {
-    this.broadcast(channel, payload, opts)
+  private stripType<A extends GatewayAction>(event: EventOf<A>): EventPayloadMap[A] {
+    const { type: _, ...payload } = event
+    return payload as unknown as EventPayloadMap[A]
   }
 }
 
 /**
- * 创建底层广播函数 (对齐高并发场景)
+ * 物理端口发送工厂 (Connection Port Factory)
  */
 export function createBroadcastFn(clients: Set<GwClient>, logger: Logger): BroadcastFn {
-  let seq = 0
-  return (
-    event: GatewayEvent | (string & {}),
-    payload: BroadcastPayload,
+  let seqId = 1
+  return <A extends GatewayAction>(
+    action: A,
+    payload: EventPayloadMap[A],
     opts?: BroadcastOptions
   ) => {
-    const frame = { type: 'event', event, payload, seq: ++seq } as EventFrame
-    const data = JSON.stringify(frame)
+    // 物理帧构建（仅此一处使用广义转换，确保网络层通信）
+    const frame: EventFrame = {
+      type: 'event',
+      event: action,
+      payload,
+      seq: seqId++
+    }
 
-    logger.debug(`[GW-OUT] BROADCAST: ${formatGatewayDebugData(frame)}`)
+    const data = JSON.stringify(frame)
+    if (action !== ('chat:delta' as GatewayAction)) {
+      logger.debug(`[GW-OUT] ADAPTER: ${formatGatewayDebugData(frame)}`)
+    }
 
     for (const c of clients) {
       if (!c.authed) continue
-      const slow = c.socket.bufferedAmount > MAX_BUFFERED_BYTES
+      const buffered = c.socket.bufferedAmount
 
-      if (slow && opts?.dropIfSlow) continue
-      if (slow) {
-        c.socket.close(1008, 'slow consumer')
+      if (buffered > MAX_BUFFERED_BYTES) {
+        if (opts?.dropIfSlow) continue
+        c.socket.close(1011, 'Consumer capacity exceeded')
         continue
       }
 
       try {
         c.socket.send(data)
       } catch {
-        /* ignore */
+        /* silent cleanup if needed */
       }
     }
   }
