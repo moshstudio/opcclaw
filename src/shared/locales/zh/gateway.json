@@ -5,7 +5,7 @@
   "token": "访问令牌",
   "network": "网络设置",
   "saving": "正在重启服务...",
-  "save_applied": "保存并应用更改",
+  "save_applied": "保存并应用",
   "refresh_token_title": "重置令牌",
   "refresh_token_confirm": "确定要重置网关令牌吗？外部应用将需要更新配置。",
   "external_access_only": "仅用于外部接入",
@@ -14,5 +14,6 @@
   "doc_title": "BEM 接口对接文档",
   "doc_subtitle": "JSON Metadata API",
   "view_now": "立即查看",
-  "copy_link": "复制链接"
+  "copy_link": "复制链接",
+  "port_range_error": "端口范围必须在 1-65535 之间"
 }

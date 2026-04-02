@@ -26,6 +26,7 @@
     "@ant-design/x-markdown": "^2.4.0",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@larksuiteoapi/node-sdk": "^1.60.0",
     "@mariozechner/pi-ai": "0.61.1",
     "@mozilla/readability": "^0.6.0",
     "@radix-ui/react-alert-dialog": "^1.1.15",

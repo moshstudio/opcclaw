@@ -19,7 +19,11 @@ import { type GwClient, type HandlerContext } from './handlers/index'
 import { Broadcaster, createBroadcastFn } from './broadcaster'
 import { setupConnectionHandler } from './connection-handler'
 import { renderGatewayDoc } from './doc-renderer'
-import { GATEWAY_EVENTS_DOC } from '@shared/metadata/events'
+import {
+  GATEWAY_EVENTS_DOC,
+  GATEWAY_METHODS_DOC,
+  GATEWAY_COMMON_TYPES_DOC
+} from '@shared/metadata/events'
 import { Logger, setGlobalLogLevel } from '@main/services/common/logger'
 import { type GatewaySettings } from '@shared/types/config'
 
@@ -31,6 +35,7 @@ export type GatewayServerOptions = GatewaySettings & {
 
 export type GatewayServer = {
   close: (opts?: { restartExpectedMs?: number }) => void
+  dispatch: (evt: import('@shared/types/gateway').TaggedEvent) => void
   port: number
 }
 
@@ -44,7 +49,7 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
   if (opts.logLevel) {
     setGlobalLogLevel(opts.logLevel)
   }
-  setGlobalLogLevel('debug')
+  // setGlobalLogLevel('debug')
 
   const logger = new Logger('[Gateway]')
   const broadcast = createBroadcastFn(clients, logger)
@@ -77,7 +82,17 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
     if (url.pathname === '/events-doc') {
       if (isJson) {
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-        res.end(JSON.stringify({ events: GATEWAY_EVENTS_DOC }, null, 2))
+        res.end(
+          JSON.stringify(
+            {
+              events: GATEWAY_EVENTS_DOC,
+              methods: GATEWAY_METHODS_DOC,
+              commonTypes: GATEWAY_COMMON_TYPES_DOC
+            },
+            null,
+            2
+          )
+        )
         return
       }
 
@@ -136,5 +151,5 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
     httpServer.close()
   }
 
-  return { close, port }
+  return { close, dispatch: (evt) => broadcaster.dispatch(evt), port }
 }

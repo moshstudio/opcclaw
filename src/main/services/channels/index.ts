@@ -2,4 +2,5 @@
  * Channel 模块导出
  */
 
-export { TelegramChannel, type TelegramChannelOptions } from './telegram'
+export { TelegramChannel } from './telegram'
+export { FeishuChannel } from './feishu'

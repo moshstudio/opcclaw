@@ -17,6 +17,7 @@ import { GatewayManager } from '../manager'
 import { ChannelManager } from '../../channels/manager'
 import { type AppConfig } from '@shared/types/config'
 import { type Handler, safeEqual } from './types'
+import { changeLanguage } from '../../../i18n'
 import { GATEWAY_EVENTS_DOC } from '@shared/metadata/events'
 import { ensureParams, getAgentOrError } from './handler-utils'
 
@@ -295,6 +296,19 @@ export const handleConfigSave: Handler = async (params, _client, ctx) => {
       await ChannelManager.getInstance().restart()
     }, 1000)
   }
+
+  // 4. 判断并执行语言切换 (Side effects)
+  if (newConfig.language && newConfig.language !== oldConfig.language) {
+    await changeLanguage(newConfig.language)
+    // 通知各个频道更新 (如 Telegram 注册指令)
+    ChannelManager.getInstance().onLanguageChanged(newConfig.language as string)
+  }
+
+  // 5. 广播通知所有 UI 副本同步
+  ctx.broadcaster.dispatch({
+    type: 'config:saved',
+    path: configService.getRootPath()
+  })
 
   return { ok: true }
 }

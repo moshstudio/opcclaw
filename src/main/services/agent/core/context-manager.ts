@@ -73,48 +73,61 @@ export class AgentContextManager {
     let firstKeptId: string | undefined
     for (const msg of result.pruneResult.messages) {
       const candidate = this.options.sessionManager.resolveMessageEntryId(params.sessionKey, msg)
-      if (candidate) {
-        firstKeptId = msg.id || candidate
+      // 优先使用持久化 ID，如果找不到（比如新消息还没来得及 append），则使用 message 对象自身的 id
+      if (candidate || msg.id) {
+        firstKeptId = candidate || msg.id
         break
       }
     }
 
-    if (firstKeptId) {
-      const tokensBefore = estimateMessagesTokens(params.messages)
-      const compactionId = await this.options.sessionManager.appendCompaction(
-        params.sessionKey,
-        result.summary,
-        firstKeptId,
-        tokensBefore
+    if (!firstKeptId && result.pruneResult.messages.length === 0) {
+      // 压缩将全部内容进行了压缩，所以将 firstKeptId 设为 ''
+      firstKeptId = ''
+    }
+
+    if (firstKeptId === undefined) {
+      this.logger.warn(
+        `无法定位 compaction 的 firstKeptId (保留的消息数: ${result.pruneResult.messages.length})。已跳过持久化。`
       )
+      return
+    }
 
-      if (result.summaryMessage) {
-        result.summaryMessage.id = compactionId
-      }
+    const tokensBefore = estimateMessagesTokens(params.messages)
+    const compactionId = await this.options.sessionManager.appendCompaction(
+      params.sessionKey,
+      result.summary,
+      firstKeptId,
+      tokensBefore
+    )
 
-      // 1. 发出压缩元数据事件
+    if (result.summaryMessage) {
+      result.summaryMessage.id = compactionId
+    }
+
+    if (!firstKeptId) {
+      this.logger.info(`执行了全量压缩 (保留的消息数: ${result.pruneResult.messages.length})。`)
+    }
+
+    // 1. 发出压缩元数据事件
+    this.options.emit({
+      type: 'notice:compact',
+      runId: params.runId,
+      sessionKey: params.sessionKey,
+      summaryChars: result.summary.length,
+      droppedMessages: result.pruneResult.droppedMessages.length,
+      firstKeptId
+    })
+
+    // 2. 发出总结消息事件（用于 UI 渲染总结卡片）
+    if (result.summaryMessage) {
       this.options.emit({
-        type: 'notice:compact',
+        type: 'chat:userMessage',
+        agentId: this.options.agentId,
         runId: params.runId,
         sessionKey: params.sessionKey,
-        summaryChars: result.summary.length,
-        droppedMessages: result.pruneResult.droppedMessages.length,
-        firstKeptId
+        message: result.summaryMessage,
+        messageId: result.summaryMessage.id!
       })
-
-      // 2. 发出总结消息事件（用于 UI 渲染总结卡片）
-      if (result.summaryMessage) {
-        this.options.emit({
-          type: 'chat:userMessage',
-          agentId: this.options.agentId,
-          runId: params.runId,
-          sessionKey: params.sessionKey,
-          message: result.summaryMessage,
-          messageId: result.summaryMessage.id!
-        })
-      }
-    } else {
-      console.warn('[ContextManager] 无法定位 compaction 的 firstKeptId，已跳过持久化。')
     }
   }
 

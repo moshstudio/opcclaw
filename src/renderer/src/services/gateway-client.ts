@@ -2,15 +2,14 @@ import { toast } from 'sonner'
 import i18n from '@renderer/i18n'
 import { BaseGatewayClient } from '@shared/services/gateway-client-core'
 import {
-  type HelloOk,
   type GatewayClientOptions,
   type ChatPayload,
   type EventPayload,
-  type GatewayMethod,
   type AgentEventPayload,
   type NoticePayload,
   type HeartbeatEventPayload
 } from '@shared/types/gateway'
+import { type HelloOk, type GatewayMethod } from '@shared/types/gateway/in'
 
 /**
  * 渲染进程 Gateway 客户端 (直接连接)
@@ -133,9 +132,28 @@ export class RendererGatewayClient extends BaseGatewayClient {
     return this.onAction('system:shutdown', callback)
   }
 
+  /** 模型配置变更事件（接收所有 models:* 事件） */
+  onModel(callback: (payload: any) => void) {
+    return this.onAction('models', callback)
+  }
+
   /** 心跳任务事件（接收所有 heartbeat:* 事件） */
   onHeartbeat(callback: (payload: HeartbeatEventPayload) => void) {
     return this.onAction('heartbeat', callback)
+  }
+
+  /** 配置变更事件 */
+  onConfig(callback: (payload: EventPayload<'config:saved'>) => void) {
+    return this.onAction('config:saved', callback)
+  }
+
+  /**
+   * 立即重新连接。用于配置变更后，强制客户端拉取新配置并建立连接。
+   */
+  async reconnect(): Promise<HelloOk> {
+    this.ws?.close() // 先主动断开
+    this.closed = false // 确保不是永久关闭状态
+    return await this.connect()
   }
 }
 

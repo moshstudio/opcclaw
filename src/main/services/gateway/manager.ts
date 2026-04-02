@@ -3,6 +3,7 @@ import { GatewayClient } from './client'
 import { ConfigService } from '@main/services/config/config-service'
 import { AgentRegistry } from '@main/services/agent/registry'
 import { Logger, LogLevel, setGlobalLogLevel } from '@main/services/common/logger'
+import type { TaggedEvent } from '@shared/types/gateway'
 
 export class GatewayManager {
   private static instance: GatewayManager
@@ -84,5 +85,16 @@ export class GatewayManager {
 
   public getClient(): GatewayClient | undefined {
     return this.client
+  }
+
+  /**
+   * 向所有连接的网关客户端广播事件
+   */
+  public dispatch(evt: TaggedEvent): void {
+    if (this.server) {
+      this.server.dispatch(evt)
+    } else {
+      this.logger.warn('Cannot dispatch: Gateway server not running')
+    }
   }
 }

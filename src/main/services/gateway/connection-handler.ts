@@ -4,14 +4,13 @@
 
 import { WebSocket } from 'ws'
 import {
-  type GatewayMethod,
-  type RequestMethodMap,
   type ErrorShape,
   isRequestFrame,
   ErrorCodes,
   errorShape,
   HANDSHAKE_TIMEOUT_MS
 } from '@shared/types/gateway'
+import { type GatewayMethod, type RequestMethodMap } from '@shared/types/gateway/in'
 import { newId } from './protocol'
 import { handlers, type GwClient, type HandlerContext } from './handlers/index'
 import { formatGatewayDebugData } from './helpers/debug-utils'

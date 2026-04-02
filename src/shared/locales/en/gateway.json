@@ -14,5 +14,6 @@
   "doc_subtitle": "JSON Metadata API",
   "view_now": "View Now",
   "copy_link": "Copy Link",
-  "status_label": "Gateway"
+  "status_label": "Gateway",
+  "port_range_error": "Port must be 1-65535"
 }

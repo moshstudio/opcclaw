@@ -1,31 +1,53 @@
+import type { Context as PiContext, Usage } from '@mariozechner/pi-ai'
 import type { Message } from '@shared/types/agent'
 import { getEncoding } from 'js-tiktoken'
 
 const tokenizer = getEncoding('cl100k_base')
 
-export function estimateMessageTokens(message: Message): number {
-  if (message.usage && typeof message.usage.output === 'number' && message.usage.output > 0) {
-    return message.usage.output
-  }
-  let rawText = ''
-  if (typeof message.content === 'string') {
-    rawText = message.content
-  } else {
-    // 对于复杂的 Array 结构（包含 ToolCall, ToolResult, Thinking 等），
-    // 采用全量 JSON 序列化能最真实地模拟传输给 LLM 的 Payload 体积及 Token 权重。
-    try {
-      rawText = JSON.stringify(message.content)
-    } catch {
-      rawText = String(message.content)
-    }
-  }
-
-  // 加上一点通信开销 (role, framings 等)
+export function countTokens(text: string | null | undefined): number {
+  if (!text) return 0
   try {
-    return Math.max(1, tokenizer.encode(rawText).length + 4)
+    return tokenizer.encode(text).length
   } catch (err) {
-    // 降级使用传统的粗糙长度估算
-    return Math.max(1, Math.ceil(rawText.length / 4))
+    return Math.max(1, Math.ceil(text.length / 3.5))
+  }
+}
+
+/**
+ * 估算单条消息消耗的 Token
+ */
+export function estimateMessageTokens(message: Message): number {
+  if (message.usage?.output && message.usage.output > 0) return message.usage.output
+
+  const rawText =
+    typeof message.content === 'string' ? message.content : JSON.stringify(message.content)
+
+  return Math.max(1, countTokens(rawText) + 4)
+}
+
+/**
+ * 在 Provider 未返回 Usage 时（如中断），计算交互消耗的 Token
+ */
+export function estimateInteractionUsage(piContext: PiContext, assistantMsg: Message): Usage {
+  const output = estimateMessageTokens(assistantMsg)
+
+  // 累计 Input: 系统提示词 + 消息历史 + 工具定义
+  let input = countTokens(piContext.systemPrompt)
+
+  input += (piContext.messages || []).reduce((sum, msg) => {
+    const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+    return sum + countTokens(content) + 4 // +4 为消息头权重
+  }, 0)
+
+  input += countTokens(JSON.stringify(piContext.tools || []))
+
+  return {
+    input,
+    output,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: input + output,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
   }
 }
 

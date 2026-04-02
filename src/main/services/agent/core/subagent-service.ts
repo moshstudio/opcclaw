@@ -81,7 +81,7 @@ export class SubagentService {
       // 4. 可选清理
       if (params.cleanup === 'delete') {
         await this.sessions.delete(childSessionKey)
-        this.emit({ type: 'session:deleted', sessionKey: childSessionKey })
+        this.emit({ type: 'session:deleted', sessionKey: childSessionKey, agentId: this.agentId })
       }
     } catch (err) {
       await this.handleSubagentError(params, err)

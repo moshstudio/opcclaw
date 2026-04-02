@@ -43,6 +43,12 @@ export interface MemorySearchResult {
 }
 
 /**
+ * 交互确认结果类型 (Interactive Result)
+ * 规范：字符串列表（选项文本）
+ */
+export type InteractionResult = string[]
+
+/**
  * 工具执行上下文接口 (主进程运行时注入)
  */
 export interface ToolContext {
@@ -77,7 +83,7 @@ export interface ToolContext {
     prompt: string,
     options?: string[],
     rememberKey?: string
-  ) => Promise<{ result: boolean; remember: boolean }>
+  ) => Promise<{ result: InteractionResult; remember: boolean }>
   allowedPaths?: string[]
   abortSignal?: AbortSignal
 }

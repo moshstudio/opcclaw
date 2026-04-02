@@ -166,6 +166,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                                 title: t('common.confirm_delete_session'),
                                 description: t('common.confirm_delete_session_desc'),
                                 confirmText: t('common.delete'),
+                                cancelText: t('common.cancel'),
                                 variant: 'destructive'
                               })
                               if (isConfirmed.confirmed) {

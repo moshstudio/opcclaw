@@ -8,7 +8,7 @@ import { AgentRegistry } from './services/agent/registry'
 import { ChannelManager } from './services/channels/manager' // 新增导入
 import { setSystemClosing, Logger } from './services/common/logger'
 import { initIpcServices } from './ipc'
-import { t, initI18n, changeLanguage } from './i18n'
+import { t, initI18n } from './i18n'
 
 const mainLogger = new Logger('[Main]')
 
@@ -81,8 +81,11 @@ app.setName('opcclaw')
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
   // --- 初始化 i18n ---
+  const configService = ConfigService.getInstance()
+  const savedLang = configService.getConfig().language
   const locale = app.getLocale().toLowerCase()
-  await initI18n(locale.startsWith('zh') ? 'zh' : 'en')
+  const defaultLang = locale.startsWith('zh') ? 'zh' : 'en'
+  await initI18n(savedLang || defaultLang)
 
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.opcclaw')
@@ -107,9 +110,9 @@ app.whenReady().then(async () => {
     }
   })
 
-  // --- 语言切换监听 ---
-  ipcMain.handle('app:change-language', async (_, lang: string) => {
-    await changeLanguage(lang)
+  // --- 监听配置变更 (Side Effects) ---
+  configService.on('config-saved', () => {
+    // 如果语言变更，更新托盘菜单并广播 (handleConfigSave 已经处理了业务逻辑)
     updateTrayMenu()
   })
 

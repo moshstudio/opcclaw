@@ -34,15 +34,24 @@ export class AgentRegistry {
   private globalListeners = new Set<(agentId: string, event: MiniAgentEvent) => void>()
 
   /**
-   * 订阅所有智能体事件
+   * 订阅所有智能体和注册表全局事件
    */
   public subscribeAll(fn: (agentId: string, event: MiniAgentEvent) => void): () => void {
     this.globalListeners.add(fn)
-    // 为现有智能体挂载
+    // 1. 为现有智能体挂载监听
     for (const [id, agent] of this.agents) {
       agent.instance.subscribe((ev) => fn(id, ev))
     }
     return () => this.globalListeners.delete(fn)
+  }
+
+  /**
+   * 向全局监听器发起非特定实例的广播
+   */
+  public emitGlobal(event: MiniAgentEvent) {
+    for (const fn of this.globalListeners) {
+      fn('system', event) // 全局事件使用 system 作为虚拟 agentId
+    }
   }
 
   /**
@@ -90,6 +99,10 @@ export class AgentRegistry {
 
     try {
       await this.loadLock
+      this.emitGlobal({
+        type: 'agent:list',
+        agents: this.listAgents().map((a) => ({ id: a.id, config: a.config }))
+      })
     } finally {
       this.loadLock = null
     }
@@ -278,6 +291,11 @@ export class AgentRegistry {
       }
     }
 
+    this.emitGlobal({
+      type: 'agent:list',
+      agents: this.listAgents().map((a) => ({ id: a.id, config: a.config }))
+    })
+
     return agentId
   }
 
@@ -296,6 +314,11 @@ export class AgentRegistry {
     if (fs.existsSync(agentDir)) {
       fs.rmSync(agentDir, { recursive: true, force: true })
     }
+
+    this.emitGlobal({
+      type: 'agent:list',
+      agents: this.listAgents().map((a) => ({ id: a.id, config: a.config }))
+    })
   }
 
   public async updateAgent(agentId: string, updates: Partial<AgentConfig>): Promise<void> {

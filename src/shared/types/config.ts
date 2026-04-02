@@ -1,5 +1,6 @@
 import { AIModelConfig } from './models'
 import { LogLevel } from './logger'
+import { InteractionResult } from './agent'
 
 /**
  * 网关配置项
@@ -22,10 +23,44 @@ export interface TelegramChannelConfig {
 }
 
 /**
+ * 飞书 频道配置
+ */
+export interface FeishuChannelConfig {
+  enabled: boolean
+  appId: string
+  appSecret: string
+  verificationToken?: string
+  encryptKey?: string
+  defaultAgentId?: string
+  agentBindings?: Record<string, string>
+}
+
+/**
  * 频道全量配置
  */
 export interface ChannelsConfig {
   telegram?: TelegramChannelConfig[] // 支持多个 Telegram Bot
+  feishu?: FeishuChannelConfig[] // 支持多个 飞书 应用
+}
+
+export interface AgentDefaults {
+  temperature: number
+  maxTokens: number
+  topP: number
+  capabilities: {
+    webSearch: boolean
+    codeExecution: boolean
+    vision: boolean
+  }
+}
+
+/**
+ * 已记住的交互选择
+ */
+export interface RememberedChoice {
+  result: InteractionResult
+  description: string
+  timestamp: number
 }
 
 /**
@@ -37,7 +72,12 @@ export interface AppConfig {
   defaultModelId?: string
   proxy?: string // 全局默认代理 (e.g. http://127.0.0.1:7890)
   channels?: ChannelsConfig // 新增频道配置
-  rememberedChoices?: Record<string, boolean>
+  rememberedChoices?: Record<string, RememberedChoice>
+  language?: string // 应用语言设置 (zh/en)
+  theme?: 'dark' | 'light' | 'system'
+  fontSize?: number
+  interactionTimeout?: number // 交互超时时长 (秒)
+  agentDefaults?: AgentDefaults
 }
 
 /**

@@ -6,6 +6,7 @@ import { Button } from '@renderer/components/ui/button'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { useAgentStore } from '@renderer/store/useAgentStore'
 import { useModelStore } from '@renderer/store/useModelStore'
+import { useConfigStore } from '@renderer/store/useConfigStore'
 import { AgentSettingsFormData } from './agent-settings/types'
 import { BaseConfigSection } from './agent-settings/BaseConfigSection'
 import { ModelConfigSection } from './agent-settings/ModelConfigSection'
@@ -53,15 +54,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
   const [loadingUsage, setLoadingUsage] = useState(false)
 
   const editingAgent = agents.find((a) => a.id === activeAgentId)
+  const { config: appConfig } = useConfigStore()
+  const defaults = appConfig?.agentDefaults
 
   const [formData, setFormData] = useState<AgentSettingsFormData>({
     name: '',
     systemPrompt: '',
     modelSelectId: 'default',
-    temperature: 0.7,
+    temperature: defaults?.temperature ?? 0.7,
     reasoning: 'medium',
     contextTokens: 128000,
-    maxTokens: 4096,
+    maxTokens: defaults?.maxTokens ?? 4096,
     enableMemory: true,
     enableSkills: true,
     enableContext: true,
@@ -109,10 +112,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
         name: config.name || '',
         systemPrompt: config.systemPrompt || '',
         modelSelectId,
-        temperature: config.temperature ?? 0.7,
+        temperature: config.temperature ?? (defaults?.temperature || 0.7),
         reasoning: config.reasoning || 'medium',
         contextTokens: config.contextTokens ?? 128000,
-        maxTokens: config.maxTokens ?? 4096,
+        maxTokens: config.maxTokens ?? (defaults?.maxTokens || 4096),
         enableMemory: config.enableMemory ?? true,
         enableSkills: config.enableSkills ?? true,
         enableContext: config.enableContext ?? true,
@@ -129,7 +132,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
       setFormData(initialData)
       setInitialFormData(initialData)
     }
-  }, [visible, editingAgent, models]) // Added models to dependency array
+  }, [visible, editingAgent, models, defaults]) // Added models and defaults to dependency array
 
   const isChanged = useMemo(() => {
     if (!initialFormData) return false

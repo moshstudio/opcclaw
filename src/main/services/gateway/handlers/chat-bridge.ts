@@ -4,10 +4,9 @@
  */
 
 import { normalizeMessage } from '@shared/utils/message'
-import type { ChatPayload, ChatAction, TaggedEvent, EventOf } from '@shared/types/gateway'
+import type { ChatAction, TaggedEvent, EventOf, ChatPayloadFlat } from '@shared/types/gateway'
 
 const STATE_MAP: Record<string, ChatAction> = {
-  'agent:run-end': 'chat:final',
   'agent:run-error': 'chat:error'
 }
 
@@ -16,9 +15,9 @@ function toChatState(type: string): ChatAction {
 }
 
 /** 将 TaggedEvent 映射为 ChatPayload 业务载荷 */
-export function mapEventToChatFields(event: TaggedEvent): Partial<ChatPayload> | null {
+export function mapEventToChatFields(event: TaggedEvent): ChatPayloadFlat | null {
   const state = toChatState(event.type)
-  const base: Partial<ChatPayload> = { state }
+  const base: ChatPayloadFlat = { type: 'chat', state }
 
   // 公共字段先期提取
   const ev = event as Record<string, unknown>
@@ -33,12 +32,13 @@ export function mapEventToChatFields(event: TaggedEvent): Partial<ChatPayload> |
   switch (event.type) {
     case 'chat:final': {
       const e = event as EventOf<'chat:final'>
-      return { ...base, performance: e.performance, usage: e.usage, text: e.text }
+      return { ...base, type: 'chat', performance: e.performance, usage: e.usage, text: e.text }
     }
     case 'agent:run-end': {
       const e = event as EventOf<'agent:run-end'>
       const lastMsg = e.messages[e.messages.length - 1]
       return {
+        type: 'chat',
         state,
         message: normalizeMessage(lastMsg),
         messageId: lastMsg?.id,
@@ -48,11 +48,12 @@ export function mapEventToChatFields(event: TaggedEvent): Partial<ChatPayload> |
     }
     case 'agent:run-error': {
       const e = event as EventOf<'agent:run-error'>
-      return { state, error: e.error }
+      return { type: 'chat', state, error: e.error }
     }
     case 'chat:toolCall': {
       const e = event as EventOf<'chat:toolCall'>
       return {
+        type: 'chat',
         state,
         toolCallId: e.toolCallId,
         toolName: e.toolName,
@@ -63,6 +64,7 @@ export function mapEventToChatFields(event: TaggedEvent): Partial<ChatPayload> |
     case 'chat:toolResult': {
       const e = event as EventOf<'chat:toolResult'>
       return {
+        type: 'chat',
         state,
         toolCallId: e.toolCallId,
         toolName: e.toolName,
@@ -73,11 +75,16 @@ export function mapEventToChatFields(event: TaggedEvent): Partial<ChatPayload> |
     }
     case 'chat:retrying': {
       const e = event as EventOf<'chat:retrying'>
-      return { ...base, delta: `[Retry] Attempt ${e.attempt} (delay ${e.delay}ms): ${e.error}` }
+      return {
+        ...base,
+        type: 'chat',
+        delta: `[Retry] Attempt ${e.attempt} (delay ${e.delay}ms): ${e.error}`
+      }
     }
     case 'chat:interaction': {
       const e = event as EventOf<'chat:interaction'>
       return {
+        type: 'chat',
         state,
         interactionId: e.interactionId,
         prompt: e.prompt,
@@ -89,6 +96,7 @@ export function mapEventToChatFields(event: TaggedEvent): Partial<ChatPayload> |
     case 'chat:interaction-responded': {
       const e = event as EventOf<'chat:interaction-responded'>
       return {
+        type: 'chat',
         state,
         interactionId: e.interactionId,
         result: e.result,
@@ -98,15 +106,15 @@ export function mapEventToChatFields(event: TaggedEvent): Partial<ChatPayload> |
     }
     case 'agent:run-start': {
       const e = event as EventOf<'agent:run-start'>
-      return { state, model: e.model }
+      return { type: 'chat', state, model: e.model }
     }
     case 'agent:skill-triggered': {
       const e = event as EventOf<'agent:skill-triggered'>
-      return { state, skillName: e.skillName }
+      return { type: 'chat', state, skillName: e.skillName }
     }
     case 'agent:context-overflow': {
       const e = event as EventOf<'agent:context-overflow'>
-      return { state, error: e.error }
+      return { type: 'chat', state, error: e.error }
     }
     default:
       return base.delta || base.message || base.error ? base : null

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react'
-import { useSettingsStore } from '@renderer/store/useSettingsStore'
+import { useConfigStore } from '@renderer/store/useConfigStore'
 import { Theme, ThemeProviderContext } from '@renderer/hooks/use-theme'
 
 interface ThemeProviderProps {
@@ -7,8 +7,9 @@ interface ThemeProviderProps {
 }
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
-  const { appSettings } = useSettingsStore()
-  const { theme, fontSize } = appSettings
+  const { config } = useConfigStore()
+  const theme = config?.theme || 'dark'
+  const fontSize = config?.fontSize || 14
 
   useEffect(() => {
     const root = window.document.documentElement

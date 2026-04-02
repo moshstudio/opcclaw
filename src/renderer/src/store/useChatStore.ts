@@ -43,7 +43,7 @@ interface ChatState {
     agentId: string,
     sessionKey: string,
     interactionId: string,
-    result: boolean,
+    result: any,
     remember?: boolean
   ) => Promise<void>
 }
@@ -88,22 +88,19 @@ export const useChatStore = create<ChatState>()(
 
         // 交互逻辑自动处理
         if (payload.state === 'chat:interaction' && payload.interactionId && !payload.isComplete) {
-          ConfirmService.confirm({
+          ConfirmService.interact({
             title: 'AI 需要你的确认',
-            description: payload.prompt,
-            confirmText: payload.options?.[0],
-            cancelText: payload.options?.[1],
+            description: payload.prompt || '',
+            options: payload.options || [], // 传递完整的选项数组
             showRemember: !!payload.rememberKey
           }).then((res) => {
             const agentId = payload.agentId || sk?.split(':')?.[0] || 'main'
-            get().respondInteraction(
-              agentId,
-              sk,
-              payload.interactionId!,
-              res.confirmed,
-              res.remember
-            )
+            get().respondInteraction(agentId, sk, payload.interactionId!, res.result, res.remember)
           })
+        }
+
+        if (payload.state === 'chat:interaction-responded') {
+          ConfirmService.close()
         }
 
         // 异步状态复位逻辑 (UI 体验优化)

@@ -9,7 +9,7 @@ interface AgentState {
   isLoading: boolean
 
   // Actions
-  fetchAgents: () => Promise<void>
+  fetchAgents: (options?: { silent?: boolean }) => Promise<void>
   createAgent: (config: AgentConfig) => Promise<void>
   updateAgent: (id: string, config: Partial<AgentConfig>) => Promise<void>
   deleteAgent: (id: string) => Promise<void>
@@ -24,8 +24,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   activeAgentId: localStorage.getItem(ACTIVE_AGENT_STORAGE_KEY),
   isLoading: true,
 
-  fetchAgents: async () => {
-    set({ isLoading: true })
+  fetchAgents: async (options = {}) => {
+    if (!options.silent) {
+      set({ isLoading: true })
+    }
     try {
       const { agents } = await getGatewayClient().request<{ agents: Agent[] }>('agent:list', {})
       let nextActiveId = get().activeAgentId
@@ -97,8 +99,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   handleLifecycleEvent: (payload) => {
     const { type } = payload
     // 简单的生命周期处理，直接刷新列表以保持一致性
-    if (type === 'agent:created' || type === 'agent:updated' || type === 'agent:deleted') {
-      get().fetchAgents()
+    if (
+      type === 'agent:created' ||
+      type === 'agent:updated' ||
+      type === 'agent:deleted' ||
+      type === 'agent:list'
+    ) {
+      get().fetchAgents({ silent: true })
     }
   }
 }))

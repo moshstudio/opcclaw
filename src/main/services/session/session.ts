@@ -40,6 +40,7 @@ export interface MessageEntry extends SessionEntryBase {
 export interface CompactionEntry extends SessionEntryBase {
   type: 'compaction'
   summary: string
+  /** 压缩后保留的第一条消息 ID。如果为 ""，则表示后续暂无保留消息（全量压缩）。 */
   firstKeptId: string
   /** @deprecated Use firstKeptId instead */
   firstKeptEntryId?: string
@@ -131,9 +132,11 @@ export class SessionManager {
   async append(sessionKey: string, message: Message): Promise<void> {
     const state = await this.ensureState(sessionKey)
     const store = new JsonlStore<SessionFileEntry>(state.filePath)
-    const entryId = generateId(state.byId)
-
-    if (!message.id) message.id = entryId
+    let entryId = message.id
+    if (!entryId || state.byId.has(entryId)) {
+      entryId = generateId(state.byId)
+      message.id = entryId
+    }
 
     const entry: MessageEntry = {
       type: 'message',
@@ -163,7 +166,7 @@ export class SessionManager {
   async appendCompaction(
     sessionKey: string,
     summary: string,
-    firstKeptId: string,
+    firstKeptId: string | undefined | null,
     tokensBefore: number
   ): Promise<string> {
     const state = await this.ensureState(sessionKey)
@@ -174,7 +177,7 @@ export class SessionManager {
       parentId: state.leafId,
       timestamp: dayjs().toISOString(),
       summary,
-      firstKeptId,
+      firstKeptId: firstKeptId || '',
       tokensBefore
     }
     state.entries.push(entry)
@@ -408,7 +411,8 @@ function buildSessionContext(state: SessionState): Message[] {
   const messages: Message[] = []
   const appendMessage = (entry: SessionEntry) => {
     if (entry.type === 'message') {
-      if (!entry.message.id) entry.message.id = entry.id
+      // 强制同步：Message ID 必须与 Session Node ID 一致，这是对话树追溯逻辑的基础
+      entry.message.id = entry.id
       messages.push(entry.message)
     }
   }

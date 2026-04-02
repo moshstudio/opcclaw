@@ -69,11 +69,9 @@ export const initGatewaySync = () => {
 
   // B. 智能体领域事件 (包含生命周期与运行态)
   client.onAgent((payload) => {
-    // 1. 同步到全局智能体列表 Store
+    // 处理生命周期与运行态分发
     useAgentStore.getState().handleLifecycleEvent?.(payload)
-    // 2. 同步到各个会话的状态 Store
     useChatStore.getState().handleAgentEvent(payload)
-    // 3. 辅助分发给技能领域
     useSkillStore.getState().handleSkillEvent(payload)
   })
 
@@ -84,6 +82,31 @@ export const initGatewaySync = () => {
 
   client.onHeartbeat((payload) => {
     useHeartbeatStore.getState().handleHeartbeatEvent(payload)
+  })
+
+  // D. 模型与配置领域同步
+  client.onModel((payload) => {
+    if (payload.type === 'models:list') {
+      // 1. 更新专用模型仓
+      useModelStore.getState().handleModelsUpdate(payload)
+
+      // 2. 更新基础配置仓，防止回滚 (Single Source of Truth Protection)
+      const currentConfig = useConfigStore.getState().config
+      if (currentConfig) {
+        useConfigStore.setState({
+          config: {
+            ...currentConfig,
+            models: payload.models,
+            defaultModelId: payload.defaultModelId
+          }
+        })
+      }
+    }
+  })
+
+  // E. 配置领域同步 (由主进程触发广播)
+  client.onConfig(() => {
+    useConfigStore.getState().fetchConfig()
   })
 
   // --- 3. 初始网络建立与激活 (Network Activation) ---

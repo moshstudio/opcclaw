@@ -49,13 +49,13 @@ export class AgentSessionService {
 
   public async reset(sessionKey: string) {
     await this.options.sessionManager.reset(sessionKey)
-    this.options.emit({ type: 'session:reset', sessionKey })
+    this.options.emit({ type: 'session:reset', sessionKey, agentId: this.options.agentId })
   }
 
   public async delete(sessionKey: string) {
     this.cachedSortedKeys = null // 失效缓存
     await this.options.sessionManager.delete(sessionKey)
-    this.options.emit({ type: 'session:deleted', sessionKey })
+    this.options.emit({ type: 'session:deleted', sessionKey, agentId: this.options.agentId })
   }
 
   /**

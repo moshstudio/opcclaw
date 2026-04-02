@@ -1,6 +1,7 @@
 import { ErrorCodes, errorShape } from '../protocol'
 import type { Handler } from './types'
 import { ensureParams, getAgentOrError } from './handler-utils'
+import type { InteractionResult } from '../../../../shared/types/agent'
 
 /**
  * chat.send
@@ -9,7 +10,11 @@ export const handleChatSend: Handler = async (params, _client, ctx) => {
   const check = ensureParams(params, ['agentId', 'sessionKey', 'message'])
   if (!check.ok) return check
 
-  const { agentId, sessionKey, message } = check.values
+  const { agentId, sessionKey, message } = check.values as {
+    agentId: string
+    sessionKey: string
+    message: string
+  }
   const res = getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
@@ -30,7 +35,7 @@ export const handleChatAbort: Handler = async (params, _client, ctx) => {
   const check = ensureParams(params, ['agentId', 'sessionKey'])
   if (!check.ok) return check
 
-  const { agentId, sessionKey } = check.values
+  const { agentId, sessionKey } = check.values as { agentId: string; sessionKey: string }
   const res = getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
@@ -46,7 +51,7 @@ export const handleChatHistory: Handler = async (params, _client, ctx) => {
   const check = ensureParams(params, ['agentId', 'sessionKey'])
   if (!check.ok) return check
 
-  const { agentId, sessionKey } = check.values
+  const { agentId, sessionKey } = check.values as { agentId: string; sessionKey: string }
   const p = params as Record<string, unknown>
   const limit = p.limit
   const offset = p.offset
@@ -68,16 +73,21 @@ export const handleChatRespondInteraction: Handler = async (params, _client, ctx
   const check = ensureParams(params, {
     agentId: 'string',
     interactionId: 'string',
-    result: 'boolean',
+    result: 'array',
     remember: 'boolean?'
   })
   if (!check.ok) return check
 
-  const { agentId, interactionId, result, remember } = check.values
+  const { agentId, interactionId, result, remember } = check.values as {
+    agentId: string
+    interactionId: string
+    result: InteractionResult
+    remember?: boolean
+  }
   const res = getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
   const { agent } = res
-  agent.respondInteraction(interactionId, !!result, !!remember)
+  agent.respondInteraction(interactionId, result, !!remember)
   return { ok: true, payload: { agentId, interactionId } }
 }

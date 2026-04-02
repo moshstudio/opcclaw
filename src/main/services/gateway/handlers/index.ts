@@ -1,5 +1,5 @@
 import type { Handler } from './types'
-import { GatewayMethod } from '@shared/types/gateway'
+import { GatewayMethod } from '@shared/types/gateway/in'
 import {
   handleConnect,
   handleHealth,
@@ -97,3 +97,5 @@ export const handlers: Record<GatewayMethod, Handler> = {
   'heartbeat:logs': handleHeartbeatLogs,
   health: handleHealth
 }
+
+export const GATEWAY_METHODS = Object.keys(handlers) as GatewayMethod[]

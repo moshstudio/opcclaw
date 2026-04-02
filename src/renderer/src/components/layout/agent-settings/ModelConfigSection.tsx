@@ -1,7 +1,7 @@
 import React from 'react'
 import { Cpu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Input } from '@renderer/components/ui/input'
+import { NumberInput } from '@renderer/components/ui/number-input'
 import {
   Select,
   SelectContent,
@@ -59,13 +59,12 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
             <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
               {t('settings.temperature_label')}
             </label>
-            <Input
-              type="number"
-              step="0.1"
+            <NumberInput
+              step={0.1}
+              min={0}
+              max={2}
               value={formData.temperature}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, temperature: parseFloat(e.target.value) }))
-              }
+              onChange={(val) => setFormData((prev) => ({ ...prev, temperature: val }))}
               className="h-9 bg-muted/20 border-border/40 rounded-xl text-sm"
             />
           </div>
@@ -119,26 +118,18 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
                 </button>
               ))}
             </div>
-            <Input
-              type="number"
+            <NumberInput
               min={MIN_CONTEXT_TOKENS}
               max={2000000}
+              step={1000}
               value={formData.contextTokens}
-              onChange={(e) => {
-                const val = parseInt(e.target.value) || 0
-                setFormData((prev) => ({
-                  ...prev,
-                  contextTokens: Math.min(2000000, Math.max(0, val))
-                }))
-              }}
-              onBlur={(e) => {
-                const val = parseInt(e.target.value) || MIN_CONTEXT_TOKENS
+              onChange={(val) => {
                 setFormData((prev) => ({
                   ...prev,
                   contextTokens: Math.min(2000000, Math.max(MIN_CONTEXT_TOKENS, val))
                 }))
               }}
-              className="h-9 bg-muted/20 border-border/40 rounded-xl text-sm font-mono tracking-tight ring-offset-background focus-visible:ring-primary/30"
+              className="h-9 bg-muted/20 border-border/40 rounded-xl text-sm font-mono tracking-tight"
             />
           </div>
 
@@ -151,20 +142,15 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
                 限制单次模型回复的最大长度。较高的值允许长篇大论，但也可能消耗更多 Token。
               </p>
             </div>
-            <Input
-              type="number"
+            <NumberInput
               min={1}
               max={128000}
+              step={100}
               value={formData.maxTokens}
-              onChange={(e) => {
-                const val = parseInt(e.target.value) || 0
-                setFormData((prev) => ({ ...prev, maxTokens: Math.min(128000, Math.max(0, val)) }))
-              }}
-              onBlur={(e) => {
-                const val = parseInt(e.target.value) || 1
+              onChange={(val) => {
                 setFormData((prev) => ({ ...prev, maxTokens: Math.min(128000, Math.max(1, val)) }))
               }}
-              className="h-9 bg-muted/20 border-border/40 rounded-xl text-sm font-mono tracking-tight ring-offset-background focus-visible:ring-primary/30"
+              className="h-9 bg-muted/20 border-border/40 rounded-xl text-sm font-mono tracking-tight"
             />
           </div>
         </div>

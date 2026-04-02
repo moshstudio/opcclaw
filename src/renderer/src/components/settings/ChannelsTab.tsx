@@ -8,30 +8,46 @@ import { getGatewayClient } from '@renderer/services/gateway-client'
 import { TelegramBotCard } from './channels/TelegramBotCard'
 import { cn } from '@renderer/lib/utils'
 import { toast } from 'sonner'
-import type { TelegramChannelConfig } from '@shared/types/config'
+import type {
+  ChannelsConfig,
+  TelegramChannelConfig,
+  FeishuChannelConfig
+} from '@shared/types/config'
 
 export const ChannelsTab: React.FC = () => {
   const { t } = useTranslation()
   const { config, loading, updateConfig, fetchConfig } = useConfigStore()
-
   const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([])
-  const [localTgBots, setLocalTgBots] = useState<TelegramChannelConfig[]>([])
+
+  // --- 通用配置处理架构 (Strongly Typed Architecture) ---
+  const [localChannels, setLocalChannels] = useState<ChannelsConfig>({}) // 统一本地渠道副本
   const [isInitialized, setIsInitialized] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [lastSyncedJson, setLastSyncedJson] = useState('')
 
-  // 1. 同步初始配置
-  useEffect(() => {
-    if (config && !isInitialized) {
-      setLocalTgBots(config.channels?.telegram || [])
-      setIsInitialized(true)
-    }
-  }, [config, isInitialized])
+  // 1. 获取最新远程渠道配置 (Single Source of Truth)
+  const remoteChannels = useMemo(() => config?.channels || {}, [config])
 
-  // 2. 检测数据脏状态 (未保存提醒)
+  // 2. 通用脏检查逻辑
   const isDirty = useMemo(() => {
-    return JSON.stringify(localTgBots) !== JSON.stringify(config?.channels?.telegram || [])
-  }, [localTgBots, config])
+    const localJson = JSON.stringify(localChannels)
+    const remoteJson = JSON.stringify(remoteChannels)
+    return localJson !== remoteJson && localJson !== lastSyncedJson
+  }, [localChannels, remoteChannels, lastSyncedJson])
+
+  // 3. 通用背景同步逻辑 (无缝响应 /bind 等指令)
+  useEffect(() => {
+    if (config) {
+      const remoteJson = JSON.stringify(remoteChannels)
+      // 如果未初始化，或者当前处于“非脏”状态且远程发生了变更，则自动跟随同步
+      if (!isInitialized || (!isDirty && remoteJson !== lastSyncedJson)) {
+        setLocalChannels(JSON.parse(remoteJson) as ChannelsConfig)
+        setLastSyncedJson(remoteJson)
+        if (!isInitialized) setIsInitialized(true)
+      }
+    }
+  }, [config, isInitialized, isDirty, remoteChannels, lastSyncedJson])
 
   // 3. 获取智能体列表 (用于路由绑定)
   const fetchAgents = React.useCallback(async () => {
@@ -58,9 +74,10 @@ export const ChannelsTab: React.FC = () => {
     setSaving(true)
     try {
       await updateConfig({
-        channels: { ...config.channels, telegram: localTgBots }
+        channels: localChannels
       })
       setSaved(true)
+      setLastSyncedJson(JSON.stringify(localChannels)) // 同步成功，更新基准线
       setTimeout(() => setSaved(false), 2000)
       toast.success(t('settings.channels_save_success'))
     } catch (err) {
@@ -73,29 +90,50 @@ export const ChannelsTab: React.FC = () => {
   // 5. 重置本地修改
   const handleReset = () => {
     if (config) {
-      setLocalTgBots(config.channels?.telegram || [])
+      const remoteJson = JSON.stringify(remoteChannels)
+      setLocalChannels(JSON.parse(remoteJson))
+      setLastSyncedJson(remoteJson)
       toast.info(t('common.reset_success'))
     }
   }
 
-  // 6. 操作行为 - 仅修改本地状态
-  const addBot = () => {
-    setLocalTgBots([
-      ...localTgBots,
-      { enabled: false, botToken: '', useProxy: false, agentBindings: {} }
-    ])
-  }
-
-  const removeBot = (index: number) => {
-    const newList = [...localTgBots]
-    newList.splice(index, 1)
-    setLocalTgBots(newList)
-  }
-
-  const updateBot = (index: number, patch: Partial<TelegramChannelConfig>) => {
-    const newList = [...localTgBots]
+  // 6. 泛化操作行为 (Generic Actions - Strongly Typed)
+  const updateChannel = <K extends keyof ChannelsConfig>(
+    type: K,
+    index: number,
+    patch: Partial<NonNullable<ChannelsConfig[K]>[number]>
+  ) => {
+    const nextChannels = { ...localChannels }
+    const list = nextChannels[type]
+    if (!list) return
+    const newList = [...list]
+    // @ts-ignore: Next.js/React generic state typing limit
     newList[index] = { ...newList[index], ...patch }
-    setLocalTgBots(newList)
+    // @ts-ignore: Ensuring state assignment safety
+    nextChannels[type] = newList
+    setLocalChannels(nextChannels)
+  }
+
+  const addChannelItem = <K extends keyof ChannelsConfig>(
+    type: K,
+    defaultItem: TelegramChannelConfig | FeishuChannelConfig
+  ) => {
+    const nextChannels = { ...localChannels }
+    const list = nextChannels[type] || []
+    // @ts-ignore: Ensuring type consistency for dynamic addition
+    nextChannels[type] = [...list, defaultItem]
+    setLocalChannels(nextChannels)
+  }
+
+  const removeChannelItem = <K extends keyof ChannelsConfig>(type: K, index: number) => {
+    const nextChannels = { ...localChannels }
+    const list = nextChannels[type]
+    if (!list) return
+    const newList = [...list]
+    newList.splice(index, 1)
+    // @ts-ignore: Ensuring type consistency
+    nextChannels[type] = newList
+    setLocalChannels(nextChannels)
   }
 
   if (loading || !config) {
@@ -131,7 +169,14 @@ export const ChannelsTab: React.FC = () => {
 
           <Button
             variant="outline"
-            onClick={addBot}
+            onClick={() =>
+              addChannelItem('telegram', {
+                enabled: false,
+                botToken: '',
+                useProxy: false,
+                agentBindings: {}
+              })
+            }
             className="h-9 px-4 rounded-xl text-xs font-bold border-muted/50 transition-all hover:bg-muted/30"
           >
             <Plus className="mr-2 h-4 w-4" /> {t('settings.channels_add_bot')}
@@ -166,7 +211,7 @@ export const ChannelsTab: React.FC = () => {
 
       {/* 智能体配置入口 */}
       <div className="grid grid-cols-1 gap-6">
-        {localTgBots.length === 0 ? (
+        {!localChannels.telegram || localChannels.telegram.length === 0 ? (
           <Card className="p-12 border-dashed bg-muted/5 flex flex-col items-center justify-center text-muted-foreground/40 space-y-4 rounded-2xl">
             <Send className="w-10 h-10 opacity-20" />
             <p className="text-xs font-black uppercase tracking-widest leading-none">
@@ -174,14 +219,14 @@ export const ChannelsTab: React.FC = () => {
             </p>
           </Card>
         ) : (
-          localTgBots.map((bot, index) => (
+          localChannels.telegram.map((bot: TelegramChannelConfig, index: number) => (
             <TelegramBotCard
               key={index}
               index={index}
               bot={bot}
               agents={agents}
-              onUpdate={(patch) => updateBot(index, patch)}
-              onRemove={() => removeBot(index)}
+              onUpdate={(patch) => updateChannel('telegram', index, patch)}
+              onRemove={() => removeChannelItem('telegram', index)}
             />
           ))
         )}

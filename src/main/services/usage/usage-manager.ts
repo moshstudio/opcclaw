@@ -58,7 +58,6 @@ export class UsageManager {
     try {
       const totalsContent = await fs.readFile(this.totalsPath, 'utf8')
       const totals = JSON.parse(totalsContent) as UsageStats
-      console.log(`[UsageManager] Fetched stats from cache: runs=${totals.runCount}`)
       return totals
     } catch (err: any) {
       // 如果汇总文件不存在或损坏，执行全量修复
@@ -118,7 +117,6 @@ export class UsageManager {
   private async rebuildTotalsInner(): Promise<UsageStats> {
     const stats = await this.scanAndAggregate({})
     await fs.writeFile(this.totalsPath, JSON.stringify(stats, null, 2), 'utf8')
-    console.log(`[UsageManager] Totals cache rebuilt: runs=${stats.runCount}`)
     return stats
   }
 

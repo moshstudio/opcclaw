@@ -27,14 +27,14 @@ type InferSchemaType<S extends Record<string, SchemaEntry>> = {
             : S[K] extends 'boolean?'
               ? boolean | undefined
               : S[K] extends 'object'
-                ? Record<string, any>
+                ? Record<string, unknown>
                 : S[K] extends 'object?'
-                  ? Record<string, any> | undefined
+                  ? Record<string, unknown> | undefined
                   : S[K] extends 'array'
-                    ? any[]
+                    ? unknown[]
                     : S[K] extends 'array?'
-                      ? any[] | undefined
-                      : any
+                      ? unknown[] | undefined
+                      : unknown
 }
 
 /**
@@ -43,20 +43,23 @@ type InferSchemaType<S extends Record<string, SchemaEntry>> = {
 export function ensureParams<T extends string>(
   params: unknown,
   required: T[]
-): Result<{ values: Record<T, any> }>
+): Result<{ values: Record<T, unknown> }>
 
 export function ensureParams<S extends Record<string, SchemaEntry>>(
   params: unknown,
   schema: S
 ): Result<{ values: InferSchemaType<S> }>
 
-export function ensureParams(params: unknown, schema: any): Result<any> {
-  const p = params as Record<string, any>
+export function ensureParams(
+  params: unknown,
+  schema: Record<string, SchemaEntry> | string[]
+): Result<Record<string, unknown>> {
+  const p = params as Record<string, unknown>
   if (!p || typeof p !== 'object') {
     return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, 'invalid params') }
   }
 
-  const values: Record<string, any> = {}
+  const values: Record<string, unknown> = {}
 
   // 数组模式：宽松模式，仅校验字段是否存在且非空 (不再强制 string)
   if (Array.isArray(schema)) {

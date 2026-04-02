@@ -1,5 +1,5 @@
 import { Message, AssistantMessage, ChatStatus, ToolResultMessage } from '@shared/types/agent'
-import { ChatPayload, ChatAction } from '@shared/types/gateway'
+import { ChatPayload, ChatAction, ChatPayloadFlat } from '@shared/types/gateway'
 import { normalizeMessage, normalizeContentBlock } from '@shared/utils/message'
 
 // ============================================================================
@@ -60,7 +60,7 @@ const STATUS_MAP: Partial<Record<ChatAction, ChatStatus>> = {
 export const mapHistoryMessage = (m: Record<string, unknown>): Message => normalizeMessage(m)
 
 /** 查找或创建一个用于追加内容的 Assistant 消息 (非纯函数，直接操作 msgs 数组) */
-function ensureAssistant(p: ChatPayload, msgs: Message[]): AssistantMessage {
+function ensureAssistant(p: ChatPayloadFlat, msgs: Message[]): AssistantMessage {
   const target = (p.messageId ? msgs.find((m) => m.id === p.messageId) : undefined) as
     | AssistantMessage
     | undefined
@@ -81,7 +81,7 @@ function ensureAssistant(p: ChatPayload, msgs: Message[]): AssistantMessage {
 // 3. Sub-Handlers (Logic per State)
 // ============================================================================
 
-type SubHandler = (payload: ChatPayload, messages: Message[], patch: SessionPatch) => void
+type SubHandler = (payload: ChatPayloadFlat, messages: Message[], patch: SessionPatch) => void
 
 const ChatSubHandlers: Partial<Record<ChatAction, SubHandler>> = {
   'chat:userMessage': (p, msgs) => {
@@ -135,7 +135,6 @@ const ChatSubHandlers: Partial<Record<ChatAction, SubHandler>> = {
   },
 
   'chat:toolResult': (p, msgs, patch) => {
-    if (!p.toolCallId) return
     const { toolCallId, content, toolName, isError, messageId } = p
     if (toolCallId) patch.toolResults[toolCallId] = content
 
@@ -189,6 +188,10 @@ const ChatSubHandlers: Partial<Record<ChatAction, SubHandler>> = {
         isComplete: p.isComplete,
         rememberKey: p.rememberKey
       }
+  },
+
+  'chat:interaction-responded': (_p, _msgs, patch) => {
+    patch.interaction = null
   }
 }
 
@@ -210,8 +213,11 @@ export const applyChatEvent = (payload: ChatPayload, patch: SessionPatch): Sessi
     if (!isUserMsgInterrupt) nextStatus = mappedStatus
   }
 
-  // 2. 消息处理
-  ChatSubHandlers[payload.state]?.(payload, messages, patch)
+  // 2. 消息处理 (这里断言为 Flat 以便映射表调用)
+  const handler = ChatSubHandlers[payload.state] as
+    | ((p: ChatPayloadFlat, m: Message[], s: SessionPatch) => void)
+    | undefined
+  handler?.(payload as any, messages, patch)
 
   // 3. 错误状态处理
   if (

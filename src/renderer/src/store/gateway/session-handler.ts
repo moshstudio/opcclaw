@@ -18,14 +18,12 @@ export const applySessionLifecycleEvent = (
   payload: AgentEventPayload,
   state: SessionStorePatch
 ): Partial<SessionStorePatch> => {
-  const { type, agentId, sessionKey: sk } = payload
-  if (!sk) return {}
-
   const updates: Partial<SessionStorePatch> = {}
 
-  switch (type) {
-    case 'session:created':
-      if (agentId) {
+  switch (payload.type) {
+    case 'session:created': {
+      const { agentId, sessionKey: sk } = payload
+      if (agentId && sk) {
         const list = state.allSessions[agentId] || []
         if (!list.includes(sk)) {
           updates.allSessions = { ...state.allSessions, [agentId]: [...list, sk] }
@@ -36,9 +34,11 @@ export const applySessionLifecycleEvent = (
         }
       }
       break
+    }
 
     case 'session:deleted': {
-      if (agentId) {
+      const { agentId, sessionKey: sk } = payload
+      if (agentId && sk) {
         const list = (state.allSessions[agentId] || []).filter((k) => k !== sk)
         const sessions = { ...state.sessions }
         const statuses = { ...state.chatStatuses }
@@ -59,12 +59,16 @@ export const applySessionLifecycleEvent = (
       break
     }
 
-    case 'session:reset':
-      updates.sessions = { ...state.sessions, [sk]: [] }
-      updates.chatStatuses = { ...state.chatStatuses, [sk]: 'idle' }
-      updates.errorMessages = { ...state.errorMessages, [sk]: null }
-      updates.toolResultsMap = { ...state.toolResultsMap, [sk]: {} }
+    case 'session:reset': {
+      const { sessionKey: sk } = payload
+      if (sk) {
+        updates.sessions = { ...state.sessions, [sk]: [] }
+        updates.chatStatuses = { ...state.chatStatuses, [sk]: 'idle' }
+        updates.errorMessages = { ...state.errorMessages, [sk]: null }
+        updates.toolResultsMap = { ...state.toolResultsMap, [sk]: {} }
+      }
       break
+    }
   }
 
   return updates

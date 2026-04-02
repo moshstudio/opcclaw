@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import MainLayout from './components/layout/MainLayout'
 import SettingsPage from './components/settings/SettingsPage'
 import CssKeepAlive from './components/layout/CssKeepAlive'
-import { useSettingsStore } from './store/useSettingsStore'
+import { useConfigStore } from './store/useConfigStore'
 import { OnboardingOverlay } from './components/layout/OnboardingOverlay'
 import { ThemeProvider } from './components/ThemeProvider'
 import { initGatewaySync } from './store/gateway/gateway-sync'
@@ -21,7 +21,7 @@ import { ConfigProvider } from 'antd'
 function AppContent(): React.JSX.Element {
   const location = useLocation()
   const { i18n } = useTranslation()
-  const { appSettings } = useSettingsStore()
+  const { config } = useConfigStore()
   const { isLoading } = useAgentStore()
   const showLoading = useMinimumLoading(isLoading, 1000)
 
@@ -32,12 +32,10 @@ function AppContent(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    if (i18n.language !== appSettings.language) {
-      i18n.changeLanguage(appSettings.language)
-      // 同步给主进程 (用于托盘菜单等)
-      window.api.app.changeLanguage(appSettings.language)
+    if (config?.language && i18n.language !== config.language) {
+      i18n.changeLanguage(config.language)
     }
-  }, [appSettings.language, i18n])
+  }, [config?.language, i18n])
 
   return (
     <ConfigProvider

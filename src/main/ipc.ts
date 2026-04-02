@@ -20,14 +20,11 @@ export function initIpcServices(): void {
   // 2. 软件重启/重置 IPC
   ipcMain.removeHandler('app:reset')
   ipcMain.handle('app:reset', async () => {
-    console.log('[IPC] App reset requested')
-
     try {
       // 1. 停止网关
       GatewayManager.getInstance().stop()
 
       // 2. 清理 Electron 渲染进程存储 (Local Storage, Cookies, IndexedDB, etc.)
-      console.log('[IPC] Clearing storage data via session API...')
       await session.defaultSession.clearStorageData({
         storages: [
           'cookies',
@@ -43,7 +40,6 @@ export function initIpcServices(): void {
 
       // 3. 删除自定义数据文件夹 (OPCCLAW_ROOT)
       const opcclawRoot = ConfigService.getInstance().getRootPath()
-      console.log(`[IPC] Cleaning opcclawRoot: ${opcclawRoot}`)
       if (fs.existsSync(opcclawRoot)) {
         // 在 Windows 上，有时即便清除了 session，某些文件可能仍有短暂延迟
         // 我们尝试多次或捕获错误
@@ -58,8 +54,6 @@ export function initIpcServices(): void {
           }
         }
       }
-
-      console.log('[IPC] Reset sequence completed, relaunching...')
 
       // 延迟一秒重启，确保文件系统操作完成
       setTimeout(() => {

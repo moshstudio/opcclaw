@@ -8,46 +8,59 @@ import i18n from '@renderer/i18n'
  * 职责：处理 notice:compact, notice:info 等业务提示类事件，实现与主聊天逻辑解耦。
  */
 export const applyNoticeEvent = (payload: NoticePayload, patch: SessionPatch): SessionPatch => {
-  const { type, firstKeptId, text, delta, error } = payload
+  const { type } = payload
 
   switch (type) {
     case 'notice:compact': {
-      if (!firstKeptId) break
-      console.log('删掉之前的对话：', firstKeptId);
+      const { firstKeptId } = payload
+      if (firstKeptId === undefined || firstKeptId === null) return patch
 
-
-      const idx = patch.messages.findIndex((m) => m.id === firstKeptId)
-      // 如果找到索引且不是第 0 条（说明有消息需要被裁掉）
-      if (idx > 0) {
-        patch.messages = patch.messages.slice(idx)
+      let nextMessages = [...patch.messages]
+      if (firstKeptId === '') {
+        nextMessages = []
+      } else {
+        const idx = nextMessages.findIndex((m) => m.id === firstKeptId)
+        if (idx !== -1) {
+          nextMessages = nextMessages.slice(idx)
+        }
       }
+
       toast.info(i18n.t('common.archived_compact'), {
         position: 'top-center',
         duration: 3000
       })
+
+      return {
+        ...patch,
+        messages: nextMessages
+      }
+    }
+
+    case 'notice:info': {
+      const { text } = payload
+      if (text) {
+        toast.success(text, { position: 'bottom-right' })
+      }
       break
     }
 
-    case 'notice:info':
-      if (text || delta) {
-        toast.success(text || delta, { position: 'bottom-right' })
-      }
-      break
-
-    case 'notice:warning':
+    case 'notice:warning': {
+      const { text, delta } = payload
       if (text || delta) {
         toast.warning(text || delta, { position: 'bottom-right' })
       }
       break
+    }
 
-    case 'notice:error':
+    case 'notice:error': {
+      const { error, text } = payload
       if (error || text) {
         toast.error(error || text, { position: 'bottom-right', duration: 5000 })
       }
       break
+    }
 
     default:
-      if (text || delta) console.log(`[Notice:${type}]`, text || delta)
       break
   }
 

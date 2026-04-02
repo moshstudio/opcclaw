@@ -52,8 +52,20 @@
   "save_success_restarting": "Settings saved, restarting channel services...",
   "lark_title": "Lark / Feishu",
   "lark_desc": "Coming soon: support for connecting via Lark custom apps...",
+  "network_settings": "Network Settings",
   "global_proxy": "Global Network Proxy",
-  "global_proxy_desc": "Set a global proxy address. Bots with 'Use Global Proxy' enabled will connect via this address.",
+  "global_proxy_desc": "Set global proxy address. Bots with 'Use Global Proxy' enabled will connect via this address. Leave empty and save to disable.",
+  "proxy_none": "Direct Connection (No Proxy)",
   "use_global_proxy": "Use Global Proxy",
-  "telegram_use_global_proxy_desc": "When enabled, Telegram will connect using the proxy address configured in 'General Settings'."
+  "telegram_use_global_proxy_desc": "When enabled, Telegram will connect using the proxy address configured in 'General Settings'.",
+  "agent_defaults_title": "Agent Defaults",
+  "default_temperature": "Sampling Temperature",
+  "default_temperature_desc": "Controls the randomness of the generation. Lower values (e.g. 0.2) are more stable, higher values (e.g. 0.8) are more creative.",
+  "default_max_tokens": "Max Generation Tokens",
+  "default_max_tokens_desc": "Limits the maximum number of tokens per AI reply. Larger values may consume more quota.",
+  "interaction_timeout": "Interaction Timeout (s)",
+  "interaction_timeout_desc": "Maximum time to wait for user confirmation or selection (10s - 3600s)",
+  "interaction_settings": "Interaction",
+  "selective_clear": "Selective Clear",
+  "selective_clear_prompt": "Which remembered choice would you like to delete?"
 }

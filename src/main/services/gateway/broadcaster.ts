@@ -42,7 +42,9 @@ export class Broadcaster {
    * 业务分发核心入口 (Outlet)
    */
   public dispatch<A extends GatewayAction>(event: EventOf<A>) {
-    this.broadcast(event.type, this.stripType(event), {})
+    // 治本：直接转发完整 event 对象。EventOf<A> 包含了 EventPayloadMap[A] 的所有属性及 type 字段。
+    this.broadcast(event.type, event as EventPayloadMap[A], {})
+
     if (event.type === 'agent:run-start') {
       const e = event as EventOf<'agent:run-start'>
       this.sessionToAgentMap.set(e.sessionKey, e.agentId)
@@ -95,15 +97,16 @@ export class Broadcaster {
     const parentId = this.lastChunkIdMap.get(sessionKey)
 
     // 3. 构建物理平铺负载
-    const chatPayload: ChatPayload = {
+    const chatPayload = {
       ...fields,
+      type: 'chat',
       agentId,
       runId,
       sessionKey,
       chunkId,
       parentId,
       state: fields.state
-    }
+    } as ChatPayload
 
     // 4. 最终物理广播
     this.chat(chatPayload)
@@ -128,11 +131,6 @@ export class Broadcaster {
       isDelta ? { dropIfSlow: true } : undefined
     )
   }
-
-  private stripType<A extends GatewayAction>(event: EventOf<A>): EventPayloadMap[A] {
-    const { type: _, ...payload } = event
-    return payload as unknown as EventPayloadMap[A]
-  }
 }
 
 /**
@@ -145,7 +143,6 @@ export function createBroadcastFn(clients: Set<GwClient>, logger: Logger): Broad
     payload: EventPayloadMap[A],
     opts?: BroadcastOptions
   ) => {
-    // 物理帧构建（仅此一处使用广义转换，确保网络层通信）
     const frame: EventFrame = {
       type: 'event',
       event: action,

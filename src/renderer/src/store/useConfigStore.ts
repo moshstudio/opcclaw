@@ -5,66 +5,90 @@ import type { AppConfig } from '@shared/types/config'
 interface ConfigState {
   config: AppConfig | null
   loading: boolean
-
-  // Actions
   fetchConfig: () => Promise<void>
   updateConfig: (patch: Partial<AppConfig>) => Promise<void>
   clearRememberedChoices: () => Promise<void>
+  deleteRememberedChoice: (key: string) => Promise<void>
 }
 
-/**
- * 全局配置配置仓 (Backend-Synced Config Store)
- * 职责：同步后端 config.json 中的持久化配置
- */
+// 配置常量
+const GATEWAY_RESTART_DELAY = 2000
+
 export const useConfigStore = create<ConfigState>((set, get) => ({
   config: null,
   loading: false,
 
+  /** 拉取全量配置 */
   fetchConfig: async () => {
     if (get().loading) return
     set({ loading: true })
     try {
-      const client = getGatewayClient()
-      const res = await client.request<AppConfig>('config:get', {})
-      if (res) {
-        set({ config: res })
-      }
+      const res = await getGatewayClient().request<AppConfig>('config:get', {})
+      if (res) set({ config: res })
     } catch (err) {
-      console.error('[ConfigStore] Failed to fetch config:', err)
+      console.error('[ConfigStore] Fetch failed:', err)
     } finally {
       set({ loading: false })
     }
   },
 
+  /**
+   * 更新配置 (带回滚机制)
+   */
   updateConfig: async (patch: Partial<AppConfig>) => {
-    const { config } = get()
-    if (!config) return
+    const current = get().config
+    if (!current) return
 
-    const nextConfig = { ...config, ...patch }
-    // 乐观更新 (Optimistic UI)
-    set({ config: nextConfig })
+    // 1. 实质性变更预判 (用于触发 Side Effects)
+    const gatewayDirty =
+      patch.gateway && JSON.stringify(patch.gateway) !== JSON.stringify(current.gateway)
+
+    // 2. 乐观更新
+    const next = { ...current, ...patch }
+    set({ config: next })
 
     try {
       const client = getGatewayClient()
-      await client.request('config:save', nextConfig)
+      await client.request('config:save', next)
+
+      if (gatewayDirty) {
+        setTimeout(() => client.reconnect().catch(() => {}), GATEWAY_RESTART_DELAY)
+      }
     } catch (err) {
-      console.error('[ConfigStore] Failed to save config:', err)
-      // 回滚？目前的逻辑倾向于让后端为准，下次 fetch 会刷回来
+      set({ config: current }) // 失败回滚
+      throw err
     }
   },
 
+  /** 清除所有记住的选择 */
   clearRememberedChoices: async () => {
-    const { config } = get()
-    if (!config) return
-
-    const nextConfig = { ...config, rememberedChoices: undefined }
-    set({ config: nextConfig })
-
+    const current = get().config
+    if (!current) return
+    set({ config: { ...current, rememberedChoices: undefined } })
     try {
-      const client = getGatewayClient()
-      await client.request('config:save', { rememberedChoices: undefined })
+      await getGatewayClient().request('config:save', { rememberedChoices: undefined })
     } catch (err) {
-      console.error('[ConfigStore] Failed to clear remembered choices:', err)
+      set({ config: current })
+    }
+  },
+
+  deleteRememberedChoice: async (key: string) => {
+    const current = get().config
+    if (!current?.rememberedChoices) return
+
+    const nextChoices = { ...current.rememberedChoices }
+    delete nextChoices[key]
+
+    set({ config: { ...current, rememberedChoices: nextChoices } })
+    try {
+      await getGatewayClient().request('config:save', { rememberedChoices: nextChoices })
+    } catch (err) {
+      set({ config: current })
     }
   }
 }))
+
+// 自动初始化：监听网关发出的配置变更信号
+getGatewayClient().onConfig(() => {
+  useConfigStore.getState().fetchConfig()
+})

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { Settings2, Timer, Calendar } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
+import { NumberInput } from '@renderer/components/ui/number-input'
 import { HeartbeatTask } from '@renderer/store/useHeartbeatStore'
 
 interface ConfigEditorModalProps {
@@ -81,19 +82,17 @@ const ConfigEditorModal: React.FC<ConfigEditorModalProps> = ({ task, onClose, on
                   {t('common.interval')}
                 </label>
                 <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1.5 bg-muted/30 px-2 py-1 rounded-md border border-transparent focus-within:border-primary/20 transition-all">
-                    <input
-                      type="number"
-                      min="1"
-                      max="1440"
+                  <div className="flex items-center gap-1.5 bg-muted/30 px-1 rounded-xl border border-transparent transition-all focus-within:border-primary/20">
+                    <NumberInput
+                      min={1}
+                      max={1440}
                       value={Math.round(config.intervalMs / 60000)}
-                      onChange={(e) => {
-                        const val = Math.max(1, Math.min(1440, parseInt(e.target.value) || 1))
+                      onChange={(val) => {
                         setConfig({ ...config, intervalMs: val * 60000 })
                       }}
-                      className="w-12 bg-transparent border-none text-right font-mono font-bold text-primary text-sm focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      className="w-20 h-8 bg-transparent border-none text-right font-mono font-bold text-primary text-sm shadow-none hover:bg-transparent"
                     />
-                    <span className="text-[11px] font-bold text-muted-foreground/40">
+                    <span className="text-[11px] font-bold text-muted-foreground/40 pr-2">
                       {t('common.minute_short')}
                     </span>
                   </div>

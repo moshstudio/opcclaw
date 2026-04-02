@@ -20,7 +20,7 @@ import { streamSimple } from '@mariozechner/pi-ai'
 import type { AIModelConfig } from '@shared/types/models'
 import { createModelDef } from '@main/services/provider/model-factory'
 import type { MiniAgentEvent } from './agent-events'
-import type { AgentConfig, RunResult, Message } from '@shared/types/agent'
+import type { AgentConfig, RunResult, Message, InteractionResult } from '@shared/types/agent'
 import { MIN_CONTEXT_TOKENS } from '@shared/types/agent'
 import type { EventOf } from '@shared/types/gateway'
 export type { AgentConfig, RunResult, Message }
@@ -104,6 +104,13 @@ export class Agent {
     }
 
     this.logger.info(`Agent ${this.id} config hot-updated, workspaceDir: ${this.workspaceDir}`)
+
+    // 5. 发送更新事件，同步前端 Store
+    this.emit({
+      type: 'agent:updated',
+      agentId: this.id,
+      agent: { id: this.id, config: this.config }
+    })
   }
 
   private readonly sessionManager: SessionManager
@@ -122,7 +129,7 @@ export class Agent {
   private interactionCallbacks = new Map<
     string,
     {
-      resolve: (res: { result: boolean; remember: boolean }) => void
+      resolve: (res: { result: InteractionResult; remember: boolean }) => void
       timer: NodeJS.Timeout
       runId: string
       sessionKey: string
@@ -237,7 +244,7 @@ export class Agent {
 
         await this.run(
           sk,
-          `[心跳唤醒] 当前时间: ${dayjs().format('YYYY-MM-DD HH:mm:ss Z')}\n唤醒原因: ${o.reason}\n\n任务上下文:\n${o.content}`
+          `### [心跳唤醒]\n\n- **当前时间**: ${dayjs().format('YYYY-MM-DD HH:mm:ss Z')}\n- **唤醒原因**: ${o.reason}\n\n---\n\n#### 任务上下文:\n${o.content}`
         )
         return { text: 'Executed heartbeat task' }
       } catch (err) {
@@ -389,6 +396,16 @@ export class Agent {
         apiKey: finalApiKey,
         contextTokens: this.config.contextTokens
       })
+
+      // [Auto-Create] 如果是首次运行且 Session 尚未持久化，则显式创建并广播通知前端
+      if (!(await this.sessionManager.getMetadata(sk))) {
+        await this.sessionManager.create(sk)
+        this.emit({
+          type: 'session:created',
+          sessionKey: sk,
+          agentId: this.id
+        })
+      }
 
       const history = await this.sessionManager.load(sk)
       let currentMessages = [...history.messages]
@@ -564,7 +581,7 @@ export class Agent {
     } finally {
       // 清理该次运行所有挂起的交互
       this.interactionCallbacks.forEach((_, id) => {
-        this.respondInteraction(id, false)
+        this.respondInteraction(id, [])
       })
       await this.stateManager.endRun(sk, runId)
     }
@@ -585,7 +602,7 @@ export class Agent {
     this.emit({ type: 'notice:info', sessionKey: sk, runId: 'steer', text: '指令已注入' })
   }
 
-  public respondInteraction(interactionId: string, result: boolean, remember?: boolean) {
+  public respondInteraction(interactionId: string, result: InteractionResult, remember?: boolean) {
     const entry = this.interactionCallbacks.get(interactionId)
     if (entry) {
       this.interactionCallbacks.delete(interactionId)
@@ -617,17 +634,17 @@ export class Agent {
     prompt: string
     options?: string[]
     rememberKey?: string
-  }): Promise<{ result: boolean; remember: boolean }> {
-    return new Promise<{ result: boolean; remember: boolean }>((resolve) => {
+  }): Promise<{ result: InteractionResult; remember: boolean }> {
+    return new Promise<{ result: InteractionResult; remember: boolean }>((resolve) => {
       const interactionId = `int_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
 
-      // 5 分钟超时处理：交互超时自动返回假
-      const timer = setTimeout(
-        () => {
-          this.respondInteraction(interactionId, false)
-        },
-        5 * 60 * 1000
-      )
+      // 超时处理：交互超时自动返回空（无选择）
+      // 优先级：全局配置 > 默认 300 秒
+      const globalTimeout = ConfigService.getInstance().getConfig().interactionTimeout
+      const timeoutSec = globalTimeout ?? 300
+      const timer = setTimeout(() => {
+        this.respondInteraction(interactionId, [])
+      }, timeoutSec * 1000)
 
       // 记录回调并包含上下文信息
       this.interactionCallbacks.set(interactionId, {

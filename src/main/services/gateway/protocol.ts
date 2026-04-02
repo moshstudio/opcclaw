@@ -7,6 +7,8 @@
 import { newId as sharedNewId } from '@shared/utils/id'
 
 export * from '@shared/types/gateway'
+export * from '@shared/types/gateway/in'
+export { GATEWAY_METHODS } from './handlers/index'
 
 /**
  * 获取新 ID (包装 shared 版)

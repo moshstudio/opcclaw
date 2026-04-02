@@ -2,16 +2,13 @@ import {
   type RequestFrame,
   type ResponseFrame,
   type EventFrame,
-  type HelloOk,
   type GatewayClientOptions,
-  type GatewayMethod,
-  type GatewayAction,
-  type EventPayloadMap,
   isResponseFrame,
   isEventFrame,
   REQUEST_TIMEOUT_MS,
   TICK_INTERVAL_MS
 } from '../types/gateway'
+import { type HelloOk, type GatewayMethod } from '../types/gateway/in'
 import { newId } from '../utils/id'
 
 type Pending = {
@@ -29,8 +26,8 @@ export abstract class BaseGatewayClient {
   protected opts: GatewayClientOptions
   private pending = new Map<string, Pending>()
   private lastSeq: number | null = null
-  private closed = false
-  private backoffMs = 1000
+  protected closed = false
+  protected backoffMs = 1000
   private static readonly MAX_BACKOFF_MS = 30_000
   private tickIntervalMs = TICK_INTERVAL_MS
   private lastTick: number | null = null
@@ -61,9 +58,9 @@ export abstract class BaseGatewayClient {
    * 支持精确名：onAction('chat:delta', cb)
    * 支持命名空间：onAction('chat', cb) 接收所有 chat:* 事件
    */
-  public onAction<A extends GatewayAction>(
+  public onAction<A extends import('../types/gateway').ActionOrCategory>(
     action: A,
-    listener: (payload: EventPayloadMap[A]) => void
+    listener: (payload: import('../types/gateway').PayloadOf<A>) => void
   ): () => void {
     if (!this.actionListeners.has(action)) {
       this.actionListeners.set(action, new Set())
@@ -118,7 +115,6 @@ export abstract class BaseGatewayClient {
         } catch {
           return
         }
-        console.log('---', parsed)
 
         if (isResponseFrame(parsed)) {
           const res = parsed as ResponseFrame

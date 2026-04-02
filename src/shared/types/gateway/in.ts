@@ -1,4 +1,6 @@
-import { Message } from '../agent'
+import { Message, Agent } from '../agent'
+import { AIModelConfig } from '../models'
+
 export type HelloOk = {
   protocol: number
   methods: string[]
@@ -6,7 +8,7 @@ export type HelloOk = {
   policy: { tickIntervalMs: number; maxPayloadBytes: number }
 }
 // 前端向gateway请求的事件格式: 参数和返回结果
-export interface GatewayInParams {
+export interface RequestMethodMap {
   connect: { params: { token?: string; nonce?: string }; result: HelloOk }
   'chat:send': {
     params: { agentId: string; sessionKey: string; message: string }
@@ -57,3 +59,5 @@ export interface GatewayInParams {
   'system:events-doc': { params: void; result: string }
   health: { params: void; result: { uptimeMs: number; clients: number; system: string } }
 }
+
+export type GatewayMethod = keyof RequestMethodMap

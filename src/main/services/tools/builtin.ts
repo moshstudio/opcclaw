@@ -24,6 +24,7 @@
 import fs from 'node:fs/promises'
 import dayjs from 'dayjs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
 import type { Tool, ToolContext } from './types'
 import { assertSandboxPath } from '@main/services/sandbox-paths'
@@ -1109,21 +1110,28 @@ export const confirmTool: Tool<{
   },
   async execute(input, ctx: ToolContext) {
     try {
-      // 使用 ConfirmProvider 统一管理交互逻辑（包含记忆检查、UI 触发、记忆保存）
-      const result = await ConfirmProvider.run(ctx, {
-        key: input.remember_key || `generic:${Date.now()}`,
-        prompt: input.prompt,
-        options: input.options
-      })
-
-      // 如果提供了自定义选项，根据结果返回具体的选项文本
-      if (input.options && input.options.length > 0) {
-        // 通常 true 对应第一个操作，false 对应第二个操作（若无则视为取消）
-        const selected = result ? input.options[0] : input.options[1] || '取消/拒绝 (Cancel/Deny)'
-        return `用户已选择: "${selected}"`
+      // 1. 自动生成 Key：如果没有提供 remember_key，则对 prompt 和 options 进行哈希
+      // 这样相同的询问在不同时间/Session 也能保持记忆一致性
+      let finalKey = input.remember_key
+      if (!finalKey) {
+        const hashSeed = input.prompt + (input.options?.join(',') || '')
+        finalKey = `confirm:${crypto.createHash('sha256').update(hashSeed).digest('hex').slice(0, 16)}`
       }
 
-      return result ? '用户已确认 (Confirmed)' : '用户已取消/拒绝 (Cancelled/Denied)'
+      // 2. 使用 ConfirmProvider 统一管理交互逻辑 (默认提供选项以保证语义一致性)
+      const finalOptions =
+        input.options && input.options.length > 0
+          ? input.options
+          : ['确认 (Confirm)', '取消 (Cancel)']
+
+      const result = await ConfirmProvider.run(ctx, {
+        key: finalKey,
+        prompt: input.prompt,
+        options: finalOptions
+      })
+
+      // 3. 结果解析与反馈
+      return `用户选择了: ${result.join(',') || '无响应'}`
     } catch (err) {
       return `错误: ${(err as Error).message}`
     }

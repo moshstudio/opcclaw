@@ -1,9 +1,17 @@
 import { Bot } from 'grammy'
 import { Logger } from '@main/services/common/logger'
 import { ConfigService } from '../config/config-service'
-import { TelegramChannel } from './telegram'
+import { TelegramChannel } from './telegram/index'
+import { FeishuChannel } from './feishu'
 import { ProxyUtils } from '@main/services/common/proxy'
-import type { TelegramValidationResult, TelegramBotInfo } from '@shared/types/config'
+import { GatewayManager } from '../gateway/manager'
+import type {
+  TelegramValidationResult,
+  TelegramBotInfo,
+  TelegramChannelConfig,
+  FeishuChannelConfig,
+  AppConfig
+} from '@shared/types/config'
 
 export { TelegramValidationResult, TelegramBotInfo }
 
@@ -11,9 +19,9 @@ export class ChannelManager {
   private static instance: ChannelManager
   private logger = new Logger('[ChannelMgr]')
 
-  // 记录当前正在运行的机器人实例：Map<botToken, { instance: TelegramChannel, config: string }>
-  // 使用 config 的 JSON 字符串作为指纹，判断是否需要重启
+  // 记录运行中的频道实例
   private runningTgBots = new Map<string, { instance: TelegramChannel; fingerPrint: string }>()
+  private runningFeishuApps = new Map<string, { instance: FeishuChannel; fingerPrint: string }>()
 
   private constructor() {
     // Private constructor to enforce singleton pattern
@@ -32,18 +40,44 @@ export class ChannelManager {
   async startAll() {
     const config = ConfigService.getInstance().getConfig()
     const { channels, gateway } = config
-
-    if (!channels || !channels.telegram || !Array.isArray(channels.telegram)) {
-      return
-    }
-
     const gatewayUrl = `ws://localhost:${gateway.port}`
     const gatewayToken = gateway.token
 
     const startTasks: Promise<void>[] = []
 
-    for (const botConfig of channels.telegram) {
-      // 生成当前配置的指纹 (排除不影响运行的字段，如果业务需要可以全量)
+    // 1. 处理 Telegram 频道
+    if (channels?.telegram && Array.isArray(channels.telegram)) {
+      this.syncTelegramChannels(channels.telegram, config, gatewayUrl, gatewayToken, startTasks)
+    } else {
+      await this.stopAllTelegram()
+    }
+
+    // 2. 处理 Feishu 频道
+    if (channels?.feishu && Array.isArray(channels.feishu)) {
+      this.syncFeishuChannels(channels.feishu, config, gatewayUrl, gatewayToken, startTasks)
+    } else {
+      await this.stopAllFeishu()
+    }
+
+    // 等待所有启动任务完成
+    if (startTasks.length > 0) {
+      this.logger.info(`Parallel starting ${startTasks.length} channel instances...`)
+      await Promise.allSettled(startTasks)
+    }
+
+    this.logger.info(
+      `Active channels: TG(${this.runningTgBots.size}), Feishu(${this.runningFeishuApps.size})`
+    )
+  }
+
+  private syncTelegramChannels(
+    tgConfigs: TelegramChannelConfig[],
+    config: AppConfig,
+    gatewayUrl: string,
+    gatewayToken: string | undefined,
+    startTasks: Promise<void>[]
+  ) {
+    for (const botConfig of tgConfigs) {
       const resolvedProxy = botConfig.useProxy ? config.proxy : undefined
       const fingerPrint = JSON.stringify({
         enabled: botConfig.enabled,
@@ -58,134 +92,197 @@ export class ChannelManager {
 
       const running = this.runningTgBots.get(botConfig.botToken)
 
-      // 情况 1: 机器人已启用
       if (botConfig.enabled && botConfig.botToken) {
-        // 如果已经在运行且指纹一致，跳过
-        if (running && running.fingerPrint === fingerPrint) {
-          continue
-        }
-
-        // 如果已经在运行但指纹不一致，并行的停止逻辑不建议，先确保停止旧的
+        if (running && running.fingerPrint === fingerPrint) continue
         if (running) {
-          this.logger.info(
-            `Config changed for bot ${botConfig.botToken.slice(0, 8)}..., restarting...`
-          )
-          await running.instance.stop()
+          this.logger.info(`Restarting TG bot: ${botConfig.botToken.slice(0, 8)}...`)
+          running.instance.stop()
         }
 
-        // 启动新实例 (封装成任务并行执行)
-        const startBotTask = (async () => {
+        const startTask = (async () => {
           try {
-            const botProxy = botConfig.useProxy ? config.proxy : undefined
             const instance = new TelegramChannel({
               botToken: botConfig.botToken,
-              proxy: botProxy,
+              proxy: resolvedProxy,
               defaultAgentId: botConfig.defaultAgentId,
               agentBindings: botConfig.agentBindings,
               gatewayUrl,
               gatewayToken,
-              onBindingChange: (newBindings) => {
+              onBindingChange: (newBindings) =>
                 this.updateBotBindings(botConfig.botToken, newBindings)
-              }
             })
             await instance.start()
             this.runningTgBots.set(botConfig.botToken, { instance, fingerPrint })
           } catch (err) {
-            this.logger.error(
-              `Failed to start Telegram Bot (${botConfig.botToken.slice(0, 8)}...):`,
-              err
-            )
+            this.logger.error(`Failed to start TG Bot:`, (err as Error).message)
           }
         })()
-        startTasks.push(startBotTask)
-      }
-      // 情况 2: 机器人未启用但正在运行，需停止
-      else if (!botConfig.enabled && running) {
-        this.logger.info(`Bot disabled: ${botConfig.botToken.slice(0, 8)}..., stopping...`)
-        await running.instance.stop()
+        startTasks.push(startTask)
+      } else if (!botConfig.enabled && running) {
+        running.instance.stop()
         this.runningTgBots.delete(botConfig.botToken)
       }
     }
 
-    // 处理那些在配置中直接被删除的机器人
-    const currentTokens = new Set(channels.telegram.map((b) => b.botToken))
+    const currentTokens = new Set(tgConfigs.map((b) => b.botToken))
     for (const [token, running] of this.runningTgBots.entries()) {
       if (!currentTokens.has(token)) {
-        this.logger.info(`Bot removed from config: ${token.slice(0, 8)}..., stopping...`)
-        await running.instance.stop()
+        running.instance.stop()
         this.runningTgBots.delete(token)
       }
     }
-
-    // 等待所有启动任务完成 (不阻塞主线程显示，但在 startAll 返回前完成)
-    if (startTasks.length > 0) {
-      this.logger.info(`Starting ${startTasks.length} Telegram instances in parallel...`)
-      await Promise.allSettled(startTasks)
-    }
-
-    this.logger.info(`Active Telegram instances: ${this.runningTgBots.size}`)
   }
 
-  /**
-   * 停止所有频道
-   */
-  async stopAll() {
-    for (const [_token, running] of this.runningTgBots.entries()) {
+  private syncFeishuChannels(
+    feishuConfigs: FeishuChannelConfig[],
+    _config: AppConfig,
+    gatewayUrl: string,
+    gatewayToken: string | undefined,
+    startTasks: Promise<void>[]
+  ) {
+    for (const appConfig of feishuConfigs) {
+      const fingerPrint = JSON.stringify({
+        enabled: appConfig.enabled,
+        appId: appConfig.appId,
+        appSecret: appConfig.appSecret,
+        verificationToken: appConfig.verificationToken,
+        encryptKey: appConfig.encryptKey,
+        defaultAgentId: appConfig.defaultAgentId,
+        agentBindings: appConfig.agentBindings,
+        gatewayUrl,
+        gatewayToken
+      })
+
+      const running = this.runningFeishuApps.get(appConfig.appId)
+
+      if (appConfig.enabled && appConfig.appId && appConfig.appSecret) {
+        if (running && running.fingerPrint === fingerPrint) continue
+        if (running) {
+          this.logger.info(`Restarting Feishu app: ${appConfig.appId}...`)
+          running.instance.stop()
+        }
+
+        const startTask = (async () => {
+          try {
+            const instance = new FeishuChannel({
+              ...appConfig,
+              gatewayUrl,
+              gatewayToken,
+              onBindingChange: (newBindings) =>
+                this.updateFeishuBindings(appConfig.appId, newBindings)
+            })
+            await instance.start()
+            this.runningFeishuApps.set(appConfig.appId, { instance, fingerPrint })
+          } catch (err) {
+            this.logger.error(
+              `Failed to start Feishu App (${appConfig.appId}):`,
+              (err as Error).message
+            )
+          }
+        })()
+        startTasks.push(startTask)
+      } else if (!appConfig.enabled && running) {
+        running.instance.stop()
+        this.runningFeishuApps.delete(appConfig.appId)
+      }
+    }
+
+    const currentAppIds = new Set(feishuConfigs.map((b) => b.appId))
+    for (const [appId, running] of this.runningFeishuApps.entries()) {
+      if (!currentAppIds.has(appId)) {
+        running.instance.stop()
+        this.runningFeishuApps.delete(appId)
+      }
+    }
+  }
+
+  private async stopAllTelegram() {
+    for (const running of this.runningTgBots.values()) {
       await running.instance.stop()
     }
     this.runningTgBots.clear()
+  }
+
+  private async stopAllFeishu() {
+    for (const running of this.runningFeishuApps.values()) {
+      await running.instance.stop()
+    }
+    this.runningFeishuApps.clear()
+  }
+
+  async stopAll() {
+    await Promise.all([this.stopAllTelegram(), this.stopAllFeishu()])
     this.logger.info('All channels stopped')
   }
 
-  /**
-   * 重启所有频道
-   * 现在的 startAll 已经具备智能差量逻辑，所以直接调用即可实现无感更新
-   */
+  async onLanguageChanged(lang: string) {
+    const p1 = Array.from(this.runningTgBots.values()).map((b) =>
+      b.instance.onLanguageChanged(lang)
+    )
+    const p2 = Array.from(this.runningFeishuApps.values()).map((b) =>
+      b.instance.onLanguageChanged(lang)
+    )
+    await Promise.allSettled([...p1, ...p2])
+    this.logger.info(`All channels notified about language change to: ${lang}`)
+  }
+
   async restart() {
     await this.startAll()
   }
 
-  /**
-   * 更新并持久化绑定关系 (此操作不应触发 Bot 重启，故需额外处理指纹)
-   */
   private updateBotBindings(botToken: string, bindings: Record<string, string>) {
+    this.updateChannelBindings('telegram', botToken, bindings)
+  }
+
+  private updateFeishuBindings(appId: string, bindings: Record<string, string>) {
+    this.updateChannelBindings('feishu', appId, bindings)
+  }
+
+  private updateChannelBindings(
+    type: 'telegram' | 'feishu',
+    key: string,
+    bindings: Record<string, string>
+  ) {
     const configService = ConfigService.getInstance()
     const currentConfig = configService.getConfig()
+    const channelList = currentConfig.channels?.[type]
 
-    if (!currentConfig.channels?.telegram) return
+    if (!channelList) return
 
-    const newTelegramList = currentConfig.channels.telegram.map((bot) => {
-      if (bot.botToken === botToken) {
-        return { ...bot, agentBindings: bindings }
+    const keyField = type === 'telegram' ? 'botToken' : 'appId'
+    const newList = channelList.map((item) => {
+      if (item[keyField] === key) {
+        return { ...item, agentBindings: bindings }
       }
-      return bot
+      return item
     })
 
-    // 更新本地运行状态的指纹，防止由于持久化导致的“配置变化”误触发重启
-    const running = this.runningTgBots.get(botToken)
+    const runningMap = type === 'telegram' ? this.runningTgBots : this.runningFeishuApps
+    const running = runningMap.get(key)
     if (running) {
       const { gateway } = currentConfig
-      running.fingerPrint = JSON.stringify({
-        enabled: true,
-        botToken,
-        agentBindings: bindings,
-        gatewayUrl: `ws://localhost:${gateway.port}`,
-        gatewayToken: gateway.token
-      })
+      const rawPrint = JSON.parse(running.fingerPrint)
+      rawPrint.agentBindings = bindings
+      rawPrint.gatewayUrl = `ws://localhost:${gateway.port}`
+      rawPrint.gatewayToken = gateway.token
+      running.fingerPrint = JSON.stringify(rawPrint)
     }
 
     configService.saveConfig({
       channels: {
         ...currentConfig.channels,
-        telegram: newTelegramList
+        [type]: newList
       }
     })
-    this.logger.info(`Updated bindings for bot: ${botToken.slice(0, 8)}... (Persisted)`)
+    this.logger.info(`Updated bindings for ${type}:${key.slice(0, 8)}... (Persisted)`)
+
+    // 通知所有网关客户端配置已保存 (触发 UI 刷新)
+    GatewayManager.getInstance().dispatch({
+      type: 'config:saved',
+      path: configService.getRootPath()
+    })
   }
 
-  /**
-   * 验证 Telegram Bot Token 是否有效
-   */
   async validateTelegramBot(token: string, useProxy?: boolean): Promise<TelegramValidationResult> {
     if (!token) throw new Error('Token is required')
 
@@ -194,7 +291,6 @@ export class ChannelManager {
 
     this.logger.info(`Validating Bot Token: ${token.slice(0, 8)}... (Proxy: ${proxy || 'none'})`)
 
-    // 获取代理配置并初始化 Bot
     const clientConfig = {
       baseFetchConfig: ProxyUtils.getBaseFetchConfig(proxy)
     }
@@ -202,7 +298,6 @@ export class ChannelManager {
     const bot = new Bot(token, { client: clientConfig })
 
     try {
-      // 这里的 init() 会去请求 getMe，如果 token 错误会直接报错
       await bot.init()
       const { id, username, first_name } = bot.botInfo
 

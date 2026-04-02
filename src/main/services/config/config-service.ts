@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
@@ -16,22 +17,37 @@ const DEFAULT_CONFIG: AppConfig = {
   models: [],
   gateway: {
     port: 18781,
-    token: 'openclaw-mini-secret',
+    token: 'opcclaw-mini-secret',
     logLevel: 'info'
   },
   defaultModelId: '',
   channels: {
     telegram: []
+  },
+  language: 'zh',
+  theme: 'dark',
+  fontSize: 14,
+  interactionTimeout: 300,
+  agentDefaults: {
+    temperature: 0.7,
+    maxTokens: 2048,
+    topP: 1.0,
+    capabilities: {
+      webSearch: true,
+      codeExecution: true,
+      vision: true
+    }
   }
 }
 
-export class ConfigService {
+export class ConfigService extends EventEmitter {
   private static instance: ConfigService
   private configPath: string
   private config: AppConfig
   private logger = new Logger('ConfigService')
 
   private constructor() {
+    super()
     this.ensureDir(OPCCLAW_ROOT)
     this.ensureDir(path.join(OPCCLAW_ROOT, 'agents'))
     this.ensureDir(path.join(OPCCLAW_ROOT, 'skills')) // 新增：确保全局技能目录存在
@@ -80,6 +96,7 @@ export class ConfigService {
     this.config = { ...this.config, ...newConfig }
     try {
       fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2))
+      this.emit('config-saved', this.config)
     } catch (err) {
       this.logger.error('Failed to save config:', err)
     }
