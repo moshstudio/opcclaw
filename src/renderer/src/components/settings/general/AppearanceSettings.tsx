@@ -33,7 +33,7 @@ const AppearanceSettings: React.FC = () => {
       <Card className="flex items-center justify-between p-6 font-bold border-muted">
         <div>
           <h4 className="text-sm mb-1">{t('settings.theme_label')}</h4>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
+          <p className="text-xs text-muted-foreground uppercase tracking-widest">
             {t('settings.theme_label')}
           </p>
         </div>
@@ -58,7 +58,7 @@ const AppearanceSettings: React.FC = () => {
       <Card className="flex items-center justify-between p-6 font-bold border-muted">
         <div>
           <h4 className="text-sm mb-1">{t('settings.language_label')}</h4>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
+          <p className="text-xs text-muted-foreground uppercase tracking-widest">
             {t('settings.language_label')}
           </p>
         </div>
@@ -82,7 +82,7 @@ const AppearanceSettings: React.FC = () => {
       <Card className="flex items-center justify-between p-6 font-bold border-muted">
         <div>
           <h4 className="text-sm mb-1">{t('settings.fontSize_label')}</h4>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
+          <p className="text-xs text-muted-foreground uppercase tracking-widest">
             {t('settings.fontSize_label')}
           </p>
         </div>

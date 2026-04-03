@@ -7,6 +7,7 @@ import chat from './chat.json'
 import skills from './skills.json'
 import loading from './loading.json'
 import telegram from './telegram.json'
+import feishu from './feishu.json'
 
 export default {
   common,
@@ -17,5 +18,6 @@ export default {
   chat,
   skills,
   loading,
-  telegram
+  telegram,
+  feishu
 }

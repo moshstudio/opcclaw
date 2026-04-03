@@ -21,7 +21,7 @@ export interface QueueTask {
 /** 运行时的响应状态 (通用) */
 export interface CommonRun {
   chatId: string | number
-  threadId?: number
+  threadId?: string | number
   channelMessageId?: string | number // 平台侧消息 ID (物理存活的消息气泡)
   agentRunId?: string // 网关侧整体运行 ID (对应整个 Agent 响应过程)
 
@@ -42,6 +42,7 @@ export interface CommonRun {
 export interface CommonSessionContext {
   chatId: string | number
   lang?: string
+  lastInteractionMessageId?: string | number // 最近一次交互发出的消息 ID
 }
 
 /** 交互消息记录 */

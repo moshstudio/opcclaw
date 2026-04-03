@@ -1102,8 +1102,7 @@ export const confirmTool: Tool<{
       },
       remember_key: {
         type: 'string',
-        description:
-          '持久化记忆 Key。如果提供，用户可以选择“以后不再询问”，Agent 将自动记住该选择。'
+        description: '持久化记忆 Key。不传则基于内容自动哈希。设置后可支持“不再询问”并自动确认。'
       }
     },
     required: ['prompt']

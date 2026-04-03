@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Send, Trash2, RefreshCw, ChevronDown } from 'lucide-react'
+import { Send, Trash2, RefreshCw, ChevronDown, HelpCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Card } from '@renderer/components/ui/card'
 import { Input } from '@renderer/components/ui/input'
@@ -13,6 +13,16 @@ import {
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogBody,
+  DialogFooter
+} from '@renderer/components/ui/dialog'
 import { RoutingTable } from './RoutingTable'
 import { validateTelegramBot } from '@renderer/services/channel-api'
 import { toast } from 'sonner'
@@ -36,6 +46,7 @@ export const TelegramBotCard: React.FC<BotCardProps> = ({
   const { t } = useTranslation()
   const [isValidating, setIsValidating] = useState(false)
   const [showRules, setShowRules] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
 
   const handleValidate = async () => {
     if (!bot.botToken) {
@@ -45,7 +56,9 @@ export const TelegramBotCard: React.FC<BotCardProps> = ({
     setIsValidating(true)
     try {
       const info = await validateTelegramBot(bot.botToken, !!bot.useProxy)
-      toast.success(`${t('settings.channels_bot_validate_success')}: @${info?.username || 'Bot'}`)
+      toast.success(
+        `${t('settings.channels_bot_validate_success')}: @${info?.username || t('settings.channels_bot_name_default')}`
+      )
     } catch (err: any) {
       toast.error(`${t('settings.channels_bot_validate_failed')}: ${err.message}`)
     } finally {
@@ -62,7 +75,9 @@ export const TelegramBotCard: React.FC<BotCardProps> = ({
       setIsValidating(true)
       try {
         const info = await validateTelegramBot(bot.botToken, !!bot.useProxy)
-        toast.success(`${t('settings.channels_bot_validate_success')}: @${info?.username || 'Bot'}`)
+        toast.success(
+          `${t('settings.channels_bot_validate_success')}: @${info?.username || t('settings.channels_bot_name_default')}`
+        )
       } catch (err: any) {
         toast.error(`${t('settings.channels_bot_validate_failed')}: ${err.message}`)
         setIsValidating(false)
@@ -99,7 +114,7 @@ export const TelegramBotCard: React.FC<BotCardProps> = ({
           </div>
 
           <span className="text-sm font-bold tracking-tight text-foreground/90">
-            Telegram Bot #{index + 1}
+            {t('settings.telegram_bot_title')} #{index + 1}
           </span>
 
           {/* 状态点：在线时呼吸脉冲 */}
@@ -112,6 +127,110 @@ export const TelegramBotCard: React.FC<BotCardProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
+          {/* 使用指南按钮 */}
+          <Dialog open={showHelp} onOpenChange={setShowHelp}>
+            <DialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-lg text-muted-foreground hover:text-primary transition-colors"
+                title={t('settings.telegram_bot_usage_guide')}
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md rounded-2xl">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-primary">
+                  <Send className="w-5 h-5" />
+                  {t('telegram.guide_title')}
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  {t('telegram.guide_subtitle')}
+                </DialogDescription>
+              </DialogHeader>
+
+              <DialogBody className="space-y-3 py-2 text-sm overflow-y-auto max-h-[60vh] pr-2 scrollbar-thin">
+                {/* 步骤 0: 获取 Token */}
+                <div className="p-3 bg-primary/5 rounded-xl border border-primary/20">
+                  <h4 className="font-bold flex items-center gap-2 mb-1.5 text-primary text-xs uppercase tracking-wider">
+                    <span className="w-5 h-5 flex items-center justify-center bg-primary text-white rounded-full text-[10px] shadow-sm">
+                      0
+                    </span>
+                    {t('telegram.guide_step_0_title')}
+                  </h4>
+                  <div className="text-muted-foreground leading-relaxed pl-7 space-y-1 text-[13px]">
+                    <p dangerouslySetInnerHTML={{ __html: t('telegram.guide_step_0_p1') }} />
+                    <p dangerouslySetInnerHTML={{ __html: t('telegram.guide_step_0_p2') }} />
+                    <p dangerouslySetInnerHTML={{ __html: t('telegram.guide_step_0_p3') }} />
+                    <p className="text-[10px] text-muted-foreground/60 italic pt-1">
+                      {t('telegram.guide_step_0_proxy')}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 场景 1: 私聊 */}
+                <div className="p-3 bg-muted/30 rounded-xl border border-border/40">
+                  <h4 className="font-bold flex items-center gap-2 mb-1.5 text-foreground text-xs uppercase tracking-wider">
+                    <span className="w-5 h-5 flex items-center justify-center bg-primary/10 text-primary rounded-full text-[10px]">
+                      1
+                    </span>
+                    {t('telegram.guide_step_1_title')}
+                  </h4>
+                  <p
+                    className="text-muted-foreground leading-relaxed pl-7 text-[13px]"
+                    dangerouslySetInnerHTML={{ __html: t('telegram.guide_step_1_desc') }}
+                  />
+                </div>
+
+                {/* 场景 2: 频道 */}
+                <div className="p-3 bg-muted/30 rounded-xl border border-border/40">
+                  <h4 className="font-bold flex items-center gap-2 mb-1.5 text-foreground text-xs uppercase tracking-wider">
+                    <span className="w-5 h-5 flex items-center justify-center bg-primary/10 text-primary rounded-full text-[10px]">
+                      2
+                    </span>
+                    {t('telegram.guide_step_2_title')}
+                  </h4>
+                  <p className="text-muted-foreground leading-relaxed pl-7 text-[13px]">
+                    <span
+                      dangerouslySetInnerHTML={{ __html: t('telegram.guide_step_2_desc') }}
+                    />
+                    <span
+                      className="block mt-1 text-xs text-primary/80 italic font-medium"
+                      dangerouslySetInnerHTML={{ __html: t('telegram.guide_step_2_tip') }}
+                    />
+                  </p>
+                </div>
+
+                {/* 场景 3: 群组 */}
+                <div className="p-3 bg-muted/30 rounded-xl border border-border/40">
+                  <h4 className="font-bold flex items-center gap-2 mb-1.5 text-foreground text-xs uppercase tracking-wider">
+                    <span className="w-5 h-5 flex items-center justify-center bg-primary/10 text-primary rounded-full text-[10px]">
+                      3
+                    </span>
+                    {t('telegram.guide_step_3_title')}
+                  </h4>
+                  <div className="text-muted-foreground leading-relaxed pl-7 space-y-1 text-[13px]">
+                    <p>{t('telegram.guide_step_3_p1')}</p>
+                    <p
+                      className="font-mono text-[11px] bg-background/50 px-2 py-1 rounded inline-block"
+                      dangerouslySetInnerHTML={{ __html: t('telegram.guide_step_3_p2') }}
+                    />
+                    <p className="text-[11px] text-muted-foreground/60">
+                      {t('telegram.guide_step_3_p3')}
+                    </p>
+                  </div>
+                </div>
+              </DialogBody>
+
+              <DialogFooter>
+                <Button className="rounded-xl px-6" onClick={() => setShowHelp(false)}>
+                  {t('telegram.guide_done_btn')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {/* 验证按钮：验证中旋转，hover 缩放 */}
           <Button
             variant="ghost"
@@ -149,7 +268,7 @@ export const TelegramBotCard: React.FC<BotCardProps> = ({
           </label>
           <Input
             type="password"
-            placeholder="123456789:ABC..."
+            placeholder={t('settings.channels_telegram_bot_token_placeholder')}
             value={bot.botToken}
             onChange={(e) => onUpdate({ botToken: e.target.value })}
             className={cn(

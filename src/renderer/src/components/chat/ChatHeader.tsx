@@ -89,7 +89,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                 chatStatus === 'error' && 'bg-destructive'
               )}
             />
-            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold flex items-center gap-1 group-hover:text-foreground/80">
+            <span className="text-xs text-muted-foreground uppercase tracking-widest font-bold flex items-center gap-1 group-hover:text-foreground/80">
               {getStatusDisplay()}
               {!isTyping && (
                 <ChevronDown
@@ -112,7 +112,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
               >
                 <div className="flex items-center gap-2 px-3 py-2 mb-1 text-muted-foreground/40 border-b border-border/50">
                   <History className="w-3 h-3" />
-                  <span className="text-[9px] font-bold uppercase tracking-widest">
+                  <span className="text-[0.65rem] font-bold uppercase tracking-widest">
                     {t('common.sessions')}
                   </span>
                 </div>
@@ -120,12 +120,12 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                   {isLoadingSessions[activeAgentId] && activeAgentSessions.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-8 gap-2 opacity-50">
                       <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                      <span className="text-[10px] uppercase tracking-widest font-bold">
+                      <span className="text-xs uppercase tracking-widest font-bold">
                         {t('common.loading')}
                       </span>
                     </div>
                   ) : activeAgentSessions.length === 0 ? (
-                    <div className="px-3 py-6 text-center text-[10px] text-muted-foreground/50 uppercase tracking-widest font-bold">
+                    <div className="px-3 py-6 text-center text-xs text-muted-foreground/50 uppercase tracking-widest font-bold">
                       {t('common.no_history_sessions')}
                     </div>
                   ) : (
@@ -211,10 +211,6 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
 
         <div className="w-px h-4 bg-border mx-1" />
 
-        <Button variant="ghost" className="text-xs h-9 px-4 text-muted-foreground font-bold">
-          {t('common.share')}
-        </Button>
-        <div className="w-px h-4 bg-border mx-1" />
         <Button
           variant="ghost"
           size="icon"

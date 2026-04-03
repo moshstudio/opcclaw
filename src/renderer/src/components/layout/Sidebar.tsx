@@ -83,7 +83,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
           transition={linearTransition}
           className="flex flex-col whitespace-nowrap overflow-hidden shrink-0"
         >
-          <h1 className="text-[18px] leading-[26px] font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
+          <h1 className="text-lg leading-[26px] font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
             {t('common.app_name')}
           </h1>
           <div className="flex items-center gap-[6px] mt-[2px] ml-[2px]">
@@ -97,7 +97,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
                     : 'bg-red-500 shadow-red-500/50'
               )}
             />
-            <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest shrink-0">
+            <span className="text-[0.65rem] font-bold text-muted-foreground/60 uppercase tracking-widest shrink-0">
               {t('gateway.status_label')} {connStatus}
             </span>
           </div>
@@ -144,7 +144,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
               x: collapsed ? -5 : 0
             }}
             transition={linearTransition}
-            className="text-[13px] font-semibold text-muted-foreground whitespace-nowrap overflow-hidden"
+            className="text-sm font-semibold text-muted-foreground whitespace-nowrap overflow-hidden"
           >
             {t('common.new_agent')}
           </motion.span>
@@ -158,7 +158,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
         {sortedAgents.length === 0 && (
           <div className="px-6 py-10 text-center opacity-30 flex flex-col items-center gap-2">
             <Plus className="w-8 h-8 text-muted-foreground animate-pulse" />
-            <p className="text-[10px] uppercase font-black tracking-widest leading-loose">
+            <p className="text-xs uppercase font-black tracking-widest leading-loose">
               {t('common.no_content')}
             </p>
           </div>
@@ -200,7 +200,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
               >
                 <p
                   className={cn(
-                    'text-[13px] font-semibold truncate transition-colors duration-300 ease-linear',
+                    'text-sm font-semibold truncate transition-colors duration-300 ease-linear',
                     activeAgentId === agent.id
                       ? 'text-foreground'
                       : 'text-muted-foreground group-hover:text-foreground'
@@ -230,10 +230,10 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
             <div className="w-[32px] h-[32px] rounded-full bg-gradient-to-tr from-orange-400 to-pink-500 shadow-md shrink-0" />
           </div>
           <div className="flex flex-col overflow-hidden">
-            <p className="text-[11px] font-bold text-foreground truncate leading-tight">
+            <p className="text-[0.75rem] font-bold text-foreground truncate leading-tight">
               {t('common.user_account')}
             </p>
-            <p className="text-[10px] text-muted-foreground/60 truncate font-bold uppercase tracking-tighter leading-none">
+            <p className="text-[0.65rem] text-muted-foreground/60 truncate font-bold uppercase tracking-tighter leading-none">
               {t('common.premium_member')}
             </p>
           </div>

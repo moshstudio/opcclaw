@@ -14,7 +14,8 @@ import {
   handleSkillInstall,
   handleSkillUpdate,
   handleSkillDelete,
-  handleChannelTelegramTest
+  handleChannelTelegramTest,
+  handleChannelFeishuTest
 } from './system-handler'
 import {
   handleHeartbeatList,
@@ -81,6 +82,7 @@ export const handlers: Record<GatewayMethod, Handler> = {
   'config:save': handleConfigSave,
   'system:events-doc': handleEventsDoc,
   'channel:telegram:test': handleChannelTelegramTest,
+  'channel:feishu:test': handleChannelFeishuTest,
   'models:fetch': handleModelsFetch,
   'models:add': handleModelsAdd,
   'models:update': handleModelsUpdate,

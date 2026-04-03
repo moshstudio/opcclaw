@@ -261,6 +261,7 @@
     "help_help": "- /help : 显示此帮助信息",
     "tool_calling": "🛠️ 正在执行工具: {{name}}...",
     "tool_success": "✅ 工具执行完毕: {{name}}",
-    "tool_error": "❌ 工具执行失败: {{name}}"
+    "tool_error": "❌ 工具执行失败: {{name}}",
+    "executing": "正在执行..."
   }
 }

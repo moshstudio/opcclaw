@@ -204,7 +204,7 @@ export class TelegramChannel extends BaseChannel<TelegramChannelOptions> {
    */
   private findThreadIdByChatId(chatId: string | number): number | undefined {
     for (const run of this.activeRuns.values()) {
-      if (run.chatId === chatId) return run.threadId
+      if (run.chatId === chatId && typeof run.threadId === 'number') return run.threadId
     }
     return undefined
   }
@@ -287,40 +287,20 @@ export class TelegramChannel extends BaseChannel<TelegramChannelOptions> {
   protected async updatePlatformInteraction(
     chatId: string | number,
     messageId: string | number,
-    p: ChatPayloadFlat,
-    lang?: string
+    _p: ChatPayloadFlat,
+    _lang?: string
   ): Promise<void> {
-    const t = getTranslate(lang)
-
-    // 确定展示文案：优先使用选项文字
-    const firstRes = p.result?.[0] || ''
-    let displayResult = firstRes
-    const isSuccess = firstRes === 'true' || firstRes === '0'
-    const resultIcon = isSuccess ? '✅' : 'ℹ️'
-
-    if (p.options && !isNaN(Number(firstRes))) {
-      displayResult = p.options[Number(firstRes)] || displayResult
-    }
-
     try {
-      // 使用 HTML 发送更新后的交互结果
-      const title = t('telegram:interaction_completed')
-      await this.bot.api.editMessageText(
-        chatId,
-        Number(messageId),
-        `${resultIcon} <b>${this.escapeHTML(title)}</b>\n> ${this.escapeHTML(displayResult)}`,
-        { parse_mode: 'HTML' }
-      )
+      // 交互完成后直接删除交互卡片，不再显示“交互已完成”的结果
+      await this.bot.api.deleteMessage(chatId, Number(messageId))
     } catch (err) {
-      // ignore (可能已经被用户手动删除)
+      // ignore (可能已经被用户手动删除或权限不足)
     }
   }
 
   // ============== 处理来自 Telegram 的物理输入 ==============
 
   private async onMessageReceived(ctx: Context): Promise<void> {
-    console.log('onMessageReceived', ctx)
-
     const msg = ctx.msg
     if (!msg?.text || !ctx.chat?.id) return
     const { id: chatId, type } = ctx.chat

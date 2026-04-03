@@ -1,11 +1,27 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { Send, RefreshCw, Plus, Save, CheckCircle2, MessageSquare } from 'lucide-react'
+import {
+  Send,
+  RefreshCw,
+  Plus,
+  Save,
+  CheckCircle2,
+  MessageSquare,
+  Building2,
+  ChevronDown
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@renderer/components/ui/button'
 import { Card } from '@renderer/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@renderer/components/ui/dropdown-menu'
 import { useConfigStore } from '@renderer/store/useConfigStore'
 import { getGatewayClient } from '@renderer/services/gateway-client'
 import { TelegramBotCard } from './channels/TelegramBotCard'
+import { FeishuBotCard } from './channels/FeishuBotCard'
 import { cn } from '@renderer/lib/utils'
 import { toast } from 'sonner'
 import type {
@@ -167,20 +183,48 @@ export const ChannelsTab: React.FC = () => {
             </Button>
           )}
 
-          <Button
-            variant="outline"
-            onClick={() =>
-              addChannelItem('telegram', {
-                enabled: false,
-                botToken: '',
-                useProxy: false,
-                agentBindings: {}
-              })
-            }
-            className="h-9 px-4 rounded-xl text-xs font-bold border-muted/50 transition-all hover:bg-muted/30"
-          >
-            <Plus className="mr-2 h-4 w-4" /> {t('settings.channels_add_bot')}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-9 px-4 rounded-xl text-xs font-bold border-muted/50 transition-all hover:bg-muted/30 gap-2"
+              >
+                <Plus className="h-4 w-4" /> {t('settings.channels_add_channel_dropdown')}
+                <ChevronDown className="h-3.5 w-3.5 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44 rounded-xl p-1 shadow-xl">
+              <DropdownMenuItem
+                className="rounded-lg text-xs font-medium focus:bg-primary/10 flex items-center gap-2 cursor-pointer"
+                onClick={() =>
+                  addChannelItem('telegram', {
+                    enabled: false,
+                    botToken: '',
+                    useProxy: false,
+                    agentBindings: {}
+                  })
+                }
+              >
+                <Send className="w-3.5 h-3.5 text-blue-500" />
+                {t('settings.channels_add_bot')}
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                className="rounded-lg text-xs font-medium focus:bg-primary/10 flex items-center gap-2 cursor-pointer"
+                onClick={() =>
+                  addChannelItem('feishu', {
+                    enabled: false,
+                    appId: '',
+                    appSecret: '',
+                    agentBindings: {}
+                  })
+                }
+              >
+                <Building2 className="w-3.5 h-3.5 text-emerald-500" />
+                {t('settings.channels_add_feishu')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <Button
             onClick={handleApply}
@@ -231,7 +275,19 @@ export const ChannelsTab: React.FC = () => {
           ))
         )}
 
-        {/* Placeholder for future channels */}
+        {localChannels.feishu &&
+          localChannels.feishu.map((app: FeishuChannelConfig, index: number) => (
+            <FeishuBotCard
+              key={index}
+              index={index}
+              app={app}
+              agents={agents}
+              onUpdate={(patch) => updateChannel('feishu', index, patch)}
+              onRemove={() => removeChannelItem('feishu', index)}
+            />
+          ))}
+
+        {/* 帮助中心入口或其他渠道占位 */}
         <div className="group relative">
           <div className="absolute inset-0 bg-gradient-to-r from-primary/5 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
           <Card className="p-6 border-dashed border-muted/50 bg-muted/5 opacity-40 hover:opacity-100 transition-all rounded-2xl">
@@ -242,10 +298,10 @@ export const ChannelsTab: React.FC = () => {
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[10px] font-black uppercase tracking-[0.2em] leading-none mb-1">
-                    {t('settings.lark_title')}
+                    {t('settings.more_channels_title')}
                   </span>
                   <span className="text-[10px] font-bold text-muted-foreground/60 italic">
-                    {t('settings.lark_desc')}
+                    {t('settings.more_channels_desc')}
                   </span>
                 </div>
               </div>

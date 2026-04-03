@@ -6,26 +6,34 @@
 import * as Lark from '@larksuiteoapi/node-sdk'
 import type { ChatPayloadFlat } from '../../gateway/protocol'
 import { CHANNEL_ID } from './constants'
-import { FeishuChannelOptions, FeishuMessageEvent } from './types'
+import {
+  FeishuChannelOptions,
+  FeishuMessageEvent,
+  FeishuCardActionTriggerEvent,
+  FeishuCardActionResponse
+} from './types'
 import { BaseChannel } from '../base'
+import { CommonRun, QueueTask } from '../base/types'
 import { getTranslate, parseSessionKey } from '../base/utils'
 
 export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
   private client_sdk?: Lark.Client
   private ws_client?: Lark.WSClient
+  private botOpenId?: string
+  private botName?: string
 
   constructor(opts: FeishuChannelOptions) {
     super(opts, CHANNEL_ID)
-    this.maxMessageLength = 30000 // 飞书支持较长的文本消息，但建议分段或使用富文本
+    this.maxMessageLength = 30000
   }
 
   // ============== 生命周期实现 ==============
 
   protected async setupPlatform(): Promise<void> {
-    const { appId, appSecret } = this.opts
+    const { appId, appSecret, encryptKey, verificationToken } = this.opts
 
     try {
-      // 1. 初始化 HTTP 客户端
+      // 1. 初始化 SDK 客户端
       this.client_sdk = new Lark.Client({
         appId,
         appSecret,
@@ -33,7 +41,7 @@ export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
         domain: Lark.Domain.Feishu
       })
 
-      // 2. 初始化 WebSocket 客户端处理事件
+      // 2. 初始化长连接客户端
       this.ws_client = new Lark.WSClient({
         appId,
         appSecret,
@@ -41,94 +49,135 @@ export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
         loggerLevel: Lark.LoggerLevel.info
       })
 
-      const eventDispatcher = new Lark.EventDispatcher({
-        encryptKey: this.opts.encryptKey,
-        verificationToken: this.opts.verificationToken
-      })
-
-      // 注册消息接收与卡片交互处理器
-      eventDispatcher.register({
-        'im.message.receive_v1': async (data) => {
-          const event = data as FeishuMessageEvent
-          await this.onMessageReceived(event)
-        },
-        'card.action.trigger': async (data) => {
-          const action = (data as any).action
-          if (action?.value?.action === 'interaction') {
-            const { id: interactionId, result: resultRaw } = action.value
-            const chatId = (data as any).context?.open_chat_id || (data as any).context?.open_id
-            if (!chatId) return
-
-            const sessionKey = this.getInternalSessionKey(chatId)
-            const sessionInfo = parseSessionKey(sessionKey, this.channelId)
-
-            // 从注册表还原选项文本
-            const record = this.interactionMessages.get(interactionId)
-            let result = [String(resultRaw)] // 降级
-
-            if (record && record.options && !isNaN(Number(resultRaw))) {
-              const idx = Number(resultRaw)
-              if (record.options[idx]) {
-                result = [record.options[idx]]
-              }
-            }
-
-            try {
-              await this.client.request('chat:respondInteraction', {
-                agentId: sessionInfo?.agentId || 'main',
-                interactionId,
-                result,
-                remember: false
-              })
-            } catch (err) {
-              this.logger.error('Failed to respond to Feishu interaction:', err)
-            }
-          }
-        }
-      })
+      // 3. 注册事件处理器
+      const eventDispatcher = new Lark.EventDispatcher({ encryptKey, verificationToken })
+      this.registerEventHandlers(eventDispatcher)
 
       this.ws_client.start({ eventDispatcher })
-      this.logger.info(`飞书应用 ${appId} 事件订阅(长连接)已启动`)
+
+      // 4. 异步获取机器人信息
+      await this.initBotInfo()
+
+      this.logger.info(`[Feishu] 频道已启动 (AppID: ${appId})`)
     } catch (err) {
-      this.logger.error('飞书初始化失败:', (err as Error).message)
+      this.logger.error(`[Feishu] 初始化失败: ${(err as Error).message}`)
     }
   }
 
   protected async teardownPlatform(): Promise<void> {
-    // 飞书 SDK 暂时没有显式的 stop 方法用于 WSClient，通常是销毁实例
     this.ws_client = undefined
+    this.client_sdk = undefined
   }
 
-  // ============== BaseChannel 抽象方法实现 ==============
+  /**
+   * 注册飞书事件回调
+   */
+  private registerEventHandlers(dispatcher: Lark.EventDispatcher): void {
+    dispatcher.register({
+      'im.message.receive_v1': async (data) => {
+        await this.onMessageReceived(data as FeishuMessageEvent)
+      },
+      'card.action.trigger': async (
+        data: FeishuCardActionTriggerEvent
+      ): Promise<FeishuCardActionResponse> => {
+        return this.handleCardAction(data)
+      }
+    })
+  }
 
-  protected async sendPlatformMessage(
-    chatId: string | number,
-    text: string
-  ): Promise<string | number> {
-    if (!this.client_sdk) throw new Error('Feishu client not initialized')
-
-    // 识别接收者类型
-    const receiveIdType = String(chatId).startsWith('oc_') ? 'chat_id' : 'open_id'
-
+  /**
+   * 初始化机器人基本信息
+   */
+  private async initBotInfo(): Promise<void> {
     try {
-      const res = await this.client_sdk.im.message.create({
-        params: { receive_id_type: receiveIdType },
-        data: {
-          receive_id: String(chatId),
-          msg_type: 'text',
-          content: JSON.stringify({ text })
-        }
+      const res: any = await this.client_sdk?.request({
+        method: 'GET',
+        url: '/open-apis/bot/v3/info'
       })
+      if (res?.code === 0) {
+        const bot = res.bot || res.data?.bot
+        this.botOpenId = bot?.open_id
+        this.botName = bot?.bot_name
+        this.logger.info(`[Feishu] 机器人加载成功: ${this.botName} (${this.botOpenId})`)
+      }
+    } catch (err) {
+      this.logger.warn(`[Feishu] 无法获取机器人信息: ${(err as Error).message}`)
+    }
+  }
 
-      if (res.code !== 0) {
-        throw new Error(`Feishu API Error [${res.code}]: ${res.msg}`)
+  // ============== 核心交互实现 ==============
+
+  protected async handleQueueTask(run: CommonRun, task: QueueTask): Promise<void> {
+    const { type, text, payload } = task
+
+    // 1. 尝试从交互缓存或会话记录中找回丢失的消息 ID (应对交互后的跨 Run 流转)
+    if (!run.channelMessageId) {
+      // 1.1 优先通过任务 payload 里的 interactionId 恢复
+      if (payload?.interactionId) {
+        const record = this.interactionMessages.get(payload.interactionId)
+        if (record) {
+          run.channelMessageId = String(record.messageId)
+        }
       }
 
-      return res.data!.message_id!
-    } catch (err) {
-      this.logger.error('发送飞书消息失败:', (err as Error).message)
-      throw err
+      // 1.2 如果还找不到，尝试从会话最后一次交互记录中恢复
+      if (!run.channelMessageId) {
+        const sessionKey = this.getInternalSessionKey(run.chatId, run.threadId)
+        const session = this.sessionRegistry.get(sessionKey)
+        if (session?.lastInteractionMessageId) {
+          run.channelMessageId = String(session.lastInteractionMessageId)
+        }
+      }
     }
+
+    switch (type) {
+      case 'text':
+        if (run.channelMessageId) {
+          await this.editPlatformMessage(run.chatId, run.channelMessageId, text!)
+        } else {
+          const msgId = await this.sendPlatformMessage(run.chatId, text!)
+          run.channelMessageId = String(msgId)
+        }
+        break
+      case 'interaction': {
+        const iid = await this.sendPlatformInteraction(
+          run.chatId,
+          payload!,
+          run.lang,
+          run.threadId ? String(run.threadId) : undefined,
+          run.channelMessageId // 传入现状消息 ID
+        )
+        if (iid) run.channelMessageId = String(iid)
+        break
+      }
+      case 'interaction-responded':
+        if (run.channelMessageId) {
+          await this.updatePlatformInteraction(run.chatId, run.channelMessageId, payload!, run.lang)
+        }
+        break
+    }
+  }
+
+  protected async sendPlatformMessage(chatId: string | number, text: string): Promise<string> {
+    if (!this.client_sdk) throw new Error('Client not ready')
+
+    const receiveIdType = String(chatId).startsWith('oc_') ? 'chat_id' : 'open_id'
+    const formattedText = this.mdToFormat(text, 'markdown')
+
+    const res = await this.client_sdk.im.message.create({
+      params: { receive_id_type: receiveIdType },
+      data: {
+        receive_id: String(chatId),
+        msg_type: 'interactive',
+        content: FeishuCardBuilder.buildTextContent(formattedText)
+      }
+    })
+
+    if (res.code !== 0) {
+      throw new Error(`Feishu API Error [${res.code}]: ${res.msg}`)
+    }
+
+    return res.data!.message_id!
   }
 
   protected async editPlatformMessage(
@@ -138,93 +187,93 @@ export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
   ): Promise<void> {
     if (!this.client_sdk) return
 
+    const formattedText = this.mdToFormat(text, 'markdown')
     try {
-      // 飞书的编辑消息 API (如果是文本消息，通常是更新 content)
-      // 注意：飞书的“编辑”可能需要消息处于特定状态或使用特定 API
-      // 这里使用更新消息内容 API
       const res = await this.client_sdk.im.message.patch({
         path: { message_id: String(messageId) },
         data: {
-          content: JSON.stringify({ text })
+          content: FeishuCardBuilder.buildTextContent(formattedText)
         }
       })
 
       if (res.code !== 0 && res.code !== 230020) {
-        // 230020 可能表示内容未变化
-        this.logger.warn(`编辑飞书消息失败 [${res.code}]: ${res.msg}`)
+        this.logger.warn(`[Feishu] 编辑消息失败: ${res.msg}`)
       }
     } catch (err) {
-      this.logger.warn('编辑飞书消息异常:', (err as Error).message)
+      this.logger.warn(`[Feishu] 编辑消息异常: ${(err as Error).message}`)
     }
   }
 
   protected async startTyping(chatId: string | number): Promise<void> {
-    // 飞书原生不支持“正在输入”状态的 API，除非使用 Reaction 模拟
-    // 这里暂时不做处理
-    this.logger.debug(`Start typing in Feishu chat: ${chatId}`)
+    this.logger.debug(`[Feishu] Typing... in ${chatId}`)
   }
 
-  protected async stopTyping(_chatId: string | number): Promise<void> {
-    // skip
+  protected stopTyping(): void {
+    this.logger.debug('[Feishu] Stop typing')
   }
 
-  protected async replyToCommand(
-    chatId: string | number,
-    text: string,
-    _options?: { parseMode?: 'Markdown' }
-  ): Promise<void> {
-    // 飞书默认支持部分 Markdown 语法在富文本或卡片中，普通文本则不支持
+  protected async replyToCommand(chatId: string | number, text: string): Promise<void> {
     await this.sendFullMessage(chatId, text)
   }
 
   protected async sendPlatformInteraction(
     chatId: string | number,
     p: ChatPayloadFlat,
-    lang?: string
-  ): Promise<string | number | undefined> {
+    lang?: string,
+    threadId?: string | number,
+    messageId?: string | number
+  ): Promise<string | undefined> {
     if (!this.client_sdk) return undefined
     const t = getTranslate(lang)
 
-    const interactionId = p.interactionId
-    const prompt = p.prompt || 'Confirm operation?'
-    const options = p.options || ['Confirm', 'Cancel']
-    const receiveIdType = String(chatId).startsWith('oc_') ? 'chat_id' : 'open_id'
-
-    // 构建飞书交互卡片
-    const card = {
-      config: { wide_screen_mode: true },
-      header: {
-        title: {
-          tag: 'plain_text',
-          content: t('common:channel_base.interaction_title')
-        }
-      },
-      elements: [
-        { tag: 'div', text: { tag: 'plain_text', content: prompt } },
-        {
-          tag: 'action',
-          actions: options.map((opt, idx) => ({
-            tag: 'button',
-            text: { tag: 'plain_text', content: opt },
-            type: idx === 0 ? 'primary' : 'default',
-            value: { action: 'interaction', id: interactionId, result: idx.toString() }
-          }))
-        }
-      ]
-    }
+    const cardContent = FeishuCardBuilder.buildInteractionCard({
+      title: t('common:channel_base.interaction_title'),
+      prompt: p.prompt || 'Confirm operation?',
+      options: p.options || ['Confirm', 'Cancel'],
+      interactionId: p.interactionId,
+      preText: messageId ? this.activeRuns.get(p.runId!)?.accumulatedText || '' : undefined
+    })
 
     try {
-      const res = await this.client_sdk.im.message.create({
-        params: { receive_id_type: receiveIdType },
-        data: {
-          receive_id: String(chatId),
-          msg_type: 'interactive',
-          content: JSON.stringify(card)
+      let res: any
+      if (messageId) {
+        res = await this.client_sdk.im.message.patch({
+          path: { message_id: String(messageId) },
+          data: { content: cardContent }
+        })
+      } else {
+        const receiveIdType = String(chatId).startsWith('oc_') ? 'chat_id' : 'open_id'
+        res = await this.client_sdk.im.message.create({
+          params: { receive_id_type: receiveIdType },
+          data: {
+            receive_id: String(chatId),
+            msg_type: 'interactive',
+            content: cardContent
+          }
+        })
+      }
+
+      const finalMessageId = messageId ? String(messageId) : res.data?.message_id
+      if (res.code === 0 && finalMessageId) {
+        if (p.interactionId) {
+          this.interactionMessages.set(p.interactionId, {
+            chatId,
+            messageId: finalMessageId,
+            options: p.options || []
+          })
+          setTimeout(() => this.interactionMessages.delete(p.interactionId!), 3600000)
         }
-      })
-      return res.data?.message_id
+        // 同步到会话上下文，供后续 Run 继承
+        const sessionKey = p.sessionKey || this.getInternalSessionKey(chatId, threadId)
+        const session = this.sessionRegistry.get(sessionKey)
+        if (session) {
+          session.lastInteractionMessageId = finalMessageId
+        }
+      }
+
+      return finalMessageId
     } catch (err) {
-      this.logger.error('发送飞书交互卡片失败:', err)
+      this.logger.error(`[Feishu] 发送/转换卡片失败: ${(err as Error).message}`)
       return undefined
     }
   }
@@ -236,81 +285,295 @@ export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
     lang?: string
   ): Promise<void> {
     if (!this.client_sdk) return
-    this.logger.debug(`Updating Feishu interaction in chat ${chatId}`)
+    this.logger.debug(`[Feishu] Updating interaction in chat ${chatId}`)
+
     const t = getTranslate(lang)
     const firstRes = p.result?.[0] || ''
     const isSuccess = firstRes === 'true' || firstRes === '0'
 
-    const card = {
-      config: { wide_screen_mode: true },
-      header: {
-        title: { tag: 'plain_text', content: t('common:channel_base.interaction_completed') },
-        template: isSuccess ? 'green' : 'red'
-      },
-      elements: [
-        {
-          tag: 'div',
-          text: {
-            tag: 'plain_text',
-            content: `${isSuccess ? '✅' : '❌'} ${p.prompt || 'Operation completed'}`
-          }
-        }
-      ]
-    }
+    const cardContent = FeishuCardBuilder.buildInteractionResultCard({
+      title: t('common:channel_base.interaction_completed'),
+      prompt: p.prompt || 'Operation completed',
+      isSuccess
+    })
 
     try {
       await this.client_sdk.im.message.patch({
         path: { message_id: String(messageId) },
-        data: {
-          content: JSON.stringify(card)
-        }
+        data: { content: cardContent }
       })
     } catch (err) {
-      // ignore
+      this.logger.warn(`[Feishu] 更新交互卡片失败: ${(err as Error).message}`)
     }
   }
 
+  /**
+   * 处理卡片交互回调
+   */
+  private async handleCardAction(
+    data: FeishuCardActionTriggerEvent
+  ): Promise<FeishuCardActionResponse> {
+    const { action, context } = data
+    const chatId = context?.open_chat_id
+    const interactionValue = action.value || {}
+
+    this.logger.debug(
+      `[Feishu] Card action: tag=${action.tag}, value=${JSON.stringify(interactionValue)}`
+    )
+
+    // 1. 处理交互型按钮
+    if (interactionValue.action === 'interaction' && chatId) {
+      const { id: interactionId, result: resultRaw } = interactionValue
+      const sessionKey = this.getInternalSessionKey(chatId)
+      const sessionInfo = parseSessionKey(sessionKey, this.channelId)
+      const t = getTranslate(this.sessionRegistry.get(sessionKey)?.lang)
+
+      // 还原选项文本
+      const record = this.interactionMessages.get(interactionId)
+      let result = [String(resultRaw)]
+      if (record?.options && !isNaN(Number(resultRaw))) {
+        const idx = Number(resultRaw)
+        if (record.options[idx]) result = [record.options[idx]]
+      }
+
+      // 同步卡片 ID 到会话，备接下来的响应 Run 使用 (双重保障)
+      const contextMessageId = context?.open_message_id
+      if (contextMessageId) {
+        const session = this.sessionRegistry.get(sessionKey)
+        if (session) {
+          session.lastInteractionMessageId = contextMessageId
+        }
+      }
+
+      // 异步通知网关
+      this.client
+        .request('chat:respondInteraction', {
+          agentId: sessionInfo?.agentId || 'main',
+          interactionId,
+          result,
+          remember: false
+        })
+        .catch((err) => this.logger.error('[Feishu] Respond interaction error:', err))
+
+      return {
+        toast: {
+          type: 'info',
+          content: t('common:channel_base.executing') || 'Processing...'
+        }
+      }
+    }
+
+    // 2. 处理表单提交 (预留)
+    if (action.form_value) {
+      this.logger.info(`[Feishu] Form submitted: ${JSON.stringify(action.form_value)}`)
+      return { toast: { type: 'success', content: 'Form submitted' } }
+    }
+
+    return {}
+  }
+
+  /**
+   * 处理接收到的消息
+   */
   private async onMessageReceived(event: FeishuMessageEvent): Promise<void> {
     const { message, sender } = event
     const chatId = message.chat_id
     const openId = sender.sender_id.open_id
     if (!openId) return
 
-    // 获取纯文本内容
-    let text = ''
-    try {
-      const content = JSON.parse(message.content)
-      text = content.text || ''
-    } catch {
-      return
+    // 1. 权限与 Mention 检查 (针对群聊)
+    const isGroup = message.chat_type === 'group' || message.chat_type === 'private'
+    const botMentioned = this.checkBotMentioned(event)
+
+    if (isGroup && !botMentioned) return
+
+    // 2. 解析与清洗文本内容
+    let text = this.parseMessageContent(message)
+    if (botMentioned) {
+      text = this.stripBotMention(text, message.mentions)
     }
 
     text = text.trim()
     if (!text) return
 
-    // 1. 指令解析
-    const handled = await this.tryProcessCommand(text, chatId)
+    // 3. 处理引用回复 (获取被回复的消息内容)
+    if (message.parent_id) {
+      this.logger.debug(`[Feishu] Detected parent_id: ${message.parent_id}, fetching content...`)
+      const parentContent = await this.getPlatformMessage(message.parent_id)
+      if (parentContent) {
+        // 模仿引用样式：> 内容\n\n当前回复
+        // 飞书 Markdown 支持引用，网关处理时也能识别这种常见的 Markdown 引用格式
+        text = `> ${parentContent.replace(/\n/g, '\n> ')}\n\n${text}`
+      }
+    }
+
+    // 4. 优先处理指令
+    const handled = await this.tryProcessCommand(text, chatId, {
+      threadId: message.root_id || undefined
+    })
     if (handled) return
 
-    // 2. 构造会话并发送到网关
-    const sessionKey = this.getInternalSessionKey(chatId)
+    // 5. 发送到系统网关
+    const threadId = message.root_id || undefined
+    const sessionKey = this.getInternalSessionKey(chatId, threadId)
     const sessionInfo = parseSessionKey(sessionKey, this.channelId)
     if (!sessionInfo) return
 
     this.sessionRegistry.set(sessionKey, { chatId })
 
-    this.logger.debug(`[Feishu] Input from ${chatId}: "${text.slice(0, 30)}..."`)
+    this.logger.debug(`[Feishu] Message from ${chatId}: "${text.slice(0, 30)}..."`)
 
     try {
-      await this.sendToGateway(sessionInfo.agentId, sessionKey, text)
+      await this.sendToGateway(sessionInfo.agentId, sessionKey, text, chatId)
     } catch (err) {
-      this.logger.error(`[Feishu] 网关发送失败:`, (err as Error).message)
+      this.logger.error(`[Feishu] 发送网关失败:`, (err as Error).message)
       await this.sendPlatformMessage(chatId, `Error: ${(err as Error).message}`)
     }
   }
 
-  protected decorateMessage(text: string, isFinal: boolean): string {
-    if (!text) return text
-    return isFinal ? text : `${text} |`
+  /**
+   * 获取飞书单条消息的内容并解析为文本
+   */
+  private async getPlatformMessage(messageId: string): Promise<string | undefined> {
+    if (!this.client_sdk) return undefined
+    try {
+      // 飞书 API: 获取单条消息内容
+      const res = await this.client_sdk.im.message.get({
+        path: { message_id: messageId }
+      })
+
+      if (res.code === 0 && res.data?.items?.[0]) {
+        const msg = res.data.items[0]
+        return this.parseMessageContent(msg as any)
+      }
+    } catch (err) {
+      this.logger.warn(`[Feishu] 获取消息内容失败 (ID: ${messageId}): ${(err as Error).message}`)
+    }
+    return undefined
+  }
+
+  private parseMessageContent(message: any): string {
+    try {
+      // 兼容事件结构 (message_type/content) 和 API 结构 (msg_type/body.content)
+      const type = message.message_type || message.msg_type
+      const rawContent = message.content || message.body?.content
+
+      if (!rawContent) return ''
+
+      const content = JSON.parse(rawContent)
+      if (type === 'post') {
+        return content.title || content.content?.[0]?.[0]?.text || ''
+      }
+      return content.text || ''
+    } catch (err) {
+      const type = message.message_type || message.msg_type
+      const rawContent = message.content || message.body?.content
+      return type === 'text' ? rawContent : ''
+    }
+  }
+
+  private checkBotMentioned(event: FeishuMessageEvent): boolean {
+    if (!this.botOpenId) return false
+    return (event.message.mentions || []).some((m) => m.id.open_id === this.botOpenId)
+  }
+
+  private stripBotMention(text: string, mentions?: any[]): string {
+    if (!mentions || !this.botOpenId) return text
+    let result = text
+    for (const m of mentions) {
+      if (m.id.open_id === this.botOpenId) {
+        result = result.replace(new RegExp(this.escapeRegExp(m.key), 'g'), '').trim()
+        if (this.botName) {
+          result = result.replace(new RegExp(`@${this.escapeRegExp(this.botName)}`, 'g'), '').trim()
+        }
+      }
+    }
+    return result
+  }
+
+  private escapeRegExp(string: string): string {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  protected decorateMessage(text: string): string {
+    return text
+  }
+}
+
+/**
+ * 飞书卡片 JSON 构建器
+ */
+class FeishuCardBuilder {
+  /**
+   * 构建基础文本内容卡片 (支持 Markdown)
+   */
+  static buildTextContent(text: string): string {
+    return JSON.stringify({
+      config: { wide_screen_mode: true, update_multi: true },
+      elements: [{ tag: 'markdown', content: text || ' ' }]
+    })
+  }
+
+  /**
+   * 构建交互选择卡片
+   */
+  static buildInteractionCard(opts: {
+    title: string
+    prompt: string
+    options: string[]
+    interactionId?: string
+    preText?: string
+  }): string {
+    const elements: any[] = []
+
+    // 如果有之前的文本内容，先作为背景展示
+    if (opts.preText && opts.preText.trim()) {
+      elements.push({ tag: 'markdown', content: opts.preText })
+      // 增加一个分割线，区分正文和交互区
+      elements.push({ tag: 'hr' })
+    }
+
+    elements.push({ tag: 'markdown', content: opts.prompt })
+    elements.push({
+      tag: 'action',
+      actions: opts.options.map((opt, idx) => ({
+        tag: 'button',
+        text: { tag: 'plain_text', content: opt },
+        type: idx === 0 ? 'primary' : 'default',
+        value: { action: 'interaction', id: opts.interactionId, result: idx.toString() }
+      }))
+    })
+
+    return JSON.stringify({
+      config: { wide_screen_mode: true, update_multi: true },
+      header: {
+        title: { tag: 'plain_text', content: opts.title },
+        template: 'blue'
+      },
+      elements
+    })
+  }
+
+  /**
+   * 构建交互结果展示卡片
+   */
+  static buildInteractionResultCard(opts: {
+    title: string
+    prompt: string
+    isSuccess: boolean
+  }): string {
+    return JSON.stringify({
+      config: { wide_screen_mode: true, update_multi: true },
+      header: {
+        title: { tag: 'plain_text', content: opts.title },
+        template: 'blue'
+      },
+      elements: [
+        {
+          tag: 'markdown',
+          content: opts.prompt
+        }
+      ]
+    })
   }
 }

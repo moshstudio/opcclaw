@@ -112,8 +112,13 @@ app.whenReady().then(async () => {
 
   // --- 监听配置变更 (Side Effects) ---
   configService.on('config-saved', () => {
-    // 如果语言变更，更新托盘菜单并广播 (handleConfigSave 已经处理了业务逻辑)
+    // 1. 更新系统托盘 (语言/状态)
     updateTrayMenu()
+    // 2. 广播通知前端配置已更新 (确保 UI 实时同步，如记住的选择)
+    GatewayManager.getInstance().dispatch({
+      type: 'config:saved',
+      path: configService.getRootPath()
+    })
   })
 
   // IPC test

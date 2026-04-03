@@ -108,10 +108,10 @@ export const FileSection: React.FC<SettingsSectionProps & { agentId: string }> =
             <h3 className="text-sm font-black uppercase tracking-wider text-foreground/80">
               {t('common.bootstrap_files')}
             </h3>
-            <p className="text-[10px] text-muted-foreground/60 leading-relaxed max-w-[400px]">
+            <p className="text-xs text-muted-foreground/60 leading-relaxed max-w-[400px]">
               {t('common.bootstrap_desc')}
             </p>
-            <p className="text-[10px] text-muted-foreground/30 font-mono mt-1 truncate group-hover:text-muted-foreground/60 transition-colors">
+            <p className="text-xs text-muted-foreground/30 font-mono mt-1 [text-wrap:auto] break-all group-hover:text-muted-foreground/60 transition-colors">
               {t('common.workspace')}: {formData.workspaceDir}
             </p>
           </div>
@@ -163,7 +163,7 @@ export const FileSection: React.FC<SettingsSectionProps & { agentId: string }> =
                       <div className="flex items-center justify-between w-full gap-4">
                         <span className="truncate">{file.name}</span>
                         {file.missing && (
-                          <span className="text-[9px] font-bold uppercase text-destructive/80 bg-destructive/10 px-1 py-0.5 rounded border border-destructive/20 ml-2">
+                          <span className="text-[0.65rem] font-bold uppercase text-destructive/80 bg-destructive/10 px-1 py-0.5 rounded border border-destructive/20 ml-2">
                             {t('common.missing')}
                           </span>
                         )}
@@ -205,7 +205,7 @@ export const FileSection: React.FC<SettingsSectionProps & { agentId: string }> =
           {/* 内容编辑区 */}
           <div className="relative flex-1 flex flex-col">
             <div className="absolute top-2 left-4 z-10 pointer-events-none opacity-20">
-              <span className="text-[10px] font-bold  text-muted-foreground uppercase tracking-[0.2em]">
+              <span className="text-xs font-bold  text-muted-foreground uppercase tracking-[0.2em]">
                 {t('common.edit_content')}
               </span>
             </div>
@@ -226,7 +226,7 @@ export const FileSection: React.FC<SettingsSectionProps & { agentId: string }> =
         {loading && !files.length && (
           <div className="py-12 flex flex-col items-center gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary/40" />
-            <span className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest animate-pulse">
+            <span className="text-[0.65rem] font-bold text-muted-foreground/40 uppercase tracking-widest animate-pulse">
               {t('common.loading')}
             </span>
           </div>

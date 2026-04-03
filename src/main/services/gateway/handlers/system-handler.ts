@@ -304,12 +304,6 @@ export const handleConfigSave: Handler = async (params, _client, ctx) => {
     ChannelManager.getInstance().onLanguageChanged(newConfig.language as string)
   }
 
-  // 5. 广播通知所有 UI 副本同步
-  ctx.broadcaster.dispatch({
-    type: 'config:saved',
-    path: configService.getRootPath()
-  })
-
   return { ok: true }
 }
 
@@ -322,6 +316,26 @@ export const handleChannelTelegramTest: Handler = async (params) => {
 
   const { token, useProxy } = check.values
   const result = await ChannelManager.getInstance().validateTelegramBot(token, useProxy)
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: errorShape(ErrorCodes.UNAVAILABLE, result.error || 'Validation failed')
+    }
+  }
+
+  return { ok: true, payload: result }
+}
+
+/**
+ * channel:feishu:test
+ */
+export const handleChannelFeishuTest: Handler = async (params) => {
+  const check = ensureParams(params, { appId: 'string', appSecret: 'string' })
+  if (!check.ok) return check
+
+  const { appId, appSecret } = check.values
+  const result = await ChannelManager.getInstance().validateFeishuBot(appId, appSecret)
 
   if (!result.ok) {
     return {

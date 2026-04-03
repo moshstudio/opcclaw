@@ -24,6 +24,7 @@ import { applyAgentEvent } from './agent-handler'
 export interface MinimalChatStore extends SessionStorePatch {
   // 会话领域
   interactionMap?: Record<string, unknown>
+  sessionKeys: Record<string, string> // 必须包含这个才能在 reducer 中更新它
   // 活跃智能体
   agents: Agent[]
   activeAgentId?: string | null

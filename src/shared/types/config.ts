@@ -97,3 +97,20 @@ export interface TelegramValidationResult {
   info?: TelegramBotInfo
   error?: string
 }
+
+/**
+ * 飞书 机器人信息 (验证结果)
+ */
+export interface FeishuBotInfo {
+  openId: string
+  botName: string
+}
+
+/**
+ * 飞书 验证响应
+ */
+export interface FeishuValidationResult {
+  ok: boolean
+  info?: FeishuBotInfo
+  error?: string
+}

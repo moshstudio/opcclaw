@@ -1,19 +1,21 @@
 import { Bot } from 'grammy'
+import * as Lark from '@larksuiteoapi/node-sdk'
 import { Logger } from '@main/services/common/logger'
 import { ConfigService } from '../config/config-service'
 import { TelegramChannel } from './telegram/index'
 import { FeishuChannel } from './feishu'
 import { ProxyUtils } from '@main/services/common/proxy'
-import { GatewayManager } from '../gateway/manager'
 import type {
   TelegramValidationResult,
   TelegramBotInfo,
+  FeishuValidationResult,
+  FeishuBotInfo,
   TelegramChannelConfig,
   FeishuChannelConfig,
   AppConfig
 } from '@shared/types/config'
 
-export { TelegramValidationResult, TelegramBotInfo }
+export { TelegramValidationResult, TelegramBotInfo, FeishuValidationResult, FeishuBotInfo }
 
 export class ChannelManager {
   private static instance: ChannelManager
@@ -275,12 +277,6 @@ export class ChannelManager {
       }
     })
     this.logger.info(`Updated bindings for ${type}:${key.slice(0, 8)}... (Persisted)`)
-
-    // 通知所有网关客户端配置已保存 (触发 UI 刷新)
-    GatewayManager.getInstance().dispatch({
-      type: 'config:saved',
-      path: configService.getRootPath()
-    })
   }
 
   async validateTelegramBot(token: string, useProxy?: boolean): Promise<TelegramValidationResult> {
@@ -313,6 +309,30 @@ export class ChannelManager {
         ok: false,
         error: errorMsg
       }
+    }
+  }
+
+  async validateFeishuBot(appId: string, appSecret: string): Promise<FeishuValidationResult> {
+    if (!appId || !appSecret) throw new Error('AppId and AppSecret are required')
+    this.logger.info(`Validating Feishu App: ${appId}...`)
+
+    try {
+      const client = new Lark.Client({ appId, appSecret })
+      const res = await (client as any).request({
+        method: 'GET',
+        url: '/open-apis/bot/v3/info'
+      })
+      if (res.code === 0) {
+        const bot = res.bot || res.data?.bot
+        return {
+          ok: true,
+          info: { openId: bot?.open_id, botName: bot?.bot_name }
+        }
+      }
+      return { ok: false, error: res.msg || `Code ${res.code}` }
+    } catch (err: any) {
+      this.logger.error(`Feishu validation failed for ${appId}:`, err.message)
+      return { ok: false, error: err.message || String(err) }
     }
   }
 }

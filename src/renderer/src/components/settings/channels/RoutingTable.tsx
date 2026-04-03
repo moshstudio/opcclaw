@@ -78,7 +78,7 @@ export const RoutingTable: React.FC<RoutingTableProps> = ({ bindings, agents, on
                 {t('settings.channels_routing_placeholder_chatid')}
               </label>
               <Input
-                placeholder="-100..."
+                placeholder={t('settings.channels_routing_id_placeholder')}
                 value={newKey}
                 onChange={(e) => setNewKey(e.target.value)}
                 className="h-8 text-[11px] font-mono bg-muted/10 border-border/40 rounded-lg hover:border-border transition-all"

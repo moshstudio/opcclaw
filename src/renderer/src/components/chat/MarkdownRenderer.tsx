@@ -32,7 +32,7 @@ const MarkdownRenderer = memo(({ content, className }: MarkdownRendererProps) =>
   return (
     <div
       className={cn(
-        'markdown-content w-full min-w-0 overflow-hidden leading-relaxed text-[15px]',
+        'markdown-content w-full min-w-0 overflow-hidden leading-relaxed text-[1.07rem]',
         'text-foreground dark:text-zinc-100',
         className
       )}

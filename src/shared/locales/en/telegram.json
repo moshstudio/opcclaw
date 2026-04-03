@@ -3,5 +3,22 @@
   "help_extra": "- /start : Show welcome message and base settings",
   "interaction_completed": "Interaction completed",
   "confirm_interaction": "Please confirm",
-  "error": "Error: {{error}}"
+  "error": "Error: {{error}}",
+  "guide_title": "Telegram Configuration Guide",
+  "guide_subtitle": "Follow these steps to set up your Telegram bot:",
+  "guide_step_0_title": "Get Bot Token",
+  "guide_step_0_p1": "1. Search for <b>@BotFather</b> on Telegram.",
+  "guide_step_0_p2": "2. Send <b>/newbot</b> and follow instructions to set name/username.",
+  "guide_step_0_p3": "3. Copy the <b>HTTP API Token</b> and paste it in the field below.",
+  "guide_step_0_proxy": "* If connection times out, try enabling 'Global Proxy'.",
+  "guide_step_1_title": "Private Chat",
+  "guide_step_1_desc": "Search for your bot username and click <b>Start</b> to begin chatting.",
+  "guide_step_2_title": "Channel",
+  "guide_step_2_desc": "Bot must be added as an <b>Administrator</b> in the channel to receive messages.",
+  "guide_step_2_tip": "💡 Tip: Trigger dialogue via <b>@BotUsername</b> or <b>Replying</b> to a message.",
+  "guide_step_3_title": "Group Chat",
+  "guide_step_3_p1": "Add bot to group. It's recommended to configure in <b>@BotFather</b>:",
+  "guide_step_3_p2": "Bot Settings > Group Privacy > <b>Turn Off</b>",
+  "guide_step_3_p3": "Disabling Privacy Mode helps the bot understand group context better.",
+  "guide_done_btn": "Got it, I'm all set"
 }

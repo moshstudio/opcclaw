@@ -9,7 +9,7 @@ import { Message } from '../../gateway/protocol'
 export interface SessionKeyInfo {
   agentId: string
   chatId: string
-  threadId?: number
+  threadId?: string | number
 }
 
 /**
@@ -20,7 +20,7 @@ export function getSessionKey(
   channelId: string,
   agentBindings?: Map<string, string>,
   defaultAgentId: string = 'main',
-  threadId?: number
+  threadId?: string | number
 ): string {
   const bindKey = threadId ? `${chatId}_${threadId}` : `${chatId}`
   const agentId = agentBindings?.get(bindKey) || defaultAgentId
@@ -40,7 +40,7 @@ export function parseSessionKey(key: string, channelId: string): SessionKeyInfo 
   return {
     agentId: parts[0],
     chatId: parts[2],
-    threadId: parts[3] ? parseInt(parts[3], 10) : undefined
+    threadId: parts[3] || undefined
   }
 }
 

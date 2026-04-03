@@ -38,7 +38,7 @@ const ThinkingBlockRenderer: React.FC<{
     >
       <MarkdownRenderer
         content={block.thinking}
-        className="text-muted-foreground/70 dark:text-zinc-400 text-[14px] leading-6"
+        className="text-muted-foreground/70 dark:text-zinc-400 text-base leading-6"
       />
     </Think>
   )
@@ -72,7 +72,7 @@ const SubagentBlockRenderer: React.FC<{
             <div className="p-3 bg-muted/30 rounded-md">
               <MarkdownRenderer
                 content={block.summary}
-                className="text-muted-foreground/70 dark:text-zinc-400 text-[13px] leading-5"
+                className="text-muted-foreground/70 dark:text-zinc-400 text-sm leading-5"
               />
             </div>
           ) : null,

@@ -48,7 +48,8 @@ export interface RequestMethodMap {
   'models:setDefault': { params: { modelId: string }; result: void }
   'models:test': { params: { modelId: string }; result: void }
   'models:providers': { params: void; result: string[] }
-  'channel:telegram:test': { params: void; result: void }
+  'channel:telegram:test': { params: { token: string; useProxy?: boolean }; result: any }
+  'channel:feishu:test': { params: { appId: string; appSecret: string }; result: any }
   'heartbeat:list': { params: void; result: unknown }
   'heartbeat:update': { params: { agentId: string; config: unknown }; result: void }
   'heartbeat:trigger': { params: { agentId: string }; result: void }

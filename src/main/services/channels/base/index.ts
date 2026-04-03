@@ -368,8 +368,8 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
       isUpdating: false,
       isFinal: false
     }
-    this.activeRuns.set(p.runId!, run)
-    this.scheduleUpdate(run).catch((err) => this.logger.error(`[Base] Run loop crash:`, err))
+    this.activeRuns.set(p.runId!, run!)
+    this.scheduleUpdate(run!).catch((err) => this.logger.error(`[Base] Run loop crash:`, err))
   }
 
   protected async handleChatFinal(
@@ -456,7 +456,9 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
   protected abstract sendPlatformInteraction(
     chatId: string | number,
     p: ChatPayloadFlat,
-    lang?: string
+    lang?: string,
+    threadId?: string | number,
+    messageId?: string | number
   ): Promise<string | number | undefined>
   protected abstract updatePlatformInteraction(
     chatId: string | number,
@@ -484,25 +486,26 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     let detail = ''
     if (content !== undefined && content !== null) {
       try {
-        // 使用单行 JSON 字符串
-        detail = JSON.stringify(content)
+        // 统一处理为单行展示，避免 JSON 换行或内容换行撑开行高
+        detail = typeof content === 'string' ? content.replace(/\n/g, ' ') : JSON.stringify(content)
       } catch {
         detail = String(content)
       }
     }
 
-    // 截断阈值提升到 500 (因为用户希望支持横向滚动，允许在单行内显示更多内容)
-    if (detail.length > 500) {
-      detail = detail.slice(0, 500) + '...'
+    // 截断阈值
+    const maxLen = 100
+    if (detail.length > maxLen) {
+      detail = detail.slice(0, maxLen) + '...'
     }
 
     if (type === 'call') {
-      // 在引用块内开启行内代码块，不闭合以待结果
-      return `\n> \`🔧 ${toolName}(${detail})`
+      // 采用【图标 工具名 + 换行 + 块状代码】格式
+      return `\n**🔧 ${toolName}**:\n\`\`\`\n${detail}\n\`\`\`\n`
     } else {
+      // 结果阶段：采用【图标 Result + 换行 + 块状代码】格式
       const icon = isError ? '❌' : '✅'
-      // 追加结果并闭合行内代码块
-      return ` ${icon} ${detail}\` \n`
+      return `\n${icon} **Result**:\n\`\`\`\n${detail}\n\`\`\`\n`
     }
   }
 
@@ -522,7 +525,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     }
   }
 
-  protected getInternalSessionKey(chatId: number | string, threadId?: number): string {
+  protected getInternalSessionKey(chatId: number | string, threadId?: string | number): string {
     return getSessionKey(
       chatId,
       this.channelId,
@@ -544,42 +547,54 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
   }
 
   /**
-   * 增强型 Markdown -> HTML 转换器 (可选返回 Markdown 或 HTML)
-   * 针对即时通讯平台 API 的常见限制进行优化，并支持流式传输时的自动标签补全
+   * 增强型文本格式转换器 (Markdown -> HTML / Markdown)
+   * 针对即时通讯平台 (Telegram, Feishu 等) 的 HTML 模式进行深度优化
    */
   protected mdToFormat(text: string, format: 'markdown' | 'html' = 'html'): string {
-    if (!text || format === 'markdown') return text || ''
+    if (!text) return ''
 
-    let html = text
+    // 飞书等 IM 平台对换行符 \r\n 比较敏感，统一转为 \n
+    let processed = text.replace(/\r\n/g, '\n')
 
-    // 1. 转义 HTML 基础字符 (注意顺序：& 必须最先转义)
+    if (format === 'markdown') return processed
+
+    let html = processed
+
+    // 1. 基础转义与预处理 (注意顺序: & 必须首先转义)
     html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-    // 2. 转换核心 Markdown 语法为平台支持的 HTML 标签
-    // 转换代码块 (```) - 过滤语言标签
-    html = html.replace(/```(?:\w+)?\s*([\s\S]*?)```/g, '<pre>$1</pre>')
-    // 转换行内代码 (`)
-    html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>')
-    // 转换加粗 (**)
-    html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-    // 转换下划线 (__)
-    html = html.replace(/__([^_]+)__/g, '<u>$1</u>')
-    // 转换斜体 (*)
-    html = html.replace(/\*([^*]+)\*/g, '<i>$1</i>')
-    // 转换标题 (#) 为粗体
-    html = html.replace(/^(#{1,6})\s+(.+)$/gm, '<b>$2</b>')
-    // 处理引用块 (>) - 匹配转义后的 &gt;
+    // 2. 块级元素转换
+    // 多行代码块 (```): 转换为 <pre>
+    html = html.replace(/```(?:\w+)?\n?([\s\S]+?)```/g, '<pre>$1</pre>')
+
+    // 标题 (#): 统一转为加粗
+    html = html.replace(/^(?:#{1,6})\s+(.+)$/gm, '<b>$1</b>')
+
+    // 引用 (>): blockquote
     html = html.replace(/^&gt;\s*(.+)$/gm, '<blockquote>$1</blockquote>')
-    // 处理链接 [text](url)
+
+    // 3. 行内元素转换
+    // 行内代码 (`): 转换为 <code>
+    html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>')
+
+    // 处理跨行的行内代码 (如果存在)
+    html = html.replace(/`([\s\S]+?)`/g, '<code>$1</code>')
+
+    // 粗体 (**): 转换为 <b>
+    html = html.replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>')
+
+    // 4. 其他基础转换 (链接等)
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
 
-    // 3. 核心优化：自动闭合未匹配标签 (针对流式传输断点)
-    const tags = ['b', 'i', 'u', 'code', 'pre', 'a', 'blockquote']
-    for (const tag of tags) {
-      const openCount = (html.match(new RegExp(`<${tag}[^>]*>`, 'g')) || []).length
-      const closeCount = (html.match(new RegExp(`</${tag}>`, 'g')) || []).length
+    // 5. 自动补全标签 (针对流式传输断点处的安全策略)
+    const tagsToProtect = ['b', 'i', 'code', 'pre', 'a', 'blockquote']
+    for (const tag of tagsToProtect) {
+      const openTag = `<${tag}>`
+      const closeTag = `</${tag}>`
+      const openCount = (html.match(new RegExp(openTag, 'g')) || []).length
+      const closeCount = (html.match(new RegExp(closeTag, 'g')) || []).length
       if (openCount > closeCount) {
-        html += `</${tag}>`.repeat(openCount - closeCount)
+        html += closeTag.repeat(openCount - closeCount)
       }
     }
 
@@ -604,7 +619,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     command: string,
     args: string[],
     lang?: string,
-    threadId?: number
+    threadId?: string | number
   ): Promise<boolean> {
     const result = await (async () => {
       switch (command.toLowerCase()) {
@@ -638,7 +653,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
   protected async tryProcessCommand(
     text: string,
     chatId: string | number,
-    opt: { lang?: string; threadId?: number } = {}
+    opt: { lang?: string; threadId?: string | number } = {}
   ): Promise<boolean> {
     if (!text.startsWith('/')) return false
     const parts = text.slice(1).split(/\s+/)
@@ -683,7 +698,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
 
   private async handleCmdId(
     chatId: string | number,
-    threadId?: number,
+    threadId?: string | number,
     lang?: string
   ): Promise<void> {
     const t = getTranslate(lang)
@@ -742,7 +757,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     chatId: string | number,
     agentId?: string,
     lang?: string,
-    threadId?: number
+    threadId?: string | number
   ): Promise<void> {
     const t = getTranslate(lang)
     if (!agentId)
@@ -771,7 +786,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
   private async handleCmdReset(
     chatId: string | number,
     lang?: string,
-    threadId?: number
+    threadId?: string | number
   ): Promise<void> {
     const t = getTranslate(lang)
     const sessionKey = this.getInternalSessionKey(chatId, threadId)
