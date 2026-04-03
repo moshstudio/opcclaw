@@ -25,20 +25,32 @@ export const initGatewaySync = () => {
   const client = getGatewayClient()
 
   // --- 1. 系统与连接事件分发 (Connection Logic) ---
-  const syncInitialData = () => {
+  const syncInitialData = async () => {
+    useSystemStore.getState().setInitializing(true) // 开启全局初始化加载状态 (LoadingScreen)
     useSystemStore.getState().handleConnect()
 
-    // 连接成功（含重连成功）后，触发各领域的基础数据加载与同步
-    useAgentStore.getState().fetchAgents()
-    useHeartbeatStore.getState().fetchHeartbeatTasks()
-    useModelStore.getState().fetchModels()
-    useConfigStore.getState().fetchConfig()
+    try {
+      // 1. 优先加载并校准智能体列表
+      await useAgentStore.getState().fetchAgents()
 
-    // 如果有活跃 Agent，刷新其会话数据
-    const activeAgentId = useAgentStore.getState().activeAgentId
-    if (activeAgentId) {
-      useChatStore.getState().fetchSessions(activeAgentId)
-      useSkillStore.getState().fetchSkills(activeAgentId)
+      // 2. 触发其他领域的基础数据加载
+      await Promise.all([
+        useHeartbeatStore.getState().fetchHeartbeatTasks(),
+        useModelStore.getState().fetchModels({ silent: true }),
+        useConfigStore.getState().fetchConfig()
+      ])
+
+      // 3. 此时获取的 activeAgentId 已经是经过校准的
+      const activeAgentId = useAgentStore.getState().activeAgentId
+      if (activeAgentId) {
+        await Promise.all([
+          useChatStore.getState().fetchSessions(activeAgentId),
+          useSkillStore.getState().fetchSkills(activeAgentId)
+        ])
+      }
+    } finally {
+      // 无论成功还是部分失败，都关闭初始化遮罩，让用户可以操作 UI
+      useSystemStore.getState().setInitializing(false)
     }
   }
 

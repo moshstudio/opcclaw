@@ -15,7 +15,8 @@ export const handleChatSend: Handler = async (params, _client, ctx) => {
     sessionKey: string
     message: string
   }
-  const res = getAgentOrError(ctx, agentId)
+
+  const res = await getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
   const { agent } = res
@@ -36,7 +37,7 @@ export const handleChatAbort: Handler = async (params, _client, ctx) => {
   if (!check.ok) return check
 
   const { agentId, sessionKey } = check.values as { agentId: string; sessionKey: string }
-  const res = getAgentOrError(ctx, agentId)
+  const res = await getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
   const { agent } = res
@@ -55,7 +56,7 @@ export const handleChatHistory: Handler = async (params, _client, ctx) => {
   const p = params as Record<string, unknown>
   const limit = p.limit
   const offset = p.offset
-  const res = getAgentOrError(ctx, agentId)
+  const res = await getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
   const { agent } = res
@@ -84,7 +85,7 @@ export const handleChatRespondInteraction: Handler = async (params, _client, ctx
     result: InteractionResult
     remember?: boolean
   }
-  const res = getAgentOrError(ctx, agentId)
+  const res = await getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
   const { agent } = res

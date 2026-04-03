@@ -5,11 +5,11 @@ import { ensureParams, getAgentOrError } from './handler-utils'
  * sessions.create
  */
 export const handleSessionsCreate: Handler = async (params, _client, ctx) => {
-  const check = ensureParams(params, ['agentId'])
+  const check = ensureParams(params, { agentId: 'string' })
   if (!check.ok) return check
 
   const { agentId } = check.values
-  const res = getAgentOrError(ctx, agentId)
+  const res = await getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
   const { agent } = res
@@ -21,11 +21,11 @@ export const handleSessionsCreate: Handler = async (params, _client, ctx) => {
  * sessions.list
  */
 export const handleSessionsList: Handler = async (params, _client, ctx) => {
-  const check = ensureParams(params, ['agentId'])
+  const check = ensureParams(params, { agentId: 'string' })
   if (!check.ok) return check
 
   const { agentId } = check.values
-  const res = getAgentOrError(ctx, agentId)
+  const res = await getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
   const { agent } = res
@@ -37,11 +37,11 @@ export const handleSessionsList: Handler = async (params, _client, ctx) => {
  * sessions.reset
  */
 export const handleSessionsReset: Handler = async (params, _client, ctx) => {
-  const check = ensureParams(params, ['agentId', 'sessionKey'])
+  const check = ensureParams(params, { agentId: 'string', sessionKey: 'string' })
   if (!check.ok) return check
 
   const { agentId, sessionKey } = check.values
-  const res = getAgentOrError(ctx, agentId)
+  const res = await getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
   const { agent } = res
@@ -53,11 +53,11 @@ export const handleSessionsReset: Handler = async (params, _client, ctx) => {
  * sessions.delete
  */
 export const handleSessionsDelete: Handler = async (params, _client, ctx) => {
-  const check = ensureParams(params, ['agentId', 'sessionKey'])
+  const check = ensureParams(params, { agentId: 'string', sessionKey: 'string' })
   if (!check.ok) return check
 
   const { agentId, sessionKey } = check.values
-  const res = getAgentOrError(ctx, agentId)
+  const res = await getAgentOrError(ctx, agentId)
   if (!res.ok) return res
 
   const { agent } = res

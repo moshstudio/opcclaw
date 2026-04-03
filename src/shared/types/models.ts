@@ -19,6 +19,7 @@ export interface ModelProvider {
   defaultModel: string
   supportsVision?: boolean
   thinkingSignature?: string
+  apiKeyUrl?: string
 }
 
 export interface ModelTestResult {

@@ -15,15 +15,177 @@
       href="https://fonts.loli.net/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
     />
     <style>
+      * {
+        box-sizing: border-box;
+      }
+      :root {
+        --background: 0 0% 100%;
+        --foreground: 222.2 84% 4.9%;
+        --primary: 221.2 83.2% 53.3%;
+      }
+      html.dark {
+        --background: 0 0% 4%;
+        --foreground: 210 40% 98%;
+        --primary: 217.2 91.2% 59.8%;
+      }
       body {
         margin: 0;
         padding: 0;
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        overflow: hidden;
+      }
+      
+      /* Keep the loader outside root for persistence */
+      #initial-loader {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        background: hsl(var(--background));
+        opacity: 1;
+        transition: opacity 0.5s ease-out, visibility 0.5s;
+      }
+
+      /* Class to hide the loader when React is ready */
+      #initial-loader.ready {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      .glow-bl-1 {
+        position: absolute;
+        top: 25%;
+        left: 25%;
+        width: 400px;
+        height: 400px;
+        background: hsla(var(--primary) / 0.05);
+        filter: blur(120px);
+        border-radius: 50%;
+        pointer-events: none;
+      }
+
+      .loader-content {
+        position: relative;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 40px;
+      }
+
+      .win11-ring {
+        position: relative;
+        width: 50px;
+        height: 50px;
+      }
+
+      .win11-dot {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        transform: rotate(225deg);
+        animation: win11-rotate 5.5s infinite;
+      }
+
+      .win11-dot:after {
+        content: "";
+        position: absolute;
+        width: 4.5px;
+        height: 4.5px;
+        border-radius: 50%;
+        background: hsl(var(--primary));
+        box-shadow: 0 0 10px hsla(var(--primary) / 0.3);
+      }
+
+      .win11-dot:nth-child(1) { animation-delay: 1.1s; }
+      .win11-dot:nth-child(2) { animation-delay: 0.2s; }
+      .win11-dot:nth-child(3) { animation-delay: 0.4s; }
+      .win11-dot:nth-child(4) { animation-delay: 0.6s; }
+      .win11-dot:nth-child(5) { animation-delay: 0.8s; }
+      .win11-dot:nth-child(6) { animation-delay: 1.0s; }
+
+      @keyframes win11-rotate {
+        0% { transform: rotate(225deg); opacity: 1; animation-timing-function: ease-out; }
+        7% { transform: rotate(345deg); animation-timing-function: linear; }
+        30% { transform: rotate(455deg); animation-timing-function: ease-in-out; }
+        39% { transform: rotate(570deg); animation-timing-function: linear; }
+        70% { transform: rotate(815deg); opacity: 1; animation-timing-function: ease-out; }
+        75% { transform: rotate(945deg); animation-timing-function: ease-out; }
+        76% { transform: rotate(945deg); opacity: 0; }
+        100% { transform: rotate(945deg); opacity: 0; }
+      }
+
+      .loader-text {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        animation: fade-in 0.8s ease-out both;
+      }
+
+      .app-name {
+        font-size: 14px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.25em;
+        opacity: 0.8;
+      }
+
+      .preparing {
+        font-size: 11px;
+        font-weight: 400;
+        color: hsla(var(--foreground) / 0.4);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      @keyframes fade-in {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
       }
     </style>
+    <script>
+      (function() {
+        const theme = localStorage.getItem('theme') || 'dark';
+        if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
   </head>
 
   <body>
+    <!-- Initial Loader outside root to survive React mount -->
+    <div id="initial-loader">
+      <div class="glow-bl-1"></div>
+      <div class="loader-content">
+        <div class="win11-ring">
+          <div class="win11-dot"></div>
+          <div class="win11-dot"></div>
+          <div class="win11-dot"></div>
+          <div class="win11-dot"></div>
+          <div class="win11-dot"></div>
+          <div class="win11-dot"></div>
+        </div>
+        <div class="loader-text">
+          <div class="app-name">OPCCLAW</div>
+          <div class="preparing">Preparing Workspace</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- React Root -->
     <div id="root"></div>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -7,19 +7,9 @@ import { AgentConfig } from '@shared/types/agent'
  * agent.list
  */
 export const handleAgentList: Handler = async (_params, _client, ctx) => {
-  let agents = ctx.registry.listAgents()
-
-  // 1. 如果内存列表为空，先尝试从磁盘加载
-  if (agents.length === 0) {
-    await ctx.registry.loadAllAgents()
-    agents = ctx.registry.listAgents()
-  }
-
-  // 2. 如果加载后依然为空，说明是初次运行或已被清空，自动兜底创建默认智能体 (main)
-  if (agents.length === 0) {
-    await ctx.registry.createDefaultAgent('main')
-    agents = ctx.registry.listAgents()
-  }
+  // 确保至少有一个默认智能体存在（这会自动完成加载和兜底创建逻辑）
+  await ctx.registry.ensureAgent('main')
+  const agents = ctx.registry.listAgents()
 
   const payload = {
     agents: agents.map((a) => ({
@@ -58,7 +48,7 @@ export const handleAgentCreate: Handler = async (params, _client, ctx) => {
  * agent.update
  */
 export const handleAgentUpdate: Handler = async (params, _client, ctx) => {
-  const check = ensureParams(params, ['agentId'])
+  const check = ensureParams(params, { agentId: 'string' })
   if (!check.ok) return check
 
   const { agentId } = check.values
@@ -76,7 +66,7 @@ export const handleAgentUpdate: Handler = async (params, _client, ctx) => {
  * agent.delete
  */
 export const handleAgentDelete: Handler = async (params, _client, ctx) => {
-  const check = ensureParams(params, ['agentId'])
+  const check = ensureParams(params, { agentId: 'string' })
   if (!check.ok) return check
 
   const { agentId } = check.values

@@ -103,5 +103,6 @@
   "channels_qq_credentials_required": "Please configure App ID and Client Secret first",
   "channels_qq_validate_success": "Validation successful",
   "channels_qq_validate_failed": "Validation failed",
-  "channels_qq_validate": "Validate Config"
+  "channels_qq_validate": "Validate Config",
+  "no_models_configured": "No models configured. Please go to ⚙️Settings -> [Model Management] to add and enable at least one model."
 }

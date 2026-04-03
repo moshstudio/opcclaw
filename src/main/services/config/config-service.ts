@@ -25,7 +25,7 @@ const DEFAULT_CONFIG: AppConfig = {
     telegram: []
   },
   language: 'zh',
-  theme: 'dark',
+  theme: 'light',
   fontSize: 14,
   interactionTimeout: 300,
   agentDefaults: {
@@ -205,49 +205,56 @@ export class ConfigService extends EventEmitter {
         baseUrl: 'https://api.deepseek.com',
         defaultModel: 'deepseek-chat',
         supportsVision: false,
-        thinkingSignature: 'reasoning_content'
+        thinkingSignature: 'reasoning_content',
+        apiKeyUrl: 'https://platform.deepseek.com/api_keys'
       },
       {
         id: 'glm',
         name: 'Zhipu GLM (智谱)',
         baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
         defaultModel: 'GLM-5-Turbo',
-        supportsVision: false
+        supportsVision: false,
+        apiKeyUrl: 'https://open.bigmodel.cn/usercenter/apikeys'
       },
       {
         id: 'kimi',
         name: 'Moonshot Kimi (月之暗面)',
         baseUrl: 'https://api.moonshot.cn/v1',
         defaultModel: 'kimi-k2.5',
-        supportsVision: true
+        supportsVision: true,
+        apiKeyUrl: 'https://platform.moonshot.cn/console/api-keys'
       },
       {
         id: 'openai',
         name: 'OpenAI',
         baseUrl: 'https://api.openai.com/v1',
         defaultModel: 'gpt-5-mini',
-        supportsVision: false
+        supportsVision: false,
+        apiKeyUrl: 'https://platform.openai.com/api-keys'
       },
       {
         id: 'anthropic',
         name: 'Anthropic',
         baseUrl: 'https://api.anthropic.com/v1',
         defaultModel: 'claude-4-5-sonnet',
-        supportsVision: false
+        supportsVision: false,
+        apiKeyUrl: 'https://console.anthropic.com/settings/keys'
       },
       {
         id: 'google',
         name: 'Google Gemini',
         baseUrl: 'https://generativelanguage.googleapis.com',
         defaultModel: 'gemini-3.1-pro',
-        supportsVision: true
+        supportsVision: true,
+        apiKeyUrl: 'https://aistudio.google.com/app/apikey'
       },
       {
         id: 'groq',
         name: 'Groq',
         baseUrl: 'https://api.groq.com/openai/v1',
         defaultModel: 'llama3-70b-8192',
-        supportsVision: false
+        supportsVision: false,
+        apiKeyUrl: 'https://console.groq.com/keys'
       }
     ]
   }

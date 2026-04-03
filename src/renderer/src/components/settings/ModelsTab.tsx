@@ -1,5 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Edit2, Server, Eye, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import {
+  Plus,
+  Trash2,
+  Edit2,
+  Server,
+  Eye,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  ExternalLink
+} from 'lucide-react'
 import { Switch } from '@renderer/components/ui/switch'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
@@ -61,18 +71,19 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
   }, [testResult])
 
   const handleAdd = useCallback(() => {
+    const defaultProvider = providers[0]
     setEditingId('new')
     setEditForm({
-      name: t('models.add_model'),
-      provider: 'openai',
-      model: 'gpt-4o',
+      name: '',
+      provider: defaultProvider?.id || 'openai',
+      model: defaultProvider?.defaultModel || 'gpt-4o',
       apiKey: '',
-      baseUrl: '',
-      supportsVision: false
+      baseUrl: defaultProvider?.baseUrl || '',
+      supportsVision: !!defaultProvider?.supportsVision
     })
     setTestResult(null)
     setTesting(false)
-  }, [t])
+  }, [providers])
 
   const handleSave = async () => {
     if (!editingId) return
@@ -95,11 +106,21 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
       if (result.ok) {
         const isNew = editingId === 'new'
 
+        // 处理名称逻辑：如果为空则使用模型名，并确保唯一
+        let finalName = (editForm.name || editForm.model || 'Model').trim()
+        const baseName = finalName
+        let counter = 1
+        while (models.some((m) => m.name === finalName && m.id !== editingId)) {
+          finalName = `${baseName} (${counter++})`
+        }
+
+        const finalForm = { ...editForm, name: finalName } as AIModelConfig
+
         let success = false
         if (isNew) {
-          success = await addModel(editForm as Omit<AIModelConfig, 'id'>)
+          success = await addModel(finalForm)
         } else {
-          success = await updateModel(editingId, editForm)
+          success = await updateModel(editingId, finalForm)
         }
 
         if (success) {
@@ -284,7 +305,7 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
                 {t('models.name')}
               </label>
               <Input
-                placeholder="e.g. My ChatGPT"
+                placeholder={t('models.name_placeholder')}
                 value={editForm.name || ''}
                 onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
               />
@@ -296,7 +317,7 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
                   {t('models.provider')}
                 </label>
                 <Select
-                  value={editForm.provider || 'openai'}
+                  value={editForm.provider || providers[0]?.id || 'openai'}
                   onValueChange={(val) => {
                     const defaults = providers.find((p) => p.id === val)
                     setEditForm({
@@ -337,9 +358,28 @@ const ModelsTab: React.FC<{ autoAction?: string | null }> = ({ autoAction }) => 
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold text-muted-foreground ml-1">
-                {t('models.api_key')}
-              </label>
+              <div className="flex items-center justify-between ml-1">
+                <label className="text-xs font-bold text-muted-foreground">
+                  {t('models.api_key')}
+                </label>
+                {(() => {
+                  const provider = providers.find((p) => p.id === editForm.provider)
+                  return (
+                    provider?.apiKeyUrl && (
+                      <a
+                        href={provider.apiKeyUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] flex items-center gap-1 text-primary hover:underline font-bold"
+                      >
+                        <span>{t('models.api_key_guide')}</span>
+                        <span>{t('models.click_to_create')}</span>
+                        <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    )
+                  )
+                })()}
+              </div>
               <Input
                 type="password"
                 placeholder="sk-..."

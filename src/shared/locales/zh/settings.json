@@ -107,5 +107,6 @@
   "channels_qq_credentials_required": "请先配置 App ID 和 Client Secret",
   "channels_qq_validate_success": "验证成功",
   "channels_qq_validate_failed": "验证失败",
-  "channels_qq_validate": "验证配置"
+  "channels_qq_validate": "验证配置",
+  "no_models_configured": "未配置任何模型，请先前往 ⚙️设置 -> [模型管理] 添加并启用至少一个模型。"
 }

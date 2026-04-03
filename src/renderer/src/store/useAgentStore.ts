@@ -6,10 +6,9 @@ import { AgentEventPayload } from '@shared/types/gateway'
 interface AgentState {
   agents: Agent[]
   activeAgentId: string | null
-  isLoading: boolean
 
   // Actions
-  fetchAgents: (options?: { silent?: boolean }) => Promise<void>
+  fetchAgents: () => Promise<void>
   createAgent: (config: AgentConfig) => Promise<void>
   updateAgent: (id: string, config: Partial<AgentConfig>) => Promise<void>
   deleteAgent: (id: string) => Promise<void>
@@ -22,12 +21,8 @@ const ACTIVE_AGENT_STORAGE_KEY = 'opcclaw_active_agent_id'
 export const useAgentStore = create<AgentState>((set, get) => ({
   agents: [],
   activeAgentId: localStorage.getItem(ACTIVE_AGENT_STORAGE_KEY),
-  isLoading: true,
 
-  fetchAgents: async (options = {}) => {
-    if (!options.silent) {
-      set({ isLoading: true })
-    }
+  fetchAgents: async () => {
     try {
       const { agents } = await getGatewayClient().request<{ agents: Agent[] }>('agent:list', {})
       let nextActiveId = get().activeAgentId
@@ -41,7 +36,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         }
       }
 
-      set({ agents, activeAgentId: nextActiveId, isLoading: false })
+      set({ agents, activeAgentId: nextActiveId })
 
       if (nextActiveId) {
         localStorage.setItem(ACTIVE_AGENT_STORAGE_KEY, nextActiveId)
@@ -50,7 +45,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
     } catch (err) {
       console.error('[AgentStore] Failed to fetch agents:', err)
-      set({ isLoading: false })
     }
   },
 
@@ -105,7 +99,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       type === 'agent:deleted' ||
       type === 'agent:list'
     ) {
-      get().fetchAgents({ silent: true })
+      get().fetchAgents()
     }
   }
 }))

@@ -5,7 +5,13 @@ import { ConfigService } from '../config/config-service'
 import { MiniAgentEvent } from './agent-events'
 import { Logger } from '@main/services/common/logger'
 import { newShortId } from '@shared/utils/id'
-import { DEFAULT_MAX_CONCURRENT_RUNS } from '@shared/types/agent'
+import {
+  DEFAULT_MAX_CONCURRENT_RUNS,
+  DEFAULT_CONTEXT_TOKENS,
+  MIN_CONTEXT_TOKENS,
+  DEFAULT_TEMPERATURE,
+  DEFAULT_MAX_TURNS
+} from '@shared/types/agent'
 
 export interface RegisteredAgent {
   id: string
@@ -166,19 +172,19 @@ export class AgentRegistry {
       workspaceDir: agentJson.workspaceDir || path.join(agentDir, 'workspace'),
       usageDir: agentJson.usageDir || path.join(agentDir, 'usage'),
       heartbeatDir: agentJson.heartbeatDir || path.join(agentDir, 'heartbeat'),
-      // 功能开关
-      enableMemory: agentJson.enableMemory,
-      enableSkills: agentJson.enableSkills,
-      enableContext: agentJson.enableContext,
+      // 功能开关 (默认开启)
+      enableMemory: agentJson.enableMemory ?? true,
+      enableSkills: agentJson.enableSkills ?? true,
+      enableContext: agentJson.enableContext ?? true,
       enableHeartbeat: agentJson.enableHeartbeat,
       heartbeatInterval: agentJson.heartbeatInterval,
       heartbeatActiveHours: agentJson.heartbeatActiveHours,
       heartbeatStartTime: agentJson.heartbeatStartTime,
       // 参数设置
-      temperature: agentJson.temperature,
+      temperature: agentJson.temperature ?? DEFAULT_TEMPERATURE,
       reasoning: agentJson.reasoning,
-      maxTurns: agentJson.maxTurns,
-      contextTokens: agentJson.contextTokens,
+      maxTurns: agentJson.maxTurns ?? DEFAULT_MAX_TURNS,
+      contextTokens: Math.max(MIN_CONTEXT_TOKENS, agentJson.contextTokens || DEFAULT_CONTEXT_TOKENS),
       maxTokens: agentJson.maxTokens,
       maxConcurrentRuns: DEFAULT_MAX_CONCURRENT_RUNS,
       supportsVision: agentJson.supportsVision, // 保持原始意图
@@ -227,7 +233,13 @@ export class AgentRegistry {
         fs.mkdirSync(path.join(agentDir, 'heartbeat'), { recursive: true })
         fs.writeFileSync(path.join(agentDir, 'agent.md'), '# 身份\n\n你是一个乐于助人的 AI 助手。')
         this.saveAgentJson(agentId, {
-          name: '默认智能体'
+          name: '默认智能体',
+          contextTokens: DEFAULT_CONTEXT_TOKENS,
+          temperature: DEFAULT_TEMPERATURE,
+          maxTurns: DEFAULT_MAX_TURNS,
+          enableMemory: true,
+          enableSkills: true,
+          enableContext: true
         })
       }
 
@@ -255,6 +267,27 @@ export class AgentRegistry {
     return this.agents.get(agentId)?.instance
   }
 
+  /**
+   * 确保智能体实例存在（异步获取，支持自动加载和 main 智能体静默创建）
+   */
+  public async ensureAgent(agentId: string): Promise<Agent | undefined> {
+    let agent = this.getAgent(agentId)
+    if (agent) return agent
+
+    // 1. 如果没找到，先尝试从磁盘全量重载一次
+    await this.loadAllAgents()
+    agent = this.getAgent(agentId)
+    if (agent) return agent
+
+    // 2. 还没找到？如果是默认的 main 智能体，则自动创建并再次获取
+    if (agentId === 'main') {
+      await this.createDefaultAgent('main')
+      return this.getAgent('main')
+    }
+
+    return undefined
+  }
+
   public async createAgent(config: AgentConfig & { id?: string }): Promise<string> {
     const agentId = config.id || `agent-${newShortId(8)}`
     const configService = ConfigService.getInstance()
@@ -272,7 +305,14 @@ export class AgentRegistry {
 
     const { systemPrompt, ...agentJson } = config
 
-    // 保存配置
+    // 保存配置 (补充定义缺省值)
+    if (agentJson.contextTokens === undefined) agentJson.contextTokens = DEFAULT_CONTEXT_TOKENS
+    if (agentJson.temperature === undefined) agentJson.temperature = DEFAULT_TEMPERATURE
+    if (agentJson.maxTurns === undefined) agentJson.maxTurns = DEFAULT_MAX_TURNS
+    if (agentJson.enableMemory === undefined) agentJson.enableMemory = true
+    if (agentJson.enableSkills === undefined) agentJson.enableSkills = true
+    if (agentJson.enableContext === undefined) agentJson.enableContext = true
+
     this.saveAgentJson(agentId, agentJson)
 
     // 保存系统提示词

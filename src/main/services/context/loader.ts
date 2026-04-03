@@ -52,27 +52,26 @@ export class ContextLoader {
     const isSubagent = params?.sessionKey && isSubagentSessionKey(params.sessionKey)
     const lines: string[] = ['', '## 工作区内核文件 (Agent Core Files)']
 
+    // 极致精简版提示词
+    lines.push('## 系统内核 (Agent Core)')
+    lines.push('**原则**：行为/规则/偏好修改文件；事实/知识存入 Memory。内容极简。')
+
     if (isSubagent) {
-      lines.push(
-        '工作区协作准则，你可以修改文件以同步能力：',
-        '- **AGENTS.md**: 全局规范、协作准则与任务标准。',
-        '- **TOOLS.md**: 工具、API 使用详细指导。',
-        '',
-        '**原则**：内容极简；通用规范或技巧请及时记录至上述文件。'
-      )
+      lines.push('- **AGENTS.md**: 规范/标准。', '- **TOOLS.md**: 工具/API 指南。')
     } else {
       lines.push(
-        '内核文件（支持实时修改以“自我进化”）：',
-        '- **IDENTITY / SOUL.md**: 身份姓名、性格特质与行为准则。',
-        '- **USER.md**: 用户偏好、习惯与历史认知。',
-        '- **AGENTS.md**: 全局规范与子代理继承标准。',
-        '- **TOOLS.md**: 外部工具与 API 指南。',
-        '- **HEARTBEAT.md**: 待办清单与任务跟踪。',
-        '- **BOOTSTRAP.md**: 初始化指令与静态知识。',
-        '',
-        '**原则**：内容极简。变更身份/偏好/任务/工具时须同步更新文件；通用规则务必存入 `AGENTS.md`。'
+        '- **IDENTITY/SOUL.md**: 身份/性格。例：“叫我[姓名]” -> 修改此文件。',
+        '- **USER.md**: 用户画像/偏好。',
+        '- **AGENTS.md**: 全局规范。',
+        '- **TOOLS.md**: 工具/API 最佳实践。',
+        '- **HEARTBEAT.md**: 动态定时任务。'
       )
     }
+
+    lines.push(
+      '',
+      '**原则**：内容极简。身份/行为/任务/工具变更须同步更新文件；事实知识/新闻务必存入 Memory。'
+    )
 
     lines.push('', '注：[MISSING] 表示文件未创建，可根据需要直接调用工具创建并开始记录。', '')
 

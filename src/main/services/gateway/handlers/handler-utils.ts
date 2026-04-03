@@ -131,13 +131,13 @@ export function ensureParams(
 }
 
 /**
- * 获取 Agent 实例，若不存在则返回错误响应
+ * 获取 Agent 实例，若不存在则返回错误响应 (支持异步加载/自动创建)
  */
-export function getAgentOrError(
+export async function getAgentOrError(
   ctx: HandlerContext,
   agentId: string
-): Result<{ agent: Agent; id: string }> {
-  const agent = ctx.registry.getAgent(agentId)
+): Promise<Result<{ agent: Agent; id: string }>> {
+  const agent = await ctx.registry.ensureAgent(agentId)
   if (!agent) {
     return {
       ok: false,

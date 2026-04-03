@@ -21,7 +21,7 @@ import type { AIModelConfig } from '@shared/types/models'
 import { createModelDef } from '@main/services/provider/model-factory'
 import type { MiniAgentEvent } from './agent-events'
 import type { AgentConfig, RunResult, Message, InteractionResult } from '@shared/types/agent'
-import { MIN_CONTEXT_TOKENS } from '@shared/types/agent'
+import { DEFAULT_CONTEXT_TOKENS, MIN_CONTEXT_TOKENS } from '@shared/types/agent'
 import type { EventOf } from '@shared/types/gateway'
 export type { AgentConfig, RunResult, Message }
 
@@ -296,7 +296,7 @@ export class Agent {
       provider: this.config.provider,
       baseUrl: this.config.baseUrl,
       reasoning: this.config.reasoning !== undefined ? !!this.config.reasoning : undefined,
-      contextTokens: this.config.contextTokens,
+      contextTokens: this.config.contextTokens || DEFAULT_CONTEXT_TOKENS,
       supportsVision: this.config.supportsVision
     })
 
@@ -386,9 +386,7 @@ export class Agent {
       const modelConfig = this.resolveModelConfig()
 
       if (!modelDef) {
-        throw new Error(
-          `No model defined for agent ${this.id}. Please configure a model in settings.`
-        )
+        throw new Error(`未配置可用模型。请先前往 [设置 -> 模型管理] 添加并启用至少一个模型。`)
       }
       const finalApiKey = this.config.apiKey || resolvedApiKey
       this.contextManager.updateConfig({
@@ -465,15 +463,14 @@ export class Agent {
       }
 
       // 2. 检查现有的历史 Token 压力并顺势注入 Pending 的消息
-      if (this.config.contextTokens) {
-        const enforced = await this.contextManager.enforceContextLimitsAndInject({
-          messages: currentMessages,
-          pendingMessages,
-          sessionKey: sk,
-          runId
-        })
-        currentMessages = enforced.currentMessages
-      }
+      // 注意：这里的注入逻辑必须执行，否则 userInput 不会进入 currentMessages 和持久化 Session
+      const enforced = await this.contextManager.enforceContextLimitsAndInject({
+        messages: currentMessages,
+        pendingMessages,
+        sessionKey: sk,
+        runId
+      })
+      currentMessages = enforced.currentMessages
 
       const systemPrompt = await this.promptBuilder.build({
         sessionKey: sk,
@@ -533,7 +530,7 @@ export class Agent {
         reasoning: this.config.reasoning,
         maxTurns: this.config.maxTurns || 10,
         maxTokens: this.config.maxTokens,
-        contextTokens: this.config.contextTokens || 128000,
+        contextTokens: this.config.contextTokens!,
         abortSignal: signal,
 
         // 回调
@@ -580,8 +577,10 @@ export class Agent {
       }
     } finally {
       // 清理该次运行所有挂起的交互
-      this.interactionCallbacks.forEach((_, id) => {
-        this.respondInteraction(id, [])
+      this.interactionCallbacks.forEach((entry, id) => {
+        if (entry.runId === runId) {
+          this.respondInteraction(id, [])
+        }
       })
       await this.stateManager.endRun(sk, runId)
     }

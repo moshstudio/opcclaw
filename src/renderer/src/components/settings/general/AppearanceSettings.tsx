@@ -44,7 +44,7 @@ const AppearanceSettings: React.FC = () => {
               onClick={() => updateConfig({ theme: mode })}
               className={cn(
                 'px-4 py-1.5 rounded-lg text-xs transition-all capitalize',
-                (config?.theme || 'dark') === mode
+                (config?.theme || 'light') === mode
                   ? 'bg-primary text-primary-foreground shadow-md'
                   : 'text-muted-foreground hover:text-foreground'
               )}

@@ -1,5 +1,6 @@
-appId: com.electron.app
+appId: com.opcclaw.app
 productName: 猫爪
+icon: resources/icon.png
 directories:
   buildResources: build
 files:
@@ -13,6 +14,7 @@ asarUnpack:
   - resources/**
 win:
   executableName: opcclaw
+  icon: resources/icon.png
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

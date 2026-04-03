@@ -15,7 +15,7 @@ interface ModelState {
   handleModelsUpdate: (payload: any) => void
   init: () => void
 
-  fetchModels: () => Promise<void>
+  fetchModels: (options?: { silent?: boolean }) => Promise<void>
   fetchProviders: () => Promise<void>
   addModel: (model: Omit<AIModelConfig, 'id'>) => Promise<boolean>
   updateModel: (id: string, updates: Partial<AIModelConfig>) => Promise<boolean>
@@ -47,8 +47,10 @@ export const useModelStore = create<ModelState>((set) => ({
     // 基础配置初始化 (如有逻辑)
   },
 
-  fetchModels: async () => {
-    set({ isLoading: true, error: null })
+  fetchModels: async (options = { silent: true }) => {
+    if (!options.silent) {
+      set({ isLoading: true, error: null })
+    }
     try {
       // 仅触发拉取，更新由 onModels 广播闭环
       await getGatewayClient().request('models:fetch', {})

@@ -95,7 +95,7 @@ export const handleSkillsList: Handler = async (params, _client, ctx) => {
   if (!check.ok) return check
 
   const { agentId = 'main' } = check.values
-  const agentCheck = getAgentOrError(ctx, agentId)
+  const agentCheck = await getAgentOrError(ctx, agentId)
   if (!agentCheck.ok) return agentCheck
 
   try {
@@ -133,7 +133,7 @@ export const handleSkillInstall: Handler = async (params, _client, ctx) => {
   if (!check.ok) return check
 
   const { agentId = 'main', target, name, content } = check.values
-  const agentCheck = getAgentOrError(ctx, agentId)
+  const agentCheck = await getAgentOrError(ctx, agentId)
   if (!agentCheck.ok) return agentCheck
 
   try {
@@ -158,7 +158,7 @@ export const handleSkillUpdate: Handler = async (params, _client, ctx) => {
   if (!check.ok) return check
 
   const { agentId = 'main', name, content } = check.values
-  const agentCheck = getAgentOrError(ctx, agentId)
+  const agentCheck = await getAgentOrError(ctx, agentId)
   if (!agentCheck.ok) return agentCheck
 
   try {
@@ -180,7 +180,7 @@ export const handleSkillDelete: Handler = async (params, _client, ctx) => {
   if (!check.ok) return check
 
   const { agentId = 'main', name } = check.values
-  const agentCheck = getAgentOrError(ctx, agentId)
+  const agentCheck = await getAgentOrError(ctx, agentId)
   if (!agentCheck.ok) return agentCheck
 
   try {
@@ -235,7 +235,7 @@ export const handleBootstrapSave: Handler = async (params, _client, ctx) => {
 export const handleUsageStats: Handler = async (params, _client, ctx) => {
   const p = params as { agentId?: string; sessionKey?: string } | undefined
   const agentId = p?.agentId || 'main'
-  const agent = ctx.registry.getAgent(agentId)
+  const agent = await ctx.registry.ensureAgent(agentId)
   if (!agent) {
     return { ok: false, error: errorShape(ErrorCodes.NOT_FOUND, `agent not found: ${agentId}`) }
   }

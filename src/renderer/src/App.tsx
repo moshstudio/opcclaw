@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react'
 import { HashRouter as Router, useLocation } from 'react-router-dom'
-import { AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import MainLayout from './components/layout/MainLayout'
 import SettingsPage from './components/settings/SettingsPage'
@@ -10,9 +9,7 @@ import { OnboardingOverlay } from './components/layout/OnboardingOverlay'
 import { ThemeProvider } from './components/ThemeProvider'
 import { initGatewaySync } from './store/gateway/gateway-sync'
 import ScheduledTasks from './components/tasks/ScheduledTasks'
-import { useAgentStore } from './store/useAgentStore'
-import { LoadingScreen } from './components/ui/LoadingScreen'
-import { useMinimumLoading } from './hooks/useMinimumLoading'
+import { useSystemStore } from './store/useSystemStore'
 
 import { Toaster } from 'sonner'
 import { ConfirmProvider } from './components/ui/confirm-dialog'
@@ -22,9 +19,7 @@ function AppContent(): React.JSX.Element {
   const location = useLocation()
   const { i18n } = useTranslation()
   const { config } = useConfigStore()
-  const { isLoading } = useAgentStore()
-  const showLoading = useMinimumLoading(isLoading, 1000)
-
+  const { isInitializing } = useSystemStore()
   const pathname = location.pathname
 
   useEffect(() => {
@@ -37,6 +32,24 @@ function AppContent(): React.JSX.Element {
     }
   }, [config?.language, i18n])
 
+  useEffect(() => {
+    // Control index.html native loader
+    // This loader is outside of #root so it stays visible during React mount
+    const loader = document.getElementById('initial-loader')
+    if (loader) {
+      if (!isInitializing) {
+        // Add class to trigger CSS transition defined in index.html
+        loader.classList.add('ready')
+        // Clean up DOM after transition finishes
+        const timer = setTimeout(() => {
+          loader.remove()
+        }, 500)
+        return () => clearTimeout(timer)
+      }
+    }
+    return undefined
+  }, [isInitializing])
+
   return (
     <ConfigProvider
       theme={{
@@ -48,9 +61,6 @@ function AppContent(): React.JSX.Element {
     >
       <ThemeProvider>
         <ConfirmProvider>
-          <AnimatePresence mode="wait">
-            {showLoading && <LoadingScreen key="loading-screen" />}
-          </AnimatePresence>
           <OnboardingOverlay />
           {/* CSS Keep-Alive 路由：组件始终挂载在同一 React 树中，仅通过 CSS display 控制显隐 */}
           <CssKeepAlive active={pathname === '/'}>

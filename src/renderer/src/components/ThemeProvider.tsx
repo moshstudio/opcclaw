@@ -8,7 +8,7 @@ interface ThemeProviderProps {
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const { config } = useConfigStore()
-  const theme = config?.theme || 'dark'
+  const theme = config?.theme || 'light'
   const fontSize = config?.fontSize || 14
 
   useEffect(() => {

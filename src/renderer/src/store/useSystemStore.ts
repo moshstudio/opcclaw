@@ -10,12 +10,14 @@ interface SystemState {
   restartExpectedMs: number | null
 
   initialized: boolean
+  isInitializing: boolean
 
   handleConnect: () => void
   handleDisconnect: () => void
   handleTick: (payload: any) => void
   handleShutdown: (payload: any) => void
   handleError: (err: Error) => void
+  setInitializing: (val: boolean) => void
 
   init: () => void
 }
@@ -27,8 +29,12 @@ export const useSystemStore = create<SystemState>((set) => ({
   shutdownReason: null,
   restartExpectedMs: null,
   initialized: false,
+  isInitializing: true,
 
   // --- External Handlers (Called by GatewaySync) ---
+  setInitializing: (val: boolean) => {
+    set({ isInitializing: val })
+  },
   handleConnect: () => {
     set({ status: 'connected', isShuttingDown: false })
   },

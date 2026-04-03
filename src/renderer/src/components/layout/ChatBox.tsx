@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@renderer/store/useChatStore'
 import { useAgentStore } from '@renderer/store/useAgentStore'
 import { ChatStatus } from '@shared/types/agent'
+import { useModelStore } from '@renderer/store/useModelStore'
+import { toast } from 'sonner'
 import ChatHeader from '../chat/ChatHeader'
 import MessageList from '../chat/MessageList'
 import ChatInput from '../chat/ChatInput'
@@ -29,6 +31,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ settingsVisible, toggleSettings }) =>
     sessionKeys,
     sessions
   } = useChatStore()
+  const { models } = useModelStore()
 
   const { agents, activeAgentId } = useAgentStore()
   const [input, setInput] = useState('')
@@ -82,6 +85,12 @@ const ChatBox: React.FC<ChatBoxProps> = ({ settingsVisible, toggleSettings }) =>
     }
 
     if (!input.trim() || !activeAgentId) return
+
+    if (models.length === 0) {
+      toast.error(t('settings.no_models_configured') || '未配置任何模型，请先前往设置页面配置模型')
+      return
+    }
+
     const text = input
     setInput('')
     await sendMessage(text, activeAgentId)

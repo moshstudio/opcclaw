@@ -1,22 +1,23 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Brain, Sparkles } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import { Dialog, DialogContent, DialogBody } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
 import { useModelStore } from '@renderer/store/useModelStore'
-import { useAgentStore } from '@renderer/store/useAgentStore'
+import { useSystemStore } from '@renderer/store/useSystemStore'
+import icon from '@renderer/assets/icon.png'
 
 export function OnboardingOverlay() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const models = useModelStore((s) => s.models)
   const modelsInitialized = useModelStore((s) => s.initialized)
-  const agentLoading = useAgentStore((s) => s.isLoading)
+  const isInitializing = useSystemStore((s) => s.isInitializing)
 
-  // 仅在智能体加载完成、且模型初始化完成且列表仍为空时展示
+  // 仅在系统初始化完成、且模型列表仍为空时展示
   const [hasClosed, setHasClosed] = useState(false)
-  const show = !agentLoading && modelsInitialized && models.length === 0 && !hasClosed
+  const show = !isInitializing && modelsInitialized && models.length === 0 && !hasClosed
 
   if (!show) return null
 
@@ -26,8 +27,8 @@ export function OnboardingOverlay() {
         <DialogBody className="p-10 text-center flex flex-col items-center">
           <div className="relative inline-block mb-8 mx-auto">
             <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full" />
-            <div className="relative p-6 rounded-3xl bg-primary/10 border border-primary/20 text-primary">
-              <Brain className="w-12 h-12" />
+            <div className="relative p-6 rounded-3xl bg-primary/10 border border-primary/20">
+              <img src={icon} className="w-12 h-12 object-contain" alt="App Icon" />
             </div>
             <Sparkles className="absolute -top-2 -right-2 w-6 h-6 text-yellow-400 animate-pulse" />
           </div>

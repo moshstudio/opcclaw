@@ -4,7 +4,7 @@ import { QQApi } from './api'
 import { QQChannelOptions, QQMessageMeta, QQRun } from './types'
 import { BaseChannel } from '../base'
 import { CommonRun, QueueTask } from '../base/types'
-import { getTranslate, parseSessionKey, SessionKeyInfo } from '../base/utils'
+import { parseSessionKey, SessionKeyInfo } from '../base/utils'
 import type { ChatPayloadFlat } from '../../gateway/protocol'
 
 export class QQChannel extends BaseChannel<QQChannelOptions> {
