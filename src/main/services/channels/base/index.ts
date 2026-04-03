@@ -505,7 +505,9 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     } else {
       // 结果阶段：采用【图标 Result + 换行 + 块状代码】格式
       const icon = isError ? '❌' : '✅'
-      return `\n${icon} **Result**:\n\`\`\`\n${detail}\n\`\`\`\n`
+      const t = getTranslate(undefined)
+      const label = t('common:channel_base.tool_result_label')
+      return `\n${icon} **${label}**:\n\`\`\`\n${detail}\n\`\`\`\n`
     }
   }
 
@@ -660,7 +662,13 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     let command = parts[0]
     const args = parts.slice(1)
     if (command.includes('@')) command = command.split('@')[0]
-    return this.processCommand(chatId, command, args, opt.lang, opt.threadId)
+
+    const handled = await this.processCommand(chatId, command, args, opt.lang, opt.threadId)
+    if (!handled) {
+      const t = getTranslate(opt.lang)
+      await this.replyToCommand(chatId, t('common:channel_base.unknown_command', { command }))
+    }
+    return true
   }
 
   protected abstract replyToCommand(
@@ -760,8 +768,14 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     threadId?: string | number
   ): Promise<void> {
     const t = getTranslate(lang)
-    if (!agentId)
-      return void (await this.replyToCommand(chatId, t('common:channel_base.bind_usage')))
+    if (!agentId) {
+      const key = threadId ? `${chatId}_${threadId}` : `${chatId}`
+      const currentId = this.agentBindings.get(key) || this.opts.defaultAgentId || 'main'
+      return void (await this.replyToCommand(
+        chatId,
+        t('common:channel_base.current_binding', { agentId: currentId })
+      ))
+    }
     try {
       const agents = await this.fetchAgents()
       if (!agents.some((a) => a.id === agentId)) {

@@ -63,7 +63,7 @@ export const SkillSection: React.FC<SettingsSectionProps & { agentId: string }> 
               <h3 className="text-xs font-black uppercase tracking-wider text-foreground">
                 {t('common.skills')}
               </h3>
-              <p className="text-[10px] text-muted-foreground/60 leading-relaxed font-bold tracking-tight">
+              <p className="text-[10px] text-muted-foreground/80 leading-relaxed font-bold tracking-tight">
                 {t('common.skills_desc', { status: `${skills.length}/${skills.length}` })}
               </p>
             </div>
@@ -75,7 +75,7 @@ export const SkillSection: React.FC<SettingsSectionProps & { agentId: string }> 
             >
               <RefreshCw
                 className={cn(
-                  'w-3 h-3 text-muted-foreground/40 group-hover:text-primary transition-colors',
+                  'w-3 h-3 text-muted-foreground/75 group-hover:text-primary transition-colors',
                   loading && 'animate-spin'
                 )}
               />
@@ -83,7 +83,7 @@ export const SkillSection: React.FC<SettingsSectionProps & { agentId: string }> 
           </div>
 
           <div className="relative group">
-            <Search className="absolute left-3 top-2.5 w-3 h-3 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
+            <Search className="absolute left-3 top-2.5 w-3 h-3 text-muted-foreground/75 group-focus-within:text-primary transition-colors" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -113,7 +113,7 @@ export const SkillSection: React.FC<SettingsSectionProps & { agentId: string }> 
         <div className="space-y-6">
           {extraSkills.length > 0 && (
             <div className="space-y-3 px-1">
-              <div className="flex items-center justify-between text-[10px] text-muted-foreground/40 font-black uppercase tracking-[0.2em] px-1">
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground/60 font-black uppercase tracking-[0.2em] px-1">
                 <span>{t('common.extra_skills')}</span>
                 <span className="bg-muted/10 px-1 rounded-sm border border-border/20">
                   {extraSkills.length}
@@ -127,7 +127,7 @@ export const SkillSection: React.FC<SettingsSectionProps & { agentId: string }> 
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="p-2 rounded-xl bg-background shadow-xs text-muted-foreground/40 group-hover:text-primary transition-colors">
+                        <div className="p-2 rounded-xl bg-background shadow-xs text-muted-foreground/60 group-hover:text-primary transition-colors">
                           <FileCode className="w-4 h-4" />
                         </div>
                         <div className="flex flex-col min-w-0">
@@ -139,12 +139,12 @@ export const SkillSection: React.FC<SettingsSectionProps & { agentId: string }> 
                       <Switch checked={isEnabled(skill.name)} />
                     </div>
                     {skill.description && (
-                      <p className="text-[10px] text-muted-foreground/60 line-clamp-2 px-1 py-0.5 leading-relaxed font-bold tracking-tight">
+                      <p className="text-[10px] text-muted-foreground/80 line-clamp-2 px-1 py-0.5 leading-relaxed font-bold tracking-tight">
                         {skill.description}
                       </p>
                     )}
                     <div className="flex items-center gap-1 pt-1 opacity-40 group-hover:opacity-100 transition-opacity">
-                      <span className="text-[9px] font-mono text-muted-foreground/60 truncate">
+                      <span className="text-[9px] font-mono text-muted-foreground/75 truncate">
                         {skill.path.split(/[\\/]/).slice(-3).join('/')}
                       </span>
                     </div>
@@ -156,7 +156,7 @@ export const SkillSection: React.FC<SettingsSectionProps & { agentId: string }> 
 
           {builtinSkills.length > 0 && (
             <div className="space-y-3 px-1">
-              <div className="flex items-center justify-between text-[8px] text-muted-foreground/40 font-black uppercase tracking-[0.2em] px-1">
+              <div className="flex items-center justify-between text-[8px] text-muted-foreground/60 font-black uppercase tracking-[0.2em] px-1">
                 <span>{t('common.builtin_skills')}</span>
                 <span className="bg-muted/10 px-1 rounded-sm border border-border/20">
                   {builtinSkills.length}

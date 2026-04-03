@@ -72,7 +72,7 @@ export const ChannelSection: React.FC<SettingsSectionProps & { agentId: string }
           <h3 className="text-xs font-black uppercase tracking-wider text-foreground">
             {t('settings.channels_title')}
           </h3>
-          <p className="text-[10px] text-muted-foreground/60 leading-relaxed font-bold tracking-tight">
+          <p className="text-[10px] text-muted-foreground/80 leading-relaxed font-bold tracking-tight">
             {t('settings.channels_agent_desc')}
           </p>
         </div>
@@ -113,7 +113,7 @@ const BotItem: React.FC<{
           <div
             className={cn(
               'p-2 rounded-xl bg-background shadow-xs transition-colors',
-              bot.enabled ? 'text-primary' : 'text-muted-foreground/40'
+              bot.enabled ? 'text-primary' : 'text-muted-foreground/60'
             )}
           >
             <Send className="w-4 h-4" />
@@ -122,7 +122,7 @@ const BotItem: React.FC<{
             <span className="text-xs font-black text-foreground tracking-tight truncate">
               Telegram Bot
             </span>
-            <span className="text-[9px] font-mono text-muted-foreground/40 truncate italic">
+            <span className="text-[9px] font-mono text-muted-foreground/60 truncate italic">
               {bot.botToken.split(':')[0] || 'Unknown'}...
             </span>
           </div>

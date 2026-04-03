@@ -22,8 +22,23 @@ export function getSessionKey(
   defaultAgentId: string = 'main',
   threadId?: string | number
 ): string {
-  const bindKey = threadId ? `${chatId}_${threadId}` : `${chatId}`
-  const agentId = agentBindings?.get(bindKey) || defaultAgentId
+  let agentId: string | undefined
+
+  if (agentBindings) {
+    // 1. 优先尝试特定线程/话题绑定 (如 chatId_threadId)
+    if (threadId) {
+      agentId = agentBindings.get(`${chatId}_${threadId}`)
+    }
+
+    // 2. 如果没有特定绑定，尝试聊天级别绑定 (chatId)
+    if (!agentId) {
+      agentId = agentBindings.get(`${chatId}`)
+    }
+  }
+
+  // 3. 最终回退到默认设置
+  agentId = agentId || defaultAgentId
+
   return `${agentId}:${channelId}:${chatId}${threadId ? `:${threadId}` : ''}`
 }
 

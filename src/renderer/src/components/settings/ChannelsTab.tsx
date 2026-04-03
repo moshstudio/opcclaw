@@ -20,14 +20,17 @@ import {
 } from '@renderer/components/ui/dropdown-menu'
 import { useConfigStore } from '@renderer/store/useConfigStore'
 import { getGatewayClient } from '@renderer/services/gateway-client'
+import { motion, AnimatePresence } from 'framer-motion'
 import { TelegramBotCard } from './channels/TelegramBotCard'
 import { FeishuBotCard } from './channels/FeishuBotCard'
+import { QQBotCard } from './channels/QQBotCard'
 import { cn } from '@renderer/lib/utils'
 import { toast } from 'sonner'
 import type {
   ChannelsConfig,
   TelegramChannelConfig,
-  FeishuChannelConfig
+  FeishuChannelConfig,
+  QQChannelConfig
 } from '@shared/types/config'
 
 export const ChannelsTab: React.FC = () => {
@@ -132,12 +135,21 @@ export const ChannelsTab: React.FC = () => {
 
   const addChannelItem = <K extends keyof ChannelsConfig>(
     type: K,
-    defaultItem: TelegramChannelConfig | FeishuChannelConfig
+    defaultItem: any // 使用 any 简化泛型内不同配置对象的混用
   ) => {
     const nextChannels = { ...localChannels }
     const list = nextChannels[type] || []
+    
+    // 注入唯一标识和创建时间
+    const newItem = {
+      ...defaultItem,
+      id: Math.random().toString(36).substring(2, 11),
+      createdAt: Date.now()
+    }
+
+    // 将新项插入到数组开头
     // @ts-ignore: Ensuring type consistency for dynamic addition
-    nextChannels[type] = [...list, defaultItem]
+    nextChannels[type] = [newItem, ...list]
     setLocalChannels(nextChannels)
   }
 
@@ -152,6 +164,19 @@ export const ChannelsTab: React.FC = () => {
     setLocalChannels(nextChannels)
   }
 
+  // --- 计算分类区块的显示顺序 (Dynamic Group Sorting) ---
+  const sortedGroupTypes = useMemo(() => {
+    const types: Array<keyof ChannelsConfig> = ['telegram', 'feishu', 'qq']
+    return types.sort((a, b) => {
+      const listA = localChannels[a] || []
+      const listB = localChannels[b] || []
+      // 获取该分类中最新的时间戳
+      const maxA = listA.reduce((max, c) => Math.max(max, c.createdAt || 0), 0)
+      const maxB = listB.reduce((max, c) => Math.max(max, c.createdAt || 0), 0)
+      return maxB - maxA
+    })
+  }, [localChannels])
+
   if (loading || !config) {
     return (
       <div className="flex items-center justify-center h-[400px]">
@@ -162,11 +187,11 @@ export const ChannelsTab: React.FC = () => {
 
   return (
     <div className="mr-2 animate-in fade-in slide-in-from-bottom-2 space-y-6 pb-20 duration-300">
-      {/* 顶栏 */}
+      {/* 顶栏保持不变... */}
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h2 className="text-2xl font-black tracking-tight">{t('settings.channels_title')}</h2>
-          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground opacity-50">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">
             {t('settings.channels_desc')}
           </p>
         </div>
@@ -223,6 +248,21 @@ export const ChannelsTab: React.FC = () => {
                 <Building2 className="w-3.5 h-3.5 text-emerald-500" />
                 {t('settings.channels_add_feishu')}
               </DropdownMenuItem>
+
+              <DropdownMenuItem
+                className="rounded-lg text-xs font-medium focus:bg-primary/10 flex items-center gap-2 cursor-pointer"
+                onClick={() =>
+                  addChannelItem('qq', {
+                    enabled: false,
+                    appId: '',
+                    clientSecret: '',
+                    agentBindings: {}
+                  })
+                }
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-orange-500" />
+                {t('settings.channels_add_qq')}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -253,44 +293,104 @@ export const ChannelsTab: React.FC = () => {
         </div>
       </div>
 
-      {/* 智能体配置入口 */}
-      <div className="grid grid-cols-1 gap-6">
-        {!localChannels.telegram || localChannels.telegram.length === 0 ? (
-          <Card className="p-12 border-dashed bg-muted/5 flex flex-col items-center justify-center text-muted-foreground/40 space-y-4 rounded-2xl">
-            <Send className="w-10 h-10 opacity-20" />
-            <p className="text-xs font-black uppercase tracking-widest leading-none">
-              {t('settings.channels_no_bots')}
-            </p>
-          </Card>
-        ) : (
-          localChannels.telegram.map((bot: TelegramChannelConfig, index: number) => (
-            <TelegramBotCard
-              key={index}
-              index={index}
-              bot={bot}
-              agents={agents}
-              onUpdate={(patch) => updateChannel('telegram', index, patch)}
-              onRemove={() => removeChannelItem('telegram', index)}
-            />
-          ))
-        )}
+      {/* 动态分组渲染区域 (Dynamic Grouped Area) */}
+      <motion.div layout className="grid grid-cols-1 gap-6">
+        <AnimatePresence mode="popLayout" initial={false}>
+          {sortedGroupTypes.map((type) => {
+            const list = localChannels[type]
+            if (!list || list.length === 0) return null
 
-        {localChannels.feishu &&
-          localChannels.feishu.map((app: FeishuChannelConfig, index: number) => (
-            <FeishuBotCard
-              key={index}
-              index={index}
-              app={app}
-              agents={agents}
-              onUpdate={(patch) => updateChannel('feishu', index, patch)}
-              onRemove={() => removeChannelItem('feishu', index)}
-            />
-          ))}
+            return (
+              <motion.div
+                key={type}
+                layout
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-6"
+              >
+                {type === 'telegram' &&
+                  (list as TelegramChannelConfig[]).map((bot, index) => (
+                    <motion.div
+                      key={bot.id || `${type}-${index}`}
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                    >
+                      <TelegramBotCard
+                        index={index}
+                        bot={bot}
+                        agents={agents}
+                        onUpdate={(patch) => updateChannel('telegram', index, patch)}
+                        onRemove={() => removeChannelItem('telegram', index)}
+                      />
+                    </motion.div>
+                  ))}
+
+                {type === 'feishu' &&
+                  (list as FeishuChannelConfig[]).map((app, index) => (
+                    <motion.div
+                      key={app.id || `${type}-${index}`}
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                    >
+                      <FeishuBotCard
+                        index={index}
+                        app={app}
+                        agents={agents}
+                        onUpdate={(patch) => updateChannel('feishu', index, patch)}
+                        onRemove={() => removeChannelItem('feishu', index)}
+                      />
+                    </motion.div>
+                  ))}
+
+                {type === 'qq' &&
+                  (list as QQChannelConfig[]).map((bot, index) => (
+                    <motion.div
+                      key={bot.id || `${type}-${index}`}
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                    >
+                      <QQBotCard
+                        index={index}
+                        bot={bot}
+                        agents={agents}
+                        onUpdate={(patch) => updateChannel('qq', index, patch)}
+                        onRemove={() => removeChannelItem('qq', index)}
+                      />
+                    </motion.div>
+                  ))}
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
+
+        {/* 如果没有任何渠道，显示空状态 */}
+        <AnimatePresence>
+          {Object.values(localChannels).every((list) => !list || list.length === 0) && (
+            <motion.div
+              layout
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <Card className="p-12 border-dashed bg-muted/5 flex flex-col items-center justify-center text-muted-foreground/60 space-y-4 rounded-2xl">
+                <Send className="w-10 h-10 opacity-40" />
+                <p className="text-xs font-black uppercase tracking-widest leading-none">
+                  {t('settings.channels_no_bots')}
+                </p>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* 帮助中心入口或其他渠道占位 */}
         <div className="group relative">
           <div className="absolute inset-0 bg-gradient-to-r from-primary/5 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
-          <Card className="p-6 border-dashed border-muted/50 bg-muted/5 opacity-40 hover:opacity-100 transition-all rounded-2xl">
+          <Card className="p-6 border-dashed border-muted/50 bg-muted/5 opacity-60 hover:opacity-100 transition-all rounded-2xl">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
@@ -300,18 +400,18 @@ export const ChannelsTab: React.FC = () => {
                   <span className="text-[10px] font-black uppercase tracking-[0.2em] leading-none mb-1">
                     {t('settings.more_channels_title')}
                   </span>
-                  <span className="text-[10px] font-bold text-muted-foreground/60 italic">
+                  <span className="text-[10px] font-bold text-muted-foreground/80 italic">
                     {t('settings.more_channels_desc')}
                   </span>
                 </div>
               </div>
-              <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40 bg-muted/50 px-2 py-1 rounded-md">
+              <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60 bg-muted/50 px-2 py-1 rounded-md">
                 Coming Soon
               </div>
             </div>
           </Card>
         </div>
-      </div>
+      </motion.div>
     </div>
   )
 }

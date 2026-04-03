@@ -105,13 +105,13 @@ export const FileSection: React.FC<SettingsSectionProps & { agentId: string }> =
       <div className="space-y-4 pt-1">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 px-1">
           <div className="space-y-1 min-w-0 flex-1">
-            <h3 className="text-sm font-black uppercase tracking-wider text-foreground/80">
+            <h3 className="text-sm font-black uppercase tracking-wider text-foreground/90">
               {t('common.bootstrap_files')}
             </h3>
-            <p className="text-xs text-muted-foreground/60 leading-relaxed max-w-[400px]">
+            <p className="text-xs text-muted-foreground/80 leading-relaxed max-w-[400px]">
               {t('common.bootstrap_desc')}
             </p>
-            <p className="text-xs text-muted-foreground/30 font-mono mt-1 [text-wrap:auto] break-all group-hover:text-muted-foreground/60 transition-colors">
+            <p className="text-xs text-muted-foreground/60 font-mono mt-1 [text-wrap:auto] break-all group-hover:text-muted-foreground/60 transition-colors">
               {t('common.workspace')}: {formData.workspaceDir}
             </p>
           </div>
@@ -128,7 +128,7 @@ export const FileSection: React.FC<SettingsSectionProps & { agentId: string }> =
         </div>
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-muted/10 border border-border/20 shadow-sm hover:bg-muted/15 transition-all">
-            <span className="text-xs font-bold text-foreground/70 tracking-tight">
+            <span className="text-xs font-bold text-foreground/85 tracking-tight">
               {t('common.enable_context')}
             </span>
             <Switch
@@ -178,7 +178,7 @@ export const FileSection: React.FC<SettingsSectionProps & { agentId: string }> =
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 rounded-md hover:bg-black/5 dark:hover:bg-white/5 opacity-40 group-hover/editor:opacity-100 transition-all"
+                className="h-7 w-7 rounded-md hover:bg-black/5 dark:hover:bg-white/5 opacity-60 group-hover/editor:opacity-100 transition-all"
                 onClick={() => setContent(selectedFile?.content || '')}
                 title={t('common.reset')}
               >
@@ -204,7 +204,7 @@ export const FileSection: React.FC<SettingsSectionProps & { agentId: string }> =
 
           {/* 内容编辑区 */}
           <div className="relative flex-1 flex flex-col">
-            <div className="absolute top-2 left-4 z-10 pointer-events-none opacity-20">
+            <div className="absolute top-2 left-4 z-10 pointer-events-none opacity-40">
               <span className="text-xs font-bold  text-muted-foreground uppercase tracking-[0.2em]">
                 {t('common.edit_content')}
               </span>

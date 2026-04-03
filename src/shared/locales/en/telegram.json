@@ -5,7 +5,7 @@
   "confirm_interaction": "Please confirm",
   "error": "Error: {{error}}",
   "guide_title": "Telegram Configuration Guide",
-  "guide_subtitle": "Follow these steps to set up your Telegram bot:",
+  "guide_subtitle": "Follow these steps to enable AI dialogue features:",
   "guide_step_0_title": "Get Bot Token",
   "guide_step_0_p1": "1. Search for <b>@BotFather</b> on Telegram.",
   "guide_step_0_p2": "2. Send <b>/newbot</b> and follow instructions to set name/username.",
@@ -20,5 +20,6 @@
   "guide_step_3_p1": "Add bot to group. It's recommended to configure in <b>@BotFather</b>:",
   "guide_step_3_p2": "Bot Settings > Group Privacy > <b>Turn Off</b>",
   "guide_step_3_p3": "Disabling Privacy Mode helps the bot understand group context better.",
-  "guide_done_btn": "Got it, I'm all set"
+  "guide_done_btn": "Got it, I'm all set",
+  "reference_message": "Reference Content"
 }

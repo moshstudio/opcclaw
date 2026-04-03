@@ -4,3 +4,4 @@
 
 export { TelegramChannel } from './telegram'
 export { FeishuChannel } from './feishu'
+export { QQChannel } from './qq'

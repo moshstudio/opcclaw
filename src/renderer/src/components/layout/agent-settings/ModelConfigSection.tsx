@@ -32,7 +32,7 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
     >
       <div className="space-y-4">
         <div className="space-y-1.5">
-          <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
+          <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80 px-1">
             {t('common.model_select')}
           </label>
           <Select
@@ -56,7 +56,7 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
+            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80 px-1">
               {t('settings.temperature_label')}
             </label>
             <NumberInput
@@ -69,7 +69,7 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
+            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80 px-1">
               {t('common.reasoning')}
             </label>
             <Select
@@ -95,7 +95,7 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
               <label className="text-xs font-black uppercase tracking-widest text-foreground/80">
                 {t('common.context_tokens')}
               </label>
-              <p className="text-xs leading-relaxed text-muted-foreground/50 font-medium italic">
+              <p className="text-xs leading-relaxed text-muted-foreground/75 font-medium italic">
                 {t('common.context_tokens_desc', {
                   reserve: Math.round(CONTEXT_RESERVE_TOKENS / 1000),
                   min: Math.round(MIN_CONTEXT_TOKENS / 1000)
@@ -111,7 +111,7 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
                   className={`px-2 py-0.5 rounded-md text-[10px] font-black transition-all border ${
                     formData.contextTokens === v
                       ? 'bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/20'
-                      : 'bg-muted/30 text-muted-foreground/60 border-transparent hover:border-border'
+                      : 'bg-muted/30 text-muted-foreground/80 border-transparent hover:border-border'
                   }`}
                 >
                   {v >= 1000000 ? `${v / 1000000}M` : `${v / 1000}K`}
@@ -138,7 +138,7 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
               <label className="text-xs font-black uppercase tracking-widest text-foreground/80">
                 {t('settings.maxTokens_label')}
               </label>
-              <p className="text-xs leading-relaxed text-muted-foreground/50 font-medium italic">
+              <p className="text-xs leading-relaxed text-muted-foreground/75 font-medium italic">
                 限制单次模型回复的最大长度。较高的值允许长篇大论，但也可能消耗更多 Token。
               </p>
             </div>

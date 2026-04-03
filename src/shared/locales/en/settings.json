@@ -89,5 +89,19 @@
   "interaction_timeout_desc": "Maximum time to wait for user confirmation or selection (10s - 3600s)",
   "interaction_settings": "Interaction",
   "selective_clear": "Selective Clear",
-  "selective_clear_prompt": "Which remembered choice would you like to delete?"
+  "selective_clear_prompt": "Which remembered choice would you like to delete?",
+  "qq_bot_title": "QQ Bot",
+  "qq_app_id_label": "App ID",
+  "qq_app_id_placeholder": "1020...",
+  "qq_client_secret_label": "Client Secret",
+  "qq_client_secret_placeholder": "Bot Secret Key",
+  "qq_is_public_label": "Public Bot",
+  "qq_is_public_tip": "Public bots do not require @ to reply in channels (managed by QQ console)",
+  "qq_markdown_label": "Markdown Support",
+  "qq_bot_usage_guide": "Get credentials from QQ Open Platform",
+  "channels_add_qq": "QQ Bot",
+  "channels_qq_credentials_required": "Please configure App ID and Client Secret first",
+  "channels_qq_validate_success": "Validation successful",
+  "channels_qq_validate_failed": "Validation failed",
+  "channels_qq_validate": "Validate Config"
 }

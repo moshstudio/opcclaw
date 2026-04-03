@@ -228,7 +228,7 @@ const SkillsTab: React.FC = () => {
             <Puzzle className="w-5 h-5 text-primary" />
             {t('skills.title')}
           </h2>
-          <p className="text-xs text-muted-foreground mt-1">{t('skills.desc')}</p>
+          <p className="text-xs text-muted-foreground/80 mt-1">{t('skills.desc')}</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -251,7 +251,7 @@ const SkillsTab: React.FC = () => {
       {/* 系统内置技能 */}
       {processed.builtIn.length > 0 && (
         <section className="space-y-4">
-          <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground/60 uppercase tracking-widest">
+          <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground/80 uppercase tracking-widest">
             <div className="w-1 h-3 bg-primary/30 rounded-full" />
             {t('skills.built_in_group') || 'system skills'}
           </div>
@@ -266,7 +266,7 @@ const SkillsTab: React.FC = () => {
       {/* 全局共享/托管技能 */}
       {processed.managed.length > 0 && (
         <section className="space-y-4">
-          <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground/60 uppercase tracking-widest">
+          <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground/80 uppercase tracking-widest">
             <div className="w-1 h-3 bg-orange-400/30 rounded-full" />
             {t('skills.managed_group') || 'global shared skills'}
           </div>
@@ -303,12 +303,12 @@ const SkillsTab: React.FC = () => {
         ))
       ) : (
         <section className="space-y-4">
-          <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground/60 uppercase tracking-widest">
+          <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground/80 uppercase tracking-widest">
             <div className="w-1 h-3 bg-primary/30 rounded-full" />
             {t('skills.agent_specific') || 'agent skills'}
           </div>
-          <div className="border border-dashed rounded-3xl p-16 flex flex-col items-center justify-center text-muted-foreground/60 bg-muted/5">
-            <Puzzle className="w-10 h-10 mb-4 opacity-10" />
+          <div className="border border-dashed rounded-3xl p-16 flex flex-col items-center justify-center text-muted-foreground/80 bg-muted/5">
+            <Puzzle className="w-10 h-10 mb-4 opacity-30" />
             <p className="text-sm">{t('skills.empty')}</p>
           </div>
         </section>
@@ -320,7 +320,7 @@ const SkillsTab: React.FC = () => {
           <Info className="w-4 h-4" />
         </div>
         <div className="space-y-1 text-[11px]">
-          <h5 className="font-bold text-xs uppercase tracking-wider opacity-60">
+          <h5 className="font-bold text-xs uppercase tracking-wider opacity-80">
             {t('skills.category_label')}
           </h5>
           <p className="text-muted-foreground leading-relaxed space-y-1">

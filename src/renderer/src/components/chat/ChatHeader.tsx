@@ -108,7 +108,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                className="absolute top-full left-0 mt-2 w-64 bg-popover border border-border rounded-xl shadow-2xl p-2 z-[60] overflow-hidden"
+                className="absolute top-full left-0 mt-2 w-86 bg-popover border border-border rounded-xl shadow-2xl p-2 z-[60] overflow-hidden"
               >
                 <div className="flex items-center gap-2 px-3 py-2 mb-1 text-muted-foreground/40 border-b border-border/50">
                   <History className="w-3 h-3" />

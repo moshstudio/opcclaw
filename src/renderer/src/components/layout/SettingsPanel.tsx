@@ -265,7 +265,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                   <h3 className="text-sm font-black uppercase tracking-widest text-foreground/90">
                     {t('common.agent_settings_title')}
                   </h3>
-                  <span className="text-[11px] font-bold text-muted-foreground/60 uppercase tracking-tight truncate max-w-[150px]">
+                  <span className="text-[11px] font-bold text-muted-foreground/80 uppercase tracking-tight truncate max-w-[150px]">
                     {editingAgent?.config.name || 'Settings'}
                   </span>
                 </div>
@@ -312,7 +312,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                 className={`h-12 text-xs font-black uppercase tracking-widest transition-all relative flex items-center gap-2 ${
                   activeTab === 'settings'
                     ? 'text-primary'
-                    : 'text-muted-foreground/60 hover:text-muted-foreground'
+                    : 'text-muted-foreground/80 hover:text-muted-foreground'
                 }`}
               >
                 <Settings2 className="w-3.5 h-3.5" />
@@ -329,7 +329,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                 className={`h-12 text-xs font-black uppercase tracking-widest transition-all relative flex items-center gap-2 ${
                   activeTab === 'usage'
                     ? 'text-primary'
-                    : 'text-muted-foreground/60 hover:text-muted-foreground'
+                    : 'text-muted-foreground/80 hover:text-muted-foreground'
                 }`}
               >
                 <Activity className="w-3.5 h-3.5" />
@@ -346,7 +346,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
             <ScrollArea className="flex-1" style={{ scrollbarGutter: 'stable' }}>
               <div className="p-5 space-y-4 pb-48">
                 {!editingAgent ? (
-                  <div className="h-[40vh] flex flex-col items-center justify-center text-center p-8 space-y-4 opacity-40">
+                  <div className="h-[40vh] flex flex-col items-center justify-center text-center p-8 space-y-4 opacity-60">
                     <Bot className="w-12 h-12 text-muted-foreground" />
                     <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
                       {t('common.select_agent_to_configure')}
@@ -430,7 +430,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                         </div>
 
                         <div className="space-y-2">
-                          <div className="text-xs font-black uppercase tracking-widest text-muted-foreground/60 px-1">
+                          <div className="text-xs font-black uppercase tracking-widest text-muted-foreground/80 px-1">
                             {t('common.usage_details')}
                           </div>
                           <div className="rounded-2xl border bg-muted/30 divide-y overflow-hidden">
@@ -456,7 +456,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                                 {(usageStats?.avgLatencyMs ?? 0).toFixed(0)} ms
                               </span>
                             </div>
-                            <div className="p-4 flex justify-between items-center text-muted-foreground/60">
+                            <div className="p-4 flex justify-between items-center text-muted-foreground/80">
                               <div className="flex items-center gap-3">
                                 <Bot className="w-4 h-4" />
                                 <span className="text-sm font-bold">
@@ -471,7 +471,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                         </div>
 
                         <div className="space-y-2">
-                          <div className="text-xs font-black uppercase tracking-widest text-muted-foreground/60 px-1">
+                          <div className="text-xs font-black uppercase tracking-widest text-muted-foreground/80 px-1">
                             {t('common.usage_cache_performance')}
                           </div>
                           <div className="p-4 rounded-2xl border bg-muted/30 grid grid-cols-2 gap-8 ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
@@ -536,7 +536,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ visible, onClose }) => {
                     'w-full h-11 font-black rounded-2xl gap-2 transition-all active:scale-[0.98] group relative overflow-hidden',
                     isChanged
                       ? 'shadow-xl shadow-primary/20 bg-primary'
-                      : 'bg-primary/50 text-foreground/40 shadow-none cursor-default'
+                      : 'bg-primary/50 text-foreground/60 shadow-none cursor-default'
                   )}
                 >
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out" />

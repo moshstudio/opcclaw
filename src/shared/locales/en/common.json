@@ -254,6 +254,9 @@
     "help_help": "- /help : Show this help message",
     "tool_calling": "🛠️ Executing tool: {{name}}...",
     "tool_success": "✅ Tool execution completed: {{name}}",
-    "tool_error": "❌ Tool execution failed: {{name}}"
+    "tool_error": "❌ Tool execution failed: {{name}}",
+    "tool_result_label": "Result",
+    "current_binding": "Current bound agent: `{{agentId}}`",
+    "unknown_command": "Unknown command: /{{command}}. Type /help to see available commands."
   }
 }

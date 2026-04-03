@@ -34,3 +34,20 @@ export async function validateFeishuApp(appId: string, appSecret: string) {
 
   return res.info
 }
+
+/**
+ * 验证 QQ 机器人
+ */
+export async function validateQQBot(appId: string, clientSecret: string) {
+  const client = getGatewayClient()
+  const res = await client.request<any>('channel:qq:test', {
+    appId,
+    clientSecret
+  })
+
+  if (!res.ok) {
+    throw new Error(res.error || '验证失败')
+  }
+
+  return res.info
+}

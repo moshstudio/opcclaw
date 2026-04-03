@@ -50,6 +50,7 @@ export interface RequestMethodMap {
   'models:providers': { params: void; result: string[] }
   'channel:telegram:test': { params: { token: string; useProxy?: boolean }; result: any }
   'channel:feishu:test': { params: { appId: string; appSecret: string }; result: any }
+  'channel:qq:test': { params: { appId: string; clientSecret: string }; result: any }
   'heartbeat:list': { params: void; result: unknown }
   'heartbeat:update': { params: { agentId: string; config: unknown }; result: void }
   'heartbeat:trigger': { params: { agentId: string }; result: void }

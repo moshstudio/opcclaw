@@ -112,6 +112,8 @@
   "skills_desc": "代理级技能允许列表和工作区技能。{{status}}",
   "all_enabled": "全部启用",
   "all_disabled": "全部禁用",
+  "all_enabled_en": "Enable All",
+  "all_disabled_en": "Disable All",
   "search_skills": "搜索技能",
   "builtin_skills": "内置技能",
   "extra_skills": "额外技能",
@@ -262,6 +264,9 @@
     "tool_calling": "🛠️ 正在执行工具: {{name}}...",
     "tool_success": "✅ 工具执行完毕: {{name}}",
     "tool_error": "❌ 工具执行失败: {{name}}",
-    "executing": "正在执行..."
+    "tool_result_label": "执行结果",
+    "executing": "正在执行...",
+    "current_binding": "当前绑定智能体：`{{agentId}}`",
+    "unknown_command": "未知指令：/{{command}}。输入 /help 查看可用指令。"
   }
 }

@@ -346,3 +346,23 @@ export const handleChannelFeishuTest: Handler = async (params) => {
 
   return { ok: true, payload: result }
 }
+
+/**
+ * channel:qq:test
+ */
+export const handleChannelQQTest: Handler = async (params) => {
+  const check = ensureParams(params, { appId: 'string', clientSecret: 'string' })
+  if (!check.ok) return check
+
+  const { appId, clientSecret } = check.values
+  const result = await ChannelManager.getInstance().validateQQBot(appId, clientSecret)
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: errorShape(ErrorCodes.UNAVAILABLE, result.error || 'Validation failed')
+    }
+  }
+
+  return { ok: true, payload: result }
+}

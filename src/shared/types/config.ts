@@ -15,6 +15,8 @@ export interface GatewaySettings {
  * Telegram 频道配置
  */
 export interface TelegramChannelConfig {
+  id?: string // 唯一标识
+  createdAt?: number // 创建时间戳
   enabled: boolean
   botToken: string
   useProxy?: boolean // 是否使用全局代理
@@ -26,6 +28,8 @@ export interface TelegramChannelConfig {
  * 飞书 频道配置
  */
 export interface FeishuChannelConfig {
+  id?: string
+  createdAt?: number
   enabled: boolean
   appId: string
   appSecret: string
@@ -36,11 +40,28 @@ export interface FeishuChannelConfig {
 }
 
 /**
+ * QQ 频道配置
+ */
+export interface QQChannelConfig {
+  id?: string
+  createdAt?: number
+  enabled: boolean
+  appId: string
+  clientSecret: string
+  token?: string
+  isPublic?: boolean // 是否为公域机器人 (影响消息展示策略)
+  markdownSupport?: boolean
+  defaultAgentId?: string
+  agentBindings?: Record<string, string>
+}
+
+/**
  * 频道全量配置
  */
 export interface ChannelsConfig {
   telegram?: TelegramChannelConfig[] // 支持多个 Telegram Bot
   feishu?: FeishuChannelConfig[] // 支持多个 飞书 应用
+  qq?: QQChannelConfig[] // 支持多个 QQ 机器人
 }
 
 export interface AgentDefaults {
@@ -112,5 +133,22 @@ export interface FeishuBotInfo {
 export interface FeishuValidationResult {
   ok: boolean
   info?: FeishuBotInfo
+  error?: string
+}
+
+/**
+ * QQ 机器人信息 (验证结果)
+ */
+export interface QQBotInfo {
+  id: string
+  username: string
+}
+
+/**
+ * QQ 验证响应
+ */
+export interface QQValidationResult {
+  ok: boolean
+  info?: QQBotInfo
   error?: string
 }

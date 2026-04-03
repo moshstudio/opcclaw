@@ -12,6 +12,7 @@ import { TelegramChannelOptions } from './types'
 import { BaseChannel } from '../base'
 import { CommonRun, QueueTask } from '../base/types'
 import { getTranslate, parseSessionKey } from '../base/utils'
+import i18next from 'i18next'
 
 export class TelegramChannel extends BaseChannel<TelegramChannelOptions> {
   private readonly bot: Bot
@@ -48,26 +49,21 @@ export class TelegramChannel extends BaseChannel<TelegramChannelOptions> {
    * 同步原生菜单指令 (支持多语言)
    */
   private async syncNativeCommands(): Promise<void> {
-    const langs = ['zh', 'en'] as const
-
     try {
-      // 1. 设置默认指令 (不带 language_code)，遵循当前应用语言
-      const defaultCmds = this.getAvailableCommands().map((c) => ({
+      // 遵循当前软件主语言
+      const commands = this.getAvailableCommands().map((c) => ({
         command: c.command,
         description: c.description.slice(0, 256)
       }))
-      await this.bot.api.setMyCommands(defaultCmds)
 
-      // 2. 依次为常用语言设置特定指令菜单
-      for (const lang of langs) {
-        const commands = this.getAvailableCommands(lang).map((c) => ({
-          command: c.command,
-          description: c.description.slice(0, 256)
-        }))
-        await this.bot.api.setMyCommands(commands, { language_code: lang })
-      }
+      // 1. 设置默认指令 (不带 language_code)
+      await this.bot.api.setMyCommands(commands)
 
-      this.logger.debug(`[Bot] Native commands synced for: Default, ${langs.join(', ')}`)
+      // 2. 为了确保覆盖之前的特定语言设置，我们也更新 zh 和 en 的特定配置 (如果需要强制统一)
+      await this.bot.api.setMyCommands(commands, { language_code: 'zh' })
+      await this.bot.api.setMyCommands(commands, { language_code: 'en' })
+
+      this.logger.debug(`[Bot] Native commands synced with software language: ${i18next.language}`)
     } catch (err) {
       this.logger.warn('[Bot] Failed to sync native commands:', (err as Error).message)
     }
@@ -260,7 +256,7 @@ export class TelegramChannel extends BaseChannel<TelegramChannelOptions> {
 
     const t = getTranslate(lang)
     const prompt = p.prompt || t('telegram:confirm_interaction')
-    const options = p.options || ['Confirm', 'Cancel']
+    const options = p.options || [t('common:confirm'), t('common:cancel')]
 
     // 构造内联键盘
     const keyboard = new InlineKeyboard()
@@ -308,7 +304,6 @@ export class TelegramChannel extends BaseChannel<TelegramChannelOptions> {
 
     // 1. 指令解析 (如果是指令则拦截处理)
     const handled = await this.tryProcessCommand(text, chatId, {
-      lang: ctx.from?.language_code,
       threadId: msg.message_thread_id
     })
     if (handled) return
@@ -337,22 +332,16 @@ export class TelegramChannel extends BaseChannel<TelegramChannelOptions> {
       // 增强：如果这条消息是回复某人的，自动带上被回复的内容作为参考上下文
       const quotedMsg = msg.reply_to_message
       if (quotedMsg && quotedMsg.text) {
-        const t = getTranslate(ctx)
-        const refLabel = t('telegram:reference_message') || 'Reference Content'
+        const t = getTranslate()
+        const refLabel = t('telegram:reference_message')
         finalPrompt = `[${refLabel}]:\n"""\n${quotedMsg.text}\n"""\n\n${text}`
       }
 
-      await this.sendToGateway(
-        sessionInfo.agentId,
-        sessionKey,
-        finalPrompt,
-        chatId,
-        ctx.from?.language_code
-      )
+      await this.sendToGateway(sessionInfo.agentId, sessionKey, finalPrompt, chatId)
     } catch (err) {
       this.logger.error(`[Input] Gateway reachable failed:`, err)
       this.stopTyping(chatId)
-      const t = getTranslate(ctx)
+      const t = getTranslate()
       await ctx.reply(
         `❌ <b>${this.escapeHTML(t('telegram:error', { error: 'Gateway Offline' }))}</b>`,
         {
@@ -400,7 +389,7 @@ export class TelegramChannel extends BaseChannel<TelegramChannelOptions> {
   // ============== 指令响应逻辑 ==============
 
   private cmdStart(ctx: Context): void {
-    const t = getTranslate(ctx)
+    const t = getTranslate()
     ctx.reply(t('telegram:welcome', { agentId: this.opts.defaultAgentId || 'main' }))
   }
 

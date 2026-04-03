@@ -64,7 +64,7 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
                     className: 'w-3.5 h-3.5'
                   })}
                 </div>
-                <span className="text-sm font-bold text-foreground/80 tracking-tight">
+                <span className="text-sm font-bold text-foreground/90 tracking-tight">
                   {cap.label}
                 </span>
               </div>
@@ -80,12 +80,12 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
         <div className="space-y-3 px-1">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Wrench className="w-3 h-3 text-muted-foreground/60" />
-              <h4 className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">
+              <Wrench className="w-3 h-3 text-muted-foreground/80" />
+              <h4 className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">
                 {t('common.tools')}
               </h4>
             </div>
-            <span className="text-[9px] font-bold text-muted-foreground/30 px-2 py-0.5 rounded-full bg-muted/10 border border-border/20">
+            <span className="text-[9px] font-bold text-muted-foreground/60 px-2 py-0.5 rounded-full bg-muted/10 border border-border/20">
               {tools.length}
             </span>
           </div>
@@ -98,11 +98,11 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors shrink-0" />
-                    <span className="text-xs font-black text-foreground/70 group-hover:text-primary transition-colors truncate">
+                    <span className="text-xs font-black text-foreground/85 group-hover:text-primary transition-colors truncate">
                       {tool.name}
                     </span>
                   </div>
-                  <p className="text-[10px] text-muted-foreground/60 line-clamp-1 group-hover:line-clamp-none transition-all">
+                  <p className="text-[10px] text-muted-foreground/80 line-clamp-1 group-hover:line-clamp-none transition-all">
                     {tool.description}
                   </p>
                 </div>
@@ -118,12 +118,12 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
           <div className="space-y-3 px-1">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Boxes className="w-3 h-3 text-muted-foreground/60" />
-                <h4 className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">
+                <Boxes className="w-3 h-3 text-muted-foreground/80" />
+                <h4 className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">
                   {t('common.skills')}
                 </h4>
               </div>
-              <span className="text-[9px] font-bold text-muted-foreground/30 px-2 py-0.5 rounded-full bg-muted/10 border border-border/20">
+              <span className="text-[9px] font-bold text-muted-foreground/60 px-2 py-0.5 rounded-full bg-muted/10 border border-border/20">
                 {skills.length}
               </span>
             </div>
@@ -134,14 +134,14 @@ export const CapabilitiesSection: React.FC<SettingsSectionProps & { agentId: str
                     key={skill.name}
                     className="flex items-center gap-2.5 p-2 rounded-xl bg-muted/5 border border-border/10 hover:bg-muted/10 hover:border-primary/20 transition-all group"
                   >
-                    <div className="p-1 rounded-lg bg-background shadow-xs text-muted-foreground/40 group-hover:text-primary transition-colors">
+                    <div className="p-1 rounded-lg bg-background shadow-xs text-muted-foreground/60 group-hover:text-primary transition-colors">
                       <FileCode className="w-3 h-3" />
                     </div>
                     <div className="flex flex-col min-w-0">
-                      <span className="text-xs font-bold text-foreground/80 truncate">
+                      <span className="text-xs font-bold text-foreground/90 truncate">
                         {skill.name}
                       </span>
-                      <span className="text-[10px] text-muted-foreground/40 font-mono truncate">
+                      <span className="text-[10px] text-muted-foreground/60 font-mono truncate">
                         {skill.path.split(/[\\/]/).slice(-3).join('/')}
                       </span>
                     </div>

@@ -5,7 +5,7 @@
   "confirm_interaction": "请确认操作",
   "error": "错误：{{error}}",
   "guide_title": "Telegram 接入配置全攻略",
-  "guide_subtitle": "从获取 Token 到开启多场景对话，请按照以下步骤操作：",
+  "guide_subtitle": "请按照以下步骤操作，即可开启 AI 对话功能：",
   "guide_step_0_title": "获取 Bot Token",
   "guide_step_0_p1": "1. 在 Telegram 搜索并私聊 <b>@BotFather</b>",
   "guide_step_0_p2": "2. 发送指令 <b>/newbot</b> 并按照提示设置名称",
@@ -20,5 +20,6 @@
   "guide_step_3_p1": "将机器人加入群组，并建议在 <b>@BotFather</b> 处配置：",
   "guide_step_3_p2": "Bot Settings > Group Privacy > <b>Turn Off</b>",
   "guide_step_3_p3": "关闭隐私模式能让机器人更好地理解群组上下文。",
-  "guide_done_btn": "好的，我配置好了"
+  "guide_done_btn": "好的，我配置好了",
+  "reference_message": "引用内容"
 }

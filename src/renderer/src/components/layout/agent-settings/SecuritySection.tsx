@@ -25,7 +25,7 @@ export const SecuritySection: React.FC<SettingsSectionProps> = ({
         <div className="flex items-center justify-between p-3 rounded-xl bg-primary/5 border border-primary/20">
           <div className="flex flex-col">
             <span className="text-sm font-black">{t('common.sandbox_enabled')}</span>
-            <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-tighter">
+            <span className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-tighter">
               {t('common.isolated_env')}
             </span>
           </div>

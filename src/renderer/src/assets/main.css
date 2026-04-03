@@ -77,6 +77,31 @@
     font-family: inherit;
   }
 
+  ::placeholder {
+    font-family:
+      'Alibaba PuHui Ti',
+      'AlibabaPuHuiTi',
+      'Alibaba PuHui Ti 2.0',
+      'Alibaba PuHui Ti 3.0',
+      'PingFang SC',
+      'SimHei',
+      '黑体',
+      'Microsoft YaHei',
+      '微软雅黑',
+      'Inter',
+      'Hiragino Sans GB',
+      'Heiti SC',
+      'WenQuanYi Micro Hei',
+      'ui-sans-serif',
+      'system-ui',
+      '-apple-system',
+      'BlinkMacSystemFont',
+      'Segoe UI',
+      'Roboto',
+      'sans-serif';
+    font-weight: normal;
+  }
+
   html,
   body,
   #root {

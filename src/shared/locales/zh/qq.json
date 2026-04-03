@@ -1,0 +1,18 @@
+{
+  "welcome": "你好！我是 QQ AI 机器人。\n\n默认智能体：{{agentId}}\n\n输入 /help 查看指令列表。",
+  "help_extra": "- /start : 显示欢迎信息",
+  "error": "错误：{{error}}",
+  "guide_title": "QQ 机器人接入配置全攻略",
+  "guide_subtitle": "请按照以下步骤操作，即可开启 AI 对话功能：",
+  "guide_step_0_title": "获取 AppID 和 ClientSecret",
+  "guide_step_0_p1": "1. 登录 <b>QQ 开放平台</b> (<a href=\"https://q.qq.com\" target=\"_blank\" class=\"text-primary hover:underline underline-offset-2 transition-all\">q.qq.com</a>)",
+  "guide_step_0_p2": "2. 创建机器人应用并获取 <b>AppID</b> 和 <b>ClientSecret</b>",
+  "guide_step_0_p3": "3. 在“开发设置”中配置机器人权限 (Intents)",
+  "guide_step_1_title": "个人私聊 (C2C)",
+  "guide_step_1_desc": "在 QQ 中搜索机器人并添加好友，即可开始对话。",
+  "guide_step_2_title": "群组对话 (Group)",
+  "guide_step_2_desc": "将机器人拉入群组，通过 <b>@机器人</b> 触发对话。",
+  "guide_step_3_title": "频道对话 (Guild)",
+  "guide_step_3_desc": "将机器人加入频道，并确保其具有相应的消息权限。",
+  "guide_done_btn": "好的，我配置好了"
+}

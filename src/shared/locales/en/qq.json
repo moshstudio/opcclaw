@@ -1,0 +1,18 @@
+{
+  "welcome": "Hello! I am a QQ AI Bot.\n\nDefault Agent: {{agentId}}\n\nType /help to see available commands.",
+  "help_extra": "- /start : Show welcome information",
+  "error": "Error: {{error}}",
+  "guide_title": "QQ Bot Connection Guide",
+  "guide_subtitle": "Follow these steps to enable AI dialogue features:",
+  "guide_step_0_title": "Obtain AppId and ClientSecret",
+  "guide_step_0_p1": "1. Log in to the <b>QQ Open Platform</b> (<a href=\"https://q.qq.com\" target=\"_blank\" class=\"text-primary hover:underline underline-offset-2 transition-all\">q.qq.com</a>)",
+  "guide_step_0_p2": "2. Create a bot app and get <b>AppID</b> and <b>ClientSecret</b>",
+  "guide_step_0_p3": "3. Configure bot permissions (Intents) in 'Development Settings'",
+  "guide_step_1_title": "Private Chat (C2C)",
+  "guide_step_1_desc": "Search for your bot in QQ and add it to start a private chat.",
+  "guide_step_2_title": "Group Chat (Group)",
+  "guide_step_2_desc": "Add the bot to a group and mention <b>@Bot</b> to trigger dialogue.",
+  "guide_step_3_title": "Guild Dialogue (Guild)",
+  "guide_step_3_desc": "Add the bot to a guild and ensure it has the appropriate message permissions.",
+  "guide_done_btn": "Got it, I'm all set"
+}

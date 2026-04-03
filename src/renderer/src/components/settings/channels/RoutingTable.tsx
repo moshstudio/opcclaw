@@ -41,10 +41,10 @@ export const RoutingTable: React.FC<RoutingTableProps> = ({ bindings, agents, on
   }
 
   return (
-    <div className="bg-muted/5 p-4 space-y-4 antialiased transform-gpu">
+    <div className="bg-muted/5 p-4 space-y-4 antialiased">
       {/* Table Header */}
       <div className="flex items-center justify-between">
-        <h4 className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/60 leading-none">
+        <h4 className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/80 leading-none">
           <Hash className="w-3.5 h-3.5 text-primary/40" />
           {t('settings.channels_routing_table')}
         </h4>
@@ -74,7 +74,7 @@ export const RoutingTable: React.FC<RoutingTableProps> = ({ bindings, agents, on
         <div className="p-3.5 rounded-xl bg-background border border-primary/20 animate-in fade-in slide-in-from-top-1 duration-200 shadow-lg ring-1 ring-primary/5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
             <div className="space-y-1">
-              <label className="text-[9px] uppercase font-bold text-muted-foreground/60 pl-1">
+              <label className="text-[9px] uppercase font-bold text-muted-foreground/80 pl-1">
                 {t('settings.channels_routing_placeholder_chatid')}
               </label>
               <Input
@@ -85,7 +85,7 @@ export const RoutingTable: React.FC<RoutingTableProps> = ({ bindings, agents, on
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] uppercase font-bold text-muted-foreground/60 pl-1">
+              <label className="text-[9px] uppercase font-bold text-muted-foreground/80 pl-1">
                 {t('settings.channels_routing_target_agent')}
               </label>
               <Select
@@ -126,7 +126,7 @@ export const RoutingTable: React.FC<RoutingTableProps> = ({ bindings, agents, on
           >
             <div className="flex items-center gap-3 overflow-hidden px-1">
               <div className="h-7 w-7 shrink-0 rounded-lg bg-muted/10 flex flex-col items-center justify-center border border-muted/20 group-hover/item:border-primary/20 transition-colors">
-                <span className="text-[8px] font-mono font-black text-muted-foreground/60 leading-none">
+                <span className="text-[8px] font-mono font-black text-muted-foreground/80 leading-none">
                   #
                 </span>
               </div>

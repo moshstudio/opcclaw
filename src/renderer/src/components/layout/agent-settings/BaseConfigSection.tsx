@@ -24,7 +24,7 @@ export const BaseConfigSection: React.FC<SettingsSectionProps> = ({
     >
       <div className="space-y-4">
         <div className="space-y-1.5">
-          <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
+          <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80 px-1">
             {t('common.agent_name')}
           </label>
           <Input
@@ -35,10 +35,10 @@ export const BaseConfigSection: React.FC<SettingsSectionProps> = ({
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1">
+          <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80 px-1">
             {t('common.system_prompt')}
           </label>
-          <span className="text-[10px] text-muted-foreground/40 italic px-1 block pb-1">
+          <span className="text-[10px] text-muted-foreground/60 italic px-1 block pb-1">
             {t('common.system_prompt_desc')}
           </span>
           <Textarea
@@ -53,7 +53,7 @@ export const BaseConfigSection: React.FC<SettingsSectionProps> = ({
               <label className="text-sm font-black uppercase tracking-tight text-foreground/80 group-hover:text-primary transition-colors">
                 {t('common.pin_agent')}
               </label>
-              <p className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">
+              <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">
                 {t('common.pin_agent_desc')}
               </p>
             </div>

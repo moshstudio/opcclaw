@@ -396,35 +396,39 @@ export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
     text = text.trim()
     if (!text) return
 
-    // 3. 处理引用回复 (获取被回复的消息内容)
+    // 3. 优先处理指令 (必须在拼接引用上下文之前)
+    const threadId = message.root_id || undefined
+    const handled = await this.tryProcessCommand(text, chatId, {
+      threadId,
+      lang: undefined // 飞书事件目前不直接提供语言信息，由 getTranslate 自动处理
+    })
+    if (handled) return
+
+    // 4. 处理引用回复 (获取被回复的消息内容) - 指令不应包含引用内容
     if (message.parent_id) {
       this.logger.debug(`[Feishu] Detected parent_id: ${message.parent_id}, fetching content...`)
       const parentContent = await this.getPlatformMessage(message.parent_id)
       if (parentContent) {
         // 模仿引用样式：> 内容\n\n当前回复
-        // 飞书 Markdown 支持引用，网关处理时也能识别这种常见的 Markdown 引用格式
         text = `> ${parentContent.replace(/\n/g, '\n> ')}\n\n${text}`
       }
     }
 
-    // 4. 优先处理指令
-    const handled = await this.tryProcessCommand(text, chatId, {
-      threadId: message.root_id || undefined
-    })
-    if (handled) return
-
     // 5. 发送到系统网关
-    const threadId = message.root_id || undefined
     const sessionKey = this.getInternalSessionKey(chatId, threadId)
     const sessionInfo = parseSessionKey(sessionKey, this.channelId)
     if (!sessionInfo) return
 
-    this.sessionRegistry.set(sessionKey, { chatId })
+    // 获取当前语言环境 (飞书暂无明确 language_code, 默认为 zh)
+    const lang = 'zh'
+    this.sessionRegistry.set(sessionKey, { chatId, lang })
 
-    this.logger.debug(`[Feishu] Message from ${chatId}: "${text.slice(0, 30)}..."`)
+    this.logger.debug(
+      `[Feishu] Message from ${chatId} (agent: ${sessionInfo.agentId}): "${text.slice(0, 30)}..."`
+    )
 
     try {
-      await this.sendToGateway(sessionInfo.agentId, sessionKey, text, chatId)
+      await this.sendToGateway(sessionInfo.agentId, sessionKey, text, chatId, lang)
     } catch (err) {
       this.logger.error(`[Feishu] 发送网关失败:`, (err as Error).message)
       await this.sendPlatformMessage(chatId, `Error: ${(err as Error).message}`)

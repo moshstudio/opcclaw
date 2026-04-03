@@ -134,7 +134,6 @@ export const FeishuBotCard: React.FC<FeishuCardProps> = ({
       className={cn(
         'overflow-hidden border bg-background rounded-xl antialiased',
         'hover:shadow-lg hover:border-primary/20 transition-all duration-300 ease-out',
-        'transform-gpu translate-z-0 backface-hidden',
         app.enabled ? 'border-border/60' : 'border-border/40'
       )}
     >
@@ -174,7 +173,7 @@ export const FeishuBotCard: React.FC<FeishuCardProps> = ({
                 <HelpCircle className="w-3.5 h-3.5" />
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md rounded-2xl">
+            <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2 text-primary">
                   <Building2 className="w-5 h-5" />
@@ -185,7 +184,7 @@ export const FeishuBotCard: React.FC<FeishuCardProps> = ({
                 </DialogDescription>
               </DialogHeader>
 
-              <DialogBody className="space-y-3 py-2 text-sm overflow-y-auto max-h-[60vh] pr-2 scrollbar-thin">
+              <DialogBody className="space-y-3 py-2 text-sm overflow-y-auto max-h-[60vh] px-8 scrollbar-thin">
                 <div className="p-3 bg-primary/5 rounded-xl border border-primary/20">
                   <h4 className="font-bold flex items-center gap-2 mb-1.5 text-primary text-xs uppercase tracking-wider">
                     <span className="w-5 h-5 flex items-center justify-center bg-primary text-white rounded-full text-[10px] shadow-sm">
@@ -368,8 +367,8 @@ export const FeishuBotCard: React.FC<FeishuCardProps> = ({
                 </div>
               </DialogBody>
 
-              <DialogFooter>
-                <Button className="rounded-xl px-6" onClick={() => setShowHelp(false)}>
+              <DialogFooter className="pt-4 pb-4">
+                <Button className="w-full rounded-xl" onClick={() => setShowHelp(false)}>
                   {t('feishu.guide_done_btn')}
                 </Button>
               </DialogFooter>
@@ -427,7 +426,7 @@ export const FeishuBotCard: React.FC<FeishuCardProps> = ({
 
         {/* App Secret */}
         <div className="flex items-center gap-3 px-4 py-2.5 group/row transition-colors duration-150 hover:bg-muted/10">
-          <label className="w-24 shrink-0 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/60 group-hover/row:text-primary/70 transition-colors duration-150">
+          <label className="w-24 shrink-0 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/80 group-hover/row:text-primary/70 transition-colors duration-150">
             {t('settings.feishu_app_secret_label')}
           </label>
           <Input
@@ -444,7 +443,7 @@ export const FeishuBotCard: React.FC<FeishuCardProps> = ({
 
         {/* Verification Token (Optional) */}
         <div className="flex items-center gap-3 px-4 py-2.5 group/row transition-colors duration-150 hover:bg-muted/10">
-          <label className="w-24 shrink-0 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/60 group-hover/row:text-primary/70 transition-colors duration-150">
+          <label className="w-24 shrink-0 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/80 group-hover/row:text-primary/70 transition-colors duration-150">
             {t('settings.feishu_verify_token_label')}
           </label>
           <Input
@@ -461,7 +460,7 @@ export const FeishuBotCard: React.FC<FeishuCardProps> = ({
 
         {/* Encrypt Key (Optional) */}
         <div className="flex items-center gap-3 px-4 py-2.5 group/row transition-colors duration-150 hover:bg-muted/10">
-          <label className="w-24 shrink-0 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/60 group-hover/row:text-primary/70 transition-colors duration-150">
+          <label className="w-24 shrink-0 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/80 group-hover/row:text-primary/70 transition-colors duration-150">
             {t('settings.feishu_encrypt_key_label')}
           </label>
           <Input
@@ -471,14 +470,14 @@ export const FeishuBotCard: React.FC<FeishuCardProps> = ({
             onChange={(e) => onUpdate({ encryptKey: e.target.value })}
             className={cn(
               'flex-1 h-8 bg-muted/20 border-border/40 rounded-lg font-mono text-[11px]',
-              'focus-visible:bg-background transition-all opacity-60 focus-visible:opacity-100'
+              'focus-visible:bg-background transition-all opacity-80 focus-visible:opacity-100'
             )}
           />
         </div>
 
         {/* 默认智能体 */}
         <div className="flex items-center gap-3 px-4 py-2.5 group/row transition-colors duration-150 hover:bg-muted/10">
-          <label className="w-24 shrink-0 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/60 group-hover/row:text-primary/70 transition-colors duration-150">
+          <label className="w-24 shrink-0 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/80 group-hover/row:text-primary/70 transition-colors duration-150">
             {t('settings.channels_bot_default_agent')}
           </label>
           <Select

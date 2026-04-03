@@ -4,18 +4,28 @@ import { Logger } from '@main/services/common/logger'
 import { ConfigService } from '../config/config-service'
 import { TelegramChannel } from './telegram/index'
 import { FeishuChannel } from './feishu'
+import { QQChannel } from './qq'
+import { QQApi } from './qq/api'
 import { ProxyUtils } from '@main/services/common/proxy'
 import type {
   TelegramValidationResult,
   TelegramBotInfo,
   FeishuValidationResult,
   FeishuBotInfo,
+  QQValidationResult,
   TelegramChannelConfig,
   FeishuChannelConfig,
+  QQChannelConfig,
   AppConfig
 } from '@shared/types/config'
 
-export { TelegramValidationResult, TelegramBotInfo, FeishuValidationResult, FeishuBotInfo }
+export {
+  TelegramValidationResult,
+  TelegramBotInfo,
+  FeishuValidationResult,
+  FeishuBotInfo,
+  QQValidationResult
+}
 
 export class ChannelManager {
   private static instance: ChannelManager
@@ -24,6 +34,7 @@ export class ChannelManager {
   // 记录运行中的频道实例
   private runningTgBots = new Map<string, { instance: TelegramChannel; fingerPrint: string }>()
   private runningFeishuApps = new Map<string, { instance: FeishuChannel; fingerPrint: string }>()
+  private runningQQBots = new Map<string, { instance: QQChannel; fingerPrint: string }>()
 
   private constructor() {
     // Private constructor to enforce singleton pattern
@@ -61,6 +72,13 @@ export class ChannelManager {
       await this.stopAllFeishu()
     }
 
+    // 3. 处理 QQ 频道
+    if (channels?.qq && Array.isArray(channels.qq)) {
+      this.syncQQChannels(channels.qq, config, gatewayUrl, gatewayToken, startTasks)
+    } else {
+      await this.stopAllQQ()
+    }
+
     // 等待所有启动任务完成
     if (startTasks.length > 0) {
       this.logger.info(`Parallel starting ${startTasks.length} channel instances...`)
@@ -68,7 +86,7 @@ export class ChannelManager {
     }
 
     this.logger.info(
-      `Active channels: TG(${this.runningTgBots.size}), Feishu(${this.runningFeishuApps.size})`
+      `Active channels: TG(${this.runningTgBots.size}), Feishu(${this.runningFeishuApps.size}), QQ(${this.runningQQBots.size})`
     )
   }
 
@@ -198,6 +216,66 @@ export class ChannelManager {
     }
   }
 
+  private syncQQChannels(
+    qqConfigs: QQChannelConfig[],
+    _config: AppConfig,
+    gatewayUrl: string,
+    gatewayToken: string | undefined,
+    startTasks: Promise<void>[]
+  ) {
+    for (const qqConfig of qqConfigs) {
+      const fingerPrint = JSON.stringify({
+        enabled: qqConfig.enabled,
+        appId: qqConfig.appId,
+        clientSecret: qqConfig.clientSecret,
+        markdownSupport: qqConfig.markdownSupport,
+        isPublic: qqConfig.isPublic,
+        defaultAgentId: qqConfig.defaultAgentId,
+        agentBindings: qqConfig.agentBindings,
+        gatewayUrl,
+        gatewayToken
+      })
+
+      const running = this.runningQQBots.get(qqConfig.appId)
+
+      if (qqConfig.enabled && qqConfig.appId && qqConfig.clientSecret) {
+        if (running && running.fingerPrint === fingerPrint) continue
+        if (running) {
+          this.logger.info(`Restarting QQ bot: ${qqConfig.appId}...`)
+          running.instance.stop()
+        }
+
+        const startTask = (async () => {
+          try {
+            const instance = new QQChannel({
+              ...qqConfig,
+              gatewayUrl,
+              gatewayToken,
+              onBindingChange: (newBindings) =>
+                this.updateQQBindings(qqConfig.appId, newBindings)
+            })
+            await instance.start()
+            this.runningQQBots.set(qqConfig.appId, { instance, fingerPrint })
+          } catch (err) {
+            this.logger.error(`Failed to start QQ Bot (${qqConfig.appId}):`, (err as Error).message)
+          }
+        })()
+        startTasks.push(startTask)
+      } else if (!qqConfig.enabled && running) {
+        running.instance.stop()
+        this.runningQQBots.delete(qqConfig.appId)
+      }
+    }
+
+    const currentAppIds = new Set(qqConfigs.map((b) => b.appId))
+    for (const [appId, running] of this.runningQQBots.entries()) {
+      if (!currentAppIds.has(appId)) {
+        running.instance.stop()
+        this.runningQQBots.delete(appId)
+      }
+    }
+  }
+
   private async stopAllTelegram() {
     for (const running of this.runningTgBots.values()) {
       await running.instance.stop()
@@ -212,8 +290,15 @@ export class ChannelManager {
     this.runningFeishuApps.clear()
   }
 
+  private async stopAllQQ() {
+    for (const running of this.runningQQBots.values()) {
+      await running.instance.stop()
+    }
+    this.runningQQBots.clear()
+  }
+
   async stopAll() {
-    await Promise.all([this.stopAllTelegram(), this.stopAllFeishu()])
+    await Promise.all([this.stopAllTelegram(), this.stopAllFeishu(), this.stopAllQQ()])
     this.logger.info('All channels stopped')
   }
 
@@ -224,7 +309,10 @@ export class ChannelManager {
     const p2 = Array.from(this.runningFeishuApps.values()).map((b) =>
       b.instance.onLanguageChanged(lang)
     )
-    await Promise.allSettled([...p1, ...p2])
+    const p3 = Array.from(this.runningQQBots.values()).map((b) =>
+      b.instance.onLanguageChanged(lang)
+    )
+    await Promise.allSettled([...p1, ...p2, ...p3])
     this.logger.info(`All channels notified about language change to: ${lang}`)
   }
 
@@ -240,8 +328,12 @@ export class ChannelManager {
     this.updateChannelBindings('feishu', appId, bindings)
   }
 
+  private updateQQBindings(appId: string, bindings: Record<string, string>) {
+    this.updateChannelBindings('qq', appId, bindings)
+  }
+
   private updateChannelBindings(
-    type: 'telegram' | 'feishu',
+    type: 'telegram' | 'feishu' | 'qq',
     key: string,
     bindings: Record<string, string>
   ) {
@@ -259,8 +351,13 @@ export class ChannelManager {
       return item
     })
 
-    const runningMap = type === 'telegram' ? this.runningTgBots : this.runningFeishuApps
-    const running = runningMap.get(key)
+    const runningMap =
+      type === 'telegram'
+        ? this.runningTgBots
+        : type === 'feishu'
+          ? this.runningFeishuApps
+          : this.runningQQBots
+    const running = (runningMap as Map<string, any>).get(key)
     if (running) {
       const { gateway } = currentConfig
       const rawPrint = JSON.parse(running.fingerPrint)
@@ -332,6 +429,23 @@ export class ChannelManager {
       return { ok: false, error: res.msg || `Code ${res.code}` }
     } catch (err: any) {
       this.logger.error(`Feishu validation failed for ${appId}:`, err.message)
+      return { ok: false, error: err.message || String(err) }
+    }
+  }
+
+  async validateQQBot(appId: string, clientSecret: string): Promise<QQValidationResult> {
+    if (!appId || !clientSecret) throw new Error('AppId and ClientSecret are required')
+    this.logger.info(`Validating QQ Bot: ${appId}...`)
+
+    try {
+      const api = new QQApi(appId, clientSecret)
+      const botInfo = await api.getMe()
+      return {
+        ok: true,
+        info: botInfo
+      }
+    } catch (err: any) {
+      this.logger.error(`QQ validation failed for ${appId}:`, err.message)
       return { ok: false, error: err.message || String(err) }
     }
   }
