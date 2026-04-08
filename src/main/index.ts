@@ -6,7 +6,7 @@ import { GatewayManager } from './services/gateway/manager'
 import { ConfigService } from './services/config/config-service'
 import { AgentRegistry } from './services/agent/registry'
 import { ChannelManager } from './services/channels/manager' // 新增导入
-import { setSystemClosing, Logger } from './services/common/logger'
+import { setSystemClosing, isSystemClosing, Logger } from './services/common/logger'
 import { initIpcServices } from './ipc'
 import { t, initI18n } from './i18n'
 
@@ -40,6 +40,14 @@ function updateTrayMenu(): void {
   tray.setToolTip(t('common:chat') + ' (opcclaw)')
   tray.setContextMenu(contextMenu)
 }
+function applyAutoLaunch(enabled: boolean): void {
+  const isDev = !app.isPackaged
+  if (isDev) return // 开发阶段不设置自启动
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    path: process.execPath
+  })
+}
 
 function createWindow(): void {
   // Create the browser window.
@@ -58,6 +66,14 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+  })
+
+  mainWindow.on('close', (event) => {
+    const config = ConfigService.getInstance().getConfig()
+    if (!isSystemClosing && config.minimizeOnClose !== false) {
+      event.preventDefault()
+      mainWindow.hide()
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -119,6 +135,9 @@ app.whenReady().then(async () => {
       type: 'config:saved',
       path: configService.getRootPath()
     })
+    // 3. 处理自动启动变更 (Side Effect)
+    const newConfig = configService.getConfig()
+    applyAutoLaunch(!!newConfig.autoLaunch)
   })
 
   // IPC test
@@ -144,6 +163,9 @@ app.whenReady().then(async () => {
     .catch((err) => {
       mainLogger.error('Failed to start core service:', err)
     })
+
+  // --- 初始化自启动 ---
+  applyAutoLaunch(!!config.autoLaunch)
 
   createWindow()
 

@@ -5,6 +5,7 @@ import AppearanceSettings from './general/AppearanceSettings'
 import AgentDefaultsSettings from './general/AgentDefaultsSettings'
 import InteractionSettings from './general/InteractionSettings'
 import NetworkSettings from './general/NetworkSettings'
+import StartupSettings from './general/StartupSettings'
 import DangerZone from './general/DangerZone'
 
 const GeneralTab: React.FC = () => {
@@ -25,6 +26,7 @@ const GeneralTab: React.FC = () => {
 
       <div className="space-y-6">
         <AppearanceSettings />
+        <StartupSettings />
         <AgentDefaultsSettings />
         <InteractionSettings />
         <NetworkSettings />

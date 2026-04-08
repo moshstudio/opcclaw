@@ -39,10 +39,14 @@ export interface MinimalChatStore extends SessionStorePatch {
 }
 
 const isAgentPayload = (p: GatewayPayload): p is AgentEventPayload =>
-  'type' in p && typeof p.type === 'string' && p.type.startsWith('agent:')
+  'type' in p &&
+  typeof p.type === 'string' &&
+  (p.type.startsWith('agent:') || (p.type === 'chat' && (p as any).state?.startsWith('agent:')))
 
 const isSessionPayload = (p: GatewayPayload): p is AgentEventPayload =>
-  'type' in p && typeof p.type === 'string' && p.type.startsWith('session:')
+  'type' in p &&
+  typeof p.type === 'string' &&
+  (p.type.startsWith('session:') || (p.type === 'chat' && (p as any).state?.startsWith('session:')))
 
 const isModelsPayload = (p: GatewayPayload): p is ModelsPayload =>
   'type' in p && p.type === 'models:list'

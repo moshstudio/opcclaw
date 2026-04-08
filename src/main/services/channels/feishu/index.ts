@@ -227,7 +227,7 @@ export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
     const t = getTranslate(lang)
 
     const cardContent = FeishuCardBuilder.buildInteractionCard({
-      title: t('common:channel_base.interaction_title'),
+      title: t('channel_base:interaction_title'),
       prompt: p.prompt || 'Confirm operation?',
       options: p.options || ['Confirm', 'Cancel'],
       interactionId: p.interactionId,
@@ -292,7 +292,7 @@ export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
     const isSuccess = firstRes === 'true' || firstRes === '0'
 
     const cardContent = FeishuCardBuilder.buildInteractionResultCard({
-      title: t('common:channel_base.interaction_completed'),
+      title: t('channel_base:interaction_completed'),
       prompt: p.prompt || 'Operation completed',
       isSuccess
     })
@@ -358,7 +358,7 @@ export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
       return {
         toast: {
           type: 'info',
-          content: t('common:channel_base.executing') || 'Processing...'
+          content: t('channel_base:executing') || 'Processing...'
         }
       }
     }

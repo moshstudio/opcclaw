@@ -99,6 +99,8 @@ export interface AppConfig {
   fontSize?: number
   interactionTimeout?: number // 交互超时时长 (秒)
   agentDefaults?: AgentDefaults
+  autoLaunch?: boolean
+  minimizeOnClose?: boolean
 }
 
 /**

@@ -123,6 +123,12 @@ export const TelegramBotCard: React.FC<BotCardProps> = ({
               bot.enabled ? 'bg-green-500' : 'bg-muted-foreground/20'
             )}
           />
+
+          {!bot.enabled && (
+            <span className="ml-1 text-[10px] font-bold bg-muted/60 text-muted-foreground/70 px-1.5 py-0.5 rounded-md border border-border/50 uppercase tracking-wider">
+              {t('settings.channels_status_not_enabled')}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1">

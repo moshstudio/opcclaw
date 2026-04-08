@@ -33,8 +33,21 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
   const { agents, activeAgentId, setActiveAgent } = useAgentStore()
   const { fetchHistory, fetchSessions } = useChatStore()
   const [isNewAgentOpen, setIsNewAgentOpen] = React.useState(false)
+  const [isSettingsOpen, setIsSettingsOpen] = React.useState(false)
+  const settingsTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
   const { status: connStatus } = useSystemStore()
   const navigate = useNavigate()
+
+  const handleSettingsOpen = () => {
+    if (settingsTimeoutRef.current) clearTimeout(settingsTimeoutRef.current)
+    setIsSettingsOpen(true)
+  }
+
+  const handleSettingsClose = () => {
+    settingsTimeoutRef.current = setTimeout(() => {
+      setIsSettingsOpen(false)
+    }, 300)
+  }
 
   useEffect(() => {
     if (activeAgentId) {
@@ -72,7 +85,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
       className="relative h-full bg-muted/30 border-r flex flex-col overflow-hidden"
     >
       {/* 1. Header Section - 锁定高度 64px */}
-      <div className="h-[64px] px-[20px] flex items-center justify-start relative overflow-hidden">
+      <div className="h-[72px] px-[20px] flex items-center justify-start relative overflow-hidden">
         <motion.div
           initial={false}
           animate={{
@@ -215,7 +228,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
       </div>
 
       {/* 4. Footer Section - 锁定高度 64px */}
-      <div className="h-[64px] mt-auto border-t bg-background/40 backdrop-blur-sm flex items-center justify-start px-[20px] relative overflow-hidden">
+      <div className="h-[72px] mt-auto border-t bg-background/40 backdrop-blur-sm flex items-center justify-start px-[20px] relative overflow-hidden">
         <motion.div
           initial={false}
           animate={{
@@ -247,27 +260,42 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
           transition={linearTransition}
           className="flex items-center gap-[4px] h-[40px] shrink-0"
         >
-          <DropdownMenu>
+          <DropdownMenu open={isSettingsOpen} onOpenChange={setIsSettingsOpen} modal={false}>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-300 ease-linear"
                 title={t('common.settings')}
+                onMouseEnter={handleSettingsOpen}
+                onMouseLeave={handleSettingsClose}
               >
                 <Settings2 className="w-[18px] h-[18px]" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" side="top" className="w-[180px]">
+            <DropdownMenuContent
+              align="end"
+              side="top"
+              sideOffset={2}
+              className="w-[180px]"
+              onMouseEnter={handleSettingsOpen}
+              onMouseLeave={handleSettingsClose}
+            >
               <DropdownMenuItem
-                onClick={() => navigate('/tasks')}
+                onClick={() => {
+                  setIsSettingsOpen(false)
+                  navigate('/tasks')
+                }}
                 className="flex items-center gap-[10px] cursor-pointer"
               >
                 <Clock className="w-[16px] h-[16px] text-muted-foreground" />
                 <span className="font-medium">{t('common.scheduled_tasks')}</span>
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() => navigate('/settings')}
+                onClick={() => {
+                  setIsSettingsOpen(false)
+                  navigate('/settings')
+                }}
                 className="flex items-center gap-[10px] cursor-pointer"
               >
                 <SettingsIcon className="w-[16px] h-[16px] text-muted-foreground" />

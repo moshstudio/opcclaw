@@ -26,6 +26,7 @@ export const applyAgentEvent = (
   // 使用宽松解构避免复杂联合类型的字段访问问题 (字段按需使用，运行时安全)
   const p = payload as {
     type: string
+    state?: string
     agentId?: string
     agent?: Agent
     id?: string
@@ -33,14 +34,28 @@ export const applyAgentEvent = (
     skillName?: string
     sessionKey?: string
   }
-  const { type, agentId, agent: targetAgent, id, error, skillName, sessionKey: sk } = p
+  const {
+    type: rawType,
+    state: rawState,
+    agentId,
+    agent: targetAgent,
+    id,
+    error,
+    skillName,
+    sessionKey: sk
+  } = p
+  const actionType = rawType === 'chat' && rawState ? rawState : rawType
   const updates: AgentStorePatch = {}
 
   // 1. 生命周期处理 (Lifecycle)
-  if (type === 'agent:created' || type === 'agent:updated' || type === 'agent:deleted') {
+  if (
+    actionType === 'agent:created' ||
+    actionType === 'agent:updated' ||
+    actionType === 'agent:deleted'
+  ) {
     let nextAgents = [...state.agents]
 
-    switch (type) {
+    switch (actionType) {
       case 'agent:created':
         if (targetAgent && !nextAgents.some((a) => a.id === targetAgent.id)) {
           nextAgents.push(targetAgent)
@@ -68,7 +83,7 @@ export const applyAgentEvent = (
 
   // 2. 运行态状态处理 (Runtime Status) - 原 session-handler 迁移
   if (sk) {
-    switch (type) {
+    switch (actionType) {
       case 'agent:run-start':
         updates.chatStatuses = { ...state.chatStatuses, [sk]: 'waiting' }
         break

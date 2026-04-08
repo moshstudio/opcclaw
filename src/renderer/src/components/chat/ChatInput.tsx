@@ -40,7 +40,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         )}
       </AnimatePresence>
 
-      <div className="bg-background/50 backdrop-blur-sm border-t p-4 shrink-0 transition-all duration-300 w-full min-w-0">
+      <div className="bg-background/40 backdrop-blur-sm border-t min-h-[72px] py-1 px-[20px] shrink-0 transition-all duration-300 w-full min-w-0 flex items-center">
         <div className="max-w-4xl mx-auto w-full min-w-0 relative">
           <Sender
             value={input}

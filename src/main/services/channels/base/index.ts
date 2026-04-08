@@ -225,7 +225,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
             run.isFinal = true
           } else if (task.type === 'error') {
             const t = getTranslate(run.lang)
-            const errorMsg = `\n\n❌ ${t('common:channel_base.error', { error: task.payload?.error ?? 'unknown' })}`
+            const errorMsg = `\n\n❌ ${t('channel_base:error', { error: task.payload?.error ?? 'unknown' })}`
             run.accumulatedText += errorMsg
             run.isFinal = true
           }
@@ -409,7 +409,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     } else {
       this.stopTyping(chatId)
       const t = getTranslate(undefined)
-      const errorMsg = `\n\n❌ ${t('common:channel_base.error', { error: p.error ?? 'unknown' })}`
+      const errorMsg = `\n\n❌ ${t('channel_base:error', { error: p.error ?? 'unknown' })}`
       await this.sendPlatformMessage(chatId, errorMsg).catch(() => {})
     }
   }
@@ -506,7 +506,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
       // 结果阶段：采用【图标 Result + 换行 + 块状代码】格式
       const icon = isError ? '❌' : '✅'
       const t = getTranslate(undefined)
-      const label = t('common:channel_base.tool_result_label')
+      const label = t('channel_base:tool_result_label')
       return `\n${icon} **${label}**:\n\`\`\`\n${detail}\n\`\`\`\n`
     }
   }
@@ -666,7 +666,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     const handled = await this.processCommand(chatId, command, args, opt.lang, opt.threadId)
     if (!handled) {
       const t = getTranslate(opt.lang)
-      await this.replyToCommand(chatId, t('common:channel_base.unknown_command', { command }))
+      await this.replyToCommand(chatId, t('channel_base:unknown_command', { command }))
     }
     return true
   }
@@ -683,7 +683,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     const t = getTranslate(lang)
     const commands = ['help', 'agents', 'bind', 'reset', 'id', 'health']
     return commands.map((cmd) => {
-      const raw = t(`common:channel_base.help_${cmd}`)
+      const raw = t(`channel_base:help_${cmd}`)
       const description = raw.includes(':') ? raw.split(':').slice(1).join(':').trim() : raw
       return { command: cmd, description, raw }
     })
@@ -694,7 +694,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     const commands = this.getAvailableCommands(lang)
     const baseCmds = commands.map((c) => c.raw)
     const platformHelp = this.getPlatformHelp(lang)
-    const title = t('common:channel_base.help_title')
+    const title = t('channel_base:help_title')
     let helpText = `${title}\n\n${baseCmds.join('\n')}`
     if (platformHelp) helpText += `\n\n${platformHelp}`
     await this.replyToCommand(chatId, helpText, { parseMode: 'Markdown' })
@@ -710,9 +710,9 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     lang?: string
   ): Promise<void> {
     const t = getTranslate(lang)
-    let info = `*${t('common:channel_base.chat_info_title')}*\n\n`
-    info += `${t('common:channel_base.chat_id', { chatId })}\n`
-    if (threadId) info += `${t('common:channel_base.topic_id', { threadId })}\n`
+    let info = `*${t('channel_base:chat_info_title')}*\n\n`
+    info += `${t('channel_base:chat_id', { chatId })}\n`
+    if (threadId) info += `${t('channel_base:topic_id', { threadId })}\n`
     await this.replyToCommand(chatId, info, { parseMode: 'Markdown' })
   }
 
@@ -722,7 +722,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
       const h = await this.client.request<HealthResponse>('health')
       await this.replyToCommand(
         chatId,
-        t('common:channel_base.gateway_status', {
+        t('channel_base:gateway_status', {
           uptime: Math.round(h.uptimeMs / 1000),
           clients: h.clients
         })
@@ -730,7 +730,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     } catch (err) {
       await this.replyToCommand(
         chatId,
-        t('common:channel_base.error', { error: (err as Error).message })
+        t('channel_base:error', { error: (err as Error).message })
       )
     }
   }
@@ -747,8 +747,8 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
       const list = agents.map((a) => `- \`${a.id}\` (${a.config.name || 'Unnamed'})`).join('\n')
       await this.replyToCommand(
         chatId,
-        t('common:channel_base.available_agents', {
-          list: list || t('common:channel_base.no_agents')
+        t('channel_base:available_agents', {
+          list: list || t('channel_base:no_agents')
         }),
         { parseMode: 'Markdown' }
       )
@@ -756,7 +756,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
       this.logger.error(`[Cmd] /agents failed:`, err)
       await this.replyToCommand(
         chatId,
-        t('common:channel_base.fetch_agents_failed') + `: ${(err as Error).message}`
+        t('channel_base:fetch_agents_failed') + `: ${(err as Error).message}`
       )
     }
   }
@@ -773,26 +773,26 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
       const currentId = this.agentBindings.get(key) || this.opts.defaultAgentId || 'main'
       return void (await this.replyToCommand(
         chatId,
-        t('common:channel_base.current_binding', { agentId: currentId })
+        t('channel_base:current_binding', { agentId: currentId })
       ))
     }
     try {
       const agents = await this.fetchAgents()
       if (!agents.some((a) => a.id === agentId)) {
-        await this.replyToCommand(chatId, t('common:channel_base.agent_not_found', { agentId }))
+        await this.replyToCommand(chatId, t('channel_base:agent_not_found', { agentId }))
         return
       }
       const key = threadId ? `${chatId}_${threadId}` : `${chatId}`
       this.agentBindings.set(key, agentId)
       this.opts.onBindingChange?.(Object.fromEntries(this.agentBindings))
       const target = threadId
-        ? t('common:channel_base.target_topic', { threadId })
-        : t('common:channel_base.target_current')
-      await this.replyToCommand(chatId, t('common:channel_base.bind_success', { agentId, target }))
+        ? t('channel_base:target_topic', { threadId })
+        : t('channel_base:target_current')
+      await this.replyToCommand(chatId, t('channel_base:bind_success', { agentId, target }))
     } catch (err) {
       await this.replyToCommand(
         chatId,
-        t('common:channel_base.error', { error: 'Gateway unreachable' })
+        t('channel_base:error', { error: 'Gateway unreachable' })
       )
     }
   }
@@ -810,11 +810,11 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
         agentId: sessionInfo?.agentId || 'main',
         sessionKey
       })
-      await this.replyToCommand(chatId, t('common:channel_base.session_reset'))
+      await this.replyToCommand(chatId, t('channel_base:session_reset'))
     } catch (err) {
       await this.replyToCommand(
         chatId,
-        t('common:channel_base.reset_failed', { error: (err as Error).message })
+        t('channel_base:reset_failed', { error: (err as Error).message })
       )
     }
   }

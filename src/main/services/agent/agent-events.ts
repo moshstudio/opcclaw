@@ -34,7 +34,7 @@ export interface MiniAgentResult {
  */
 export function createMiniAgentStream() {
   return new EventStream<MiniAgentEvent, MiniAgentResult>(
-    (event) => event.type === 'agent:run-end' || event.type === 'agent:run-error',
+    (event) => event.type === 'agent:run-end',
     (event) => {
       if (event.type === 'agent:run-end') {
         const e = event as {

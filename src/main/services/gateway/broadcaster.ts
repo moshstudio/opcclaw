@@ -112,7 +112,11 @@ export class Broadcaster {
     this.chat(chatPayload)
 
     // 5. 链式 ID 追踪
-    if (chatPayload.state === 'chat:final' || chatPayload.state === 'chat:error') {
+    if (
+      chatPayload.state === 'chat:final' ||
+      chatPayload.state === 'chat:error' ||
+      chatPayload.state === 'agent:run-end'
+    ) {
       this.lastChunkIdMap.delete(sessionKey)
     } else {
       this.lastChunkIdMap.set(sessionKey, chunkId)

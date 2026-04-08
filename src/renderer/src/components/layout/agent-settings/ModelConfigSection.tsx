@@ -139,7 +139,7 @@ export const ModelConfigSection: React.FC<SettingsSectionProps> = ({
                 {t('settings.maxTokens_label')}
               </label>
               <p className="text-xs leading-relaxed text-muted-foreground/75 font-medium italic">
-                限制单次模型回复的最大长度。较高的值允许长篇大论，但也可能消耗更多 Token。
+                {t('common.max_tokens_desc')}
               </p>
             </div>
             <NumberInput

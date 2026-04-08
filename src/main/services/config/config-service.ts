@@ -37,7 +37,9 @@ const DEFAULT_CONFIG: AppConfig = {
       codeExecution: true,
       vision: true
     }
-  }
+  },
+  autoLaunch: false,
+  minimizeOnClose: true
 }
 
 export class ConfigService extends EventEmitter {
@@ -161,13 +163,9 @@ export class ConfigService extends EventEmitter {
     return path.join(OPCCLAW_ROOT, 'skills')
   }
 
-  /** 获取内置技能目录 (根目录 resources/skills 或分发后的 resourcesPath) */
+  /** 获取内置技能目录 (根目录 resources/skills 或分发后的 app.asar.unpacked/resources/skills) */
   public getBuiltInSkillsDir(): string {
-    if (app.isPackaged) {
-      return path.join(process.resourcesPath, 'skills')
-    } else {
-      return path.join(app.getAppPath(), 'resources', 'skills')
-    }
+    return path.join(app.getAppPath(), 'resources', 'skills')
   }
 
   public async testModel(modelConfig: AIModelConfig): Promise<ModelTestResult> {

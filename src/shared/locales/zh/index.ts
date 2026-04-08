@@ -9,6 +9,7 @@ import loading from './loading.json'
 import telegram from './telegram.json'
 import feishu from './feishu.json'
 import qq from './qq.json'
+import channel_base from './channel_base.json'
 
 export default {
   common,
@@ -21,5 +22,6 @@ export default {
   loading,
   telegram,
   feishu,
-  qq
+  qq,
+  channel_base
 }

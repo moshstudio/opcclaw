@@ -104,5 +104,11 @@
   "channels_qq_validate_success": "Validation successful",
   "channels_qq_validate_failed": "Validation failed",
   "channels_qq_validate": "Validate Config",
-  "no_models_configured": "No models configured. Please go to ⚙️Settings -> [Model Management] to add and enable at least one model."
+  "no_models_configured": "No models configured. Please go to ⚙️Settings -> [Model Management] to add and enable at least one model.",
+  "channels_status_not_enabled": "Not Enabled",
+  "startup_settings": "Startup Settings",
+  "auto_launch": "Auto Launch",
+  "auto_launch_desc": "Automatically run the app when the computer starts",
+  "minimize_on_close": "Minimize on Close",
+  "minimize_on_close_desc": "Minimize the app to the system tray instead of quitting when the close button is clicked"
 }

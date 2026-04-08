@@ -148,7 +148,9 @@ export function runAgentLoop(
 
         // ========== INNER LOOP (LLM + Tools + Steering) ==========
         while (hasMoreToolCalls || pendingMessages.length > 0) {
-          if (turns >= maxTurns || abortSignal.aborted) break outerLoop
+          if (turns >= maxTurns || abortSignal.aborted) {
+            break outerLoop
+          }
 
           turns++
           metrics.startTurn()
@@ -343,13 +345,22 @@ export function runAgentLoop(
         }
         break
       } // end outer while
-
-      // ========== 结束前记录性能与用量 ==========
+    } catch (err) {
+      stream.push({
+        type: 'agent:run-error',
+        agentId,
+        runId,
+        sessionKey,
+        error: describeError(err)
+      })
+    } finally {
+      // ========== 结束前记录性能与用量 (总是执行) ==========
       const performance = metrics.getPerformance()
       const finalUsage = metrics.accumulatedUsage
 
-      if (recordUsage) {
-        await recordUsage({
+      if (recordUsage && modelDef.id) {
+        // 捕获异步记录，不阻塞流关闭
+        recordUsage({
           runId,
           sessionKey,
           agentId,
@@ -357,7 +368,7 @@ export function runAgentLoop(
           timestamp: Date.now(),
           usage: finalUsage,
           performance
-        })
+        }).catch((e) => console.error('[AgentLoop] Failed to record usage:', e))
       }
 
       stream.push({
@@ -377,22 +388,6 @@ export function runAgentLoop(
         messages: currentMessages,
         usage: finalUsage,
         performance
-      })
-    } catch (err) {
-      stream.push({
-        type: 'agent:run-error',
-        agentId,
-        runId,
-        sessionKey,
-        error: describeError(err)
-      })
-      stream.end({
-        finalText,
-        turns,
-        totalToolCalls: metrics.totalToolCalls,
-        messages: currentMessages,
-        usage: metrics.accumulatedUsage,
-        performance: metrics.getPerformance()
       })
     }
   })()

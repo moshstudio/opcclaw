@@ -108,5 +108,11 @@
   "channels_qq_validate_success": "验证成功",
   "channels_qq_validate_failed": "验证失败",
   "channels_qq_validate": "验证配置",
-  "no_models_configured": "未配置任何模型，请先前往 ⚙️设置 -> [模型管理] 添加并启用至少一个模型。"
+  "no_models_configured": "未配置任何模型，请先前往 ⚙️设置 -> [模型管理] 添加并启用至少一个模型。",
+  "channels_status_not_enabled": "未启用",
+  "startup_settings": "启动设置",
+  "auto_launch": "开机自启",
+  "auto_launch_desc": "电脑开机后自动后台运行",
+  "minimize_on_close": "关闭软件最小化",
+  "minimize_on_close_desc": "点击关闭按钮时，将软件最小化到系统托盘而不是退出"
 }

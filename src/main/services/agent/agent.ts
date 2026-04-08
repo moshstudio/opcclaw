@@ -556,15 +556,24 @@ export class Agent {
             toolCalls++
             break
           case 'chat:final':
-          case 'agent:run-error':
             lastResult = event
+            break
+          case 'agent:run-error':
+            lastResult = event // 优先保留错误状态
+            break
+          case 'agent:run-end':
+            if (!lastResult || lastResult.type !== 'agent:run-error') {
+              lastResult = event
+            }
             break
         }
       }
 
       if (!lastResult || lastResult.type === 'agent:run-error') {
         throw new Error(
-          lastResult && 'error' in lastResult ? lastResult.error : 'Unknown error during agent run'
+          lastResult && 'error' in lastResult
+            ? (lastResult as any).error
+            : 'Unknown error during agent run'
         )
       }
 
