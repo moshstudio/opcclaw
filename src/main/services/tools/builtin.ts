@@ -1052,7 +1052,8 @@ export const scheduleTaskTool: Tool<{
           intervalMs: input.interval_ms,
           activeHours,
           enabled,
-          startTime: startTimeTs
+          startTime: startTimeTs,
+          notifySessionKey: ctx.sessionKey
         })
         if (enabled) {
           ctx.heartbeat.start()

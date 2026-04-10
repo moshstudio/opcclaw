@@ -77,6 +77,7 @@ export interface ToolContext {
       enabled?: boolean
       activeHours?: { start: string; end: string }
       startTime?: number
+      notifySessionKey?: string
     }) => void
     start: () => void
     stop: () => void
@@ -154,6 +155,7 @@ export interface AgentConfig {
   enableHeartbeat?: boolean
   heartbeatInterval?: number
   heartbeatStartTime?: number
+  heartbeatNotifySessionKey?: string
   supportsVision?: boolean
   heartbeatActiveHours?: { start: string; end: string }
 

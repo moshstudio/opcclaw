@@ -70,6 +70,7 @@ export class Agent {
       intervalMs: this.config.heartbeatInterval,
       activeHours: this.config.heartbeatActiveHours,
       startTime: this.config.heartbeatStartTime,
+      notifySessionKey: this.config.heartbeatNotifySessionKey,
       workspaceDir: this.workspaceDir
     })
 
@@ -133,6 +134,7 @@ export class Agent {
       timer: NodeJS.Timeout
       runId: string
       sessionKey: string
+      prompt: string
     }
   >()
   private readonly onConfigChange?: (config: AgentConfig) => void
@@ -160,6 +162,7 @@ export class Agent {
       intervalMs: config.heartbeatInterval,
       activeHours: config.heartbeatActiveHours,
       startTime: config.heartbeatStartTime,
+      notifySessionKey: config.heartbeatNotifySessionKey,
       heartbeatPath: 'HEARTBEAT.md'
     })
 
@@ -230,22 +233,43 @@ export class Agent {
     })
 
     this.heartbeat.onHeartbeat(async (o) => {
-      const sk = resolveSessionKey({ agentId: this.id, sessionKey: 'heartbeat' })
+      // 1. 始终先在私有的 heartbeat 会话中执行（躲避用户的视线进行“重体力劳动”）
+      const heartbeatSk = resolveSessionKey({ agentId: this.id, sessionKey: 'heartbeat' })
+
       try {
-        // [Auto-Create] 如果是首次运行心跳任务且 Session 不存在，则显式创建并广播通知前端
-        if (!(await this.sessionManager.getMetadata(sk))) {
-          await this.sessionManager.create(sk)
-          this.emit({
-            type: 'session:created',
-            sessionKey: sk,
-            agentId: this.id
-          })
+        // [Auto-Create] 后台会话隔离创建
+        if (!(await this.sessionManager.getMetadata(heartbeatSk))) {
+          await this.sessionManager.create(heartbeatSk)
+          this.emit({ type: 'session:created', sessionKey: heartbeatSk, agentId: this.id })
         }
 
-        await this.run(
-          sk,
-          `### [心跳唤醒]\n\n- **当前时间**: ${dayjs().format('YYYY-MM-DD HH:mm:ss Z')}\n- **唤醒原因**: ${o.reason}\n\n---\n\n#### 任务上下文:\n${o.content}`
+        const res = await this.run(
+          heartbeatSk,
+          `### [后台任务执行]\n\n- **时间**: ${dayjs().format('YYYY-MM-DD HH:mm:ss Z')}\n\n---\n\n#### 任务上下文:\n${o.content}`
         )
+
+        this.logger.info(
+          `Heartbeat execution in private session [${heartbeatSk}] finished. Result length: ${res.text?.length || 0}`
+        )
+
+        // 2. 后台执行完毕后，如果有通知需求且产生了有效结果，则转到原频道发起“通报”
+        const canNotify = !!(o.notifySessionKey && res.text && res.text.trim())
+        this.logger.info(
+          `Heartbeat notification check: notifySessionKey=${o.notifySessionKey}, canNotify=${canNotify}`
+        )
+
+        if (canNotify) {
+          this.logger.info(`Triggering notification run in designated session: ${o.notifySessionKey}`)
+          // 在原频道发起一次主动运行，提示词要求 AI 向用户汇报结果
+          // 这样用户能看到 AI 在原频道里针对这个结果的实时回复
+          await this.run(
+            o.notifySessionKey!,
+            `### [定时任务完成通报]\n\n后台任务已执行完毕，以下是执行结果。请根据此结果向频道用户进行简要通报（如果结果提示没有重要更新，则可礼貌地忽略）：\n\n---\n\n${res.text}`
+          )
+        } else if (o.notifySessionKey) {
+          this.logger.warn(`Heartbeat notify skipped: Result text is empty for ${o.notifySessionKey}`)
+        }
+
         return { text: 'Executed heartbeat task' }
       } catch (err) {
         console.error(`[Agent ${this.id}] Heartbeat execution failed:`, err)
@@ -545,6 +569,7 @@ export class Agent {
       let lastResult: MiniAgentEvent | null = null
       let turns = 0
       let toolCalls = 0
+      let collectedText = ''
 
       for await (const event of stream) {
         this.emit(event)
@@ -557,6 +582,7 @@ export class Agent {
             break
           case 'chat:final':
             lastResult = event
+            collectedText = (event as any).text || ''
             break
           case 'agent:run-error':
             lastResult = event // 优先保留错误状态
@@ -572,15 +598,14 @@ export class Agent {
       if (!lastResult || lastResult.type === 'agent:run-error') {
         throw new Error(
           lastResult && 'error' in lastResult
-            ? (lastResult as any).error
+            ? (lastResult as Extract<MiniAgentEvent, { error: string }>).error
             : 'Unknown error during agent run'
         )
       }
 
       return {
         runId,
-        text:
-          lastResult.type === 'chat:final' ? (lastResult as EventOf<'chat:final'>).text || '' : '',
+        text: collectedText,
         turns,
         toolCalls
       }
@@ -626,7 +651,7 @@ export class Agent {
         sessionKey: entry.sessionKey,
         agentId: this.id,
         interactionId,
-        prompt: '',
+        prompt: entry.prompt,
         result,
         remember: !!remember
       })
@@ -659,7 +684,8 @@ export class Agent {
         resolve,
         timer,
         runId: params.runId,
-        sessionKey: params.sessionKey
+        sessionKey: params.sessionKey,
+        prompt: params.prompt
       })
 
       // 仅抛出交互事件，由对端的适配器（如 Telegram/Web）决定如何呈现 UI
@@ -740,6 +766,7 @@ export class Agent {
     enabled?: boolean
     activeHours?: { start: string; end: string }
     startTime?: number
+    notifySessionKey?: string
   }) {
     this.heartbeat.updateConfig(config)
     // 同步到内存配置并触发持久化
@@ -747,6 +774,8 @@ export class Agent {
     if (config.enabled !== undefined) this.config.enableHeartbeat = config.enabled
     if (config.activeHours !== undefined) this.config.heartbeatActiveHours = config.activeHours
     if (config.startTime !== undefined) this.config.heartbeatStartTime = config.startTime
+    if (config.notifySessionKey !== undefined)
+      this.config.heartbeatNotifySessionKey = config.notifySessionKey
 
     this.onConfigChange?.(this.config)
   }

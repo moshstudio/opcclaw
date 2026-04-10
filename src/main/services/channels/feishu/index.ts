@@ -110,51 +110,90 @@ export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
   protected async handleQueueTask(run: CommonRun, task: QueueTask): Promise<void> {
     const { type, text, payload } = task
 
-    // 1. 尝试从交互缓存或会话记录中找回丢失的消息 ID (应对交互后的跨 Run 流转)
-    if (!run.channelMessageId) {
-      // 1.1 优先通过任务 payload 里的 interactionId 恢复
-      if (payload?.interactionId) {
-        const record = this.interactionMessages.get(payload.interactionId)
-        if (record) {
-          run.channelMessageId = String(record.messageId)
-        }
-      }
-
-      // 1.2 如果还找不到，尝试从会话最后一次交互记录中恢复
-      if (!run.channelMessageId) {
-        const sessionKey = this.getInternalSessionKey(run.chatId, run.threadId)
-        const session = this.sessionRegistry.get(sessionKey)
-        if (session?.lastInteractionMessageId) {
-          run.channelMessageId = String(session.lastInteractionMessageId)
-        }
-      }
-    }
-
     switch (type) {
       case 'text':
+      case 'text-fix': {
         if (run.channelMessageId) {
-          await this.editPlatformMessage(run.chatId, run.channelMessageId, text!)
+          await this.editPlatformMessage(run.chatId, run.channelMessageId, run.accumulatedText)
         } else {
-          const msgId = await this.sendPlatformMessage(run.chatId, text!)
+          const msgId = await this.sendPlatformMessage(run.chatId, run.accumulatedText)
           run.channelMessageId = String(msgId)
         }
         break
+      }
+      case 'think':
+        return
+      case 'tool-call': {
+        const toolName = payload?.toolName || 'unknown'
+        const label = `**工具调用: ${toolName}**`
+        const prefix = run.accumulatedText ? '\n' : ''
+        const fullContent = (run.accumulatedText || '') + prefix + label
+        if (run.channelMessageId) {
+          await this.editPlatformMessage(run.chatId, run.channelMessageId, fullContent)
+        } else {
+          const msgId = await this.sendPlatformMessage(run.chatId, fullContent)
+          run.channelMessageId = String(msgId)
+        }
+        this.resetMessageContext(run)
+        return
+      }
+      case 'tool-result':
+        this.resetMessageContext(run)
+        return
       case 'interaction': {
+        if (!payload) return
+
+        // 仅交互任务允许尝试恢复之前的卡片 ID (用于原地更新)
+        if (!run.channelMessageId) {
+          if (payload.interactionId) {
+            const record = this.interactionMessages.get(payload.interactionId)
+            if (record) run.channelMessageId = String(record.messageId)
+          }
+          if (!run.channelMessageId) {
+            const sessionKey = this.getInternalSessionKey(run.chatId, run.threadId)
+            const session = this.sessionRegistry.get(sessionKey)
+            if (session?.lastInteractionMessageId)
+              run.channelMessageId = String(session.lastInteractionMessageId)
+          }
+        }
+
+        // 交互始终开启新气泡
+        this.resetMessageContext(run)
         const iid = await this.sendPlatformInteraction(
           run.chatId,
-          payload!,
+          payload,
           run.lang,
           run.threadId ? String(run.threadId) : undefined,
-          run.channelMessageId // 传入现状消息 ID
+          run.channelMessageId
         )
         if (iid) run.channelMessageId = String(iid)
+        run.lastIsTool = false
         break
       }
-      case 'interaction-responded':
+      case 'interaction-responded': {
+        if (!payload) return
+
+        // 恢复结果响应所需的卡片 ID
+        if (!run.channelMessageId) {
+          if (payload.interactionId) {
+            const record = this.interactionMessages.get(payload.interactionId)
+            if (record) run.channelMessageId = String(record.messageId)
+          }
+          if (!run.channelMessageId) {
+            const sessionKey = this.getInternalSessionKey(run.chatId, run.threadId)
+            const session = this.sessionRegistry.get(sessionKey)
+            if (session?.lastInteractionMessageId)
+              run.channelMessageId = String(session.lastInteractionMessageId)
+          }
+        }
+
         if (run.channelMessageId) {
-          await this.updatePlatformInteraction(run.chatId, run.channelMessageId, payload!, run.lang)
+          await this.updatePlatformInteraction(run.chatId, run.channelMessageId, payload, run.lang)
+          // 完成后重置上下文，确保后续是新气泡
+          this.resetMessageContext(run)
         }
         break
+      }
     }
   }
 
@@ -228,10 +267,12 @@ export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
 
     const cardContent = FeishuCardBuilder.buildInteractionCard({
       title: t('channel_base:interaction_title'),
-      prompt: p.prompt || 'Confirm operation?',
+      prompt: this.mdToFormat(p.prompt || 'Confirm operation?', 'markdown'),
       options: p.options || ['Confirm', 'Cancel'],
       interactionId: p.interactionId,
-      preText: messageId ? this.activeRuns.get(p.runId!)?.accumulatedText || '' : undefined
+      preText: messageId
+        ? this.mdToFormat(this.activeRuns.get(p.runId!)?.accumulatedText || '', 'markdown')
+        : undefined
     })
 
     try {
@@ -288,12 +329,15 @@ export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
     this.logger.debug(`[Feishu] Updating interaction in chat ${chatId}`)
 
     const t = getTranslate(lang)
-    const firstRes = p.result?.[0] || ''
-    const isSuccess = firstRes === 'true' || firstRes === '0'
+    const result = p.result?.[0] || ''
+    const isSuccess =
+      result === 'true' || result === '0' || result === 'Confirm' || result === '确认'
 
     const cardContent = FeishuCardBuilder.buildInteractionResultCard({
       title: t('channel_base:interaction_completed'),
-      prompt: p.prompt || 'Operation completed',
+      prompt: p.prompt ? this.mdToFormat(p.prompt, 'markdown') : undefined,
+      result: result,
+      resultLabel: t('channel_base:tool_result_label'),
       isSuccess
     })
 
@@ -499,8 +543,22 @@ export class FeishuChannel extends BaseChannel<FeishuChannelOptions> {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   }
 
-  protected decorateMessage(text: string): string {
+  protected decorateMessage(text: string, _isFinal: boolean): string {
     return text
+  }
+
+  /**
+   * 针对飞书平台的特殊格式转换
+   * 飞书卡片的 markdown 标签不支持标题 (# ## 等)，将其转换为加粗
+   */
+  protected mdToFormat(text: string, format: 'markdown' | 'html' = 'html'): string {
+    if (format === 'markdown') {
+      // 飞书不支持 Markdown 标题，替换为加粗
+      let processed = text.replace(/\r\n/g, '\n')
+      processed = processed.replace(/^(#{1,6})\s+(.+)$/gm, '**$2**')
+      return processed
+    }
+    return super.mdToFormat(text, format)
   }
 }
 
@@ -563,21 +621,40 @@ class FeishuCardBuilder {
    */
   static buildInteractionResultCard(opts: {
     title: string
-    prompt: string
+    prompt?: string
+    result?: string
+    resultLabel?: string
     isSuccess: boolean
   }): string {
+    const elements: any[] = []
+
+    if (opts.prompt) {
+      elements.push({
+        tag: 'markdown',
+        content: opts.prompt
+      })
+    }
+
+    if (opts.result) {
+      if (elements.length > 0) elements.push({ tag: 'hr' })
+      elements.push({
+        tag: 'markdown',
+        content: `**${opts.resultLabel || 'Result'}**: ${opts.result}`
+      })
+    } else if (elements.length === 0) {
+      elements.push({
+        tag: 'markdown',
+        content: 'Operation completed'
+      })
+    }
+
     return JSON.stringify({
       config: { wide_screen_mode: true, update_multi: true },
       header: {
         title: { tag: 'plain_text', content: opts.title },
-        template: 'blue'
+        template: opts.isSuccess ? 'green' : 'grey'
       },
-      elements: [
-        {
-          tag: 'markdown',
-          content: opts.prompt
-        }
-      ]
+      elements
     })
   }
 }

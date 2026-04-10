@@ -32,10 +32,28 @@ export interface RequestMethodMap {
   'sessions:reset': { params: { agentId: string; sessionKey: string }; result: void }
   'sessions:delete': { params: { agentId: string; sessionKey: string }; result: void }
   'tools:list': { params: void; result: { tools: unknown[] } }
-  'skills:list': { params: void; result: { skills: unknown[] } }
-  'skills:install': { params: { name: string }; result: void }
-  'skills:update': { params: { name: string }; result: void }
-  'skills:delete': { params: { name: string }; result: void }
+  'skills:list': { params: { agentId?: string }; result: { skills: any[] } }
+  'skills:install': {
+    params: { agentId?: string; target: 'workspace' | 'managed'; name: string; content: string }
+    result: void
+  }
+  'skills:update': { params: { agentId?: string; name: string; content: string }; result: void }
+  'skills:delete': { params: { agentId?: string; name: string }; result: void }
+  'skills:repo:explore': {
+    params: { url: string; branch?: string }
+    result: { skills: { name: string; path: string; description?: string }[] }
+  }
+  'skills:repo:install': {
+    params: {
+      agentId?: string
+      target: 'workspace' | 'managed'
+      url: string
+      branch?: string
+      path: string
+      name: string
+    }
+    result: void
+  }
   'bootstrap:list': { params: void; result: unknown }
   'bootstrap:save': { params: unknown; result: void }
   'usage:stats': { params: void; result: unknown }

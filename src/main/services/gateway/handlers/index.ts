@@ -14,6 +14,8 @@ import {
   handleSkillInstall,
   handleSkillUpdate,
   handleSkillDelete,
+  handleSkillRepoExplore,
+  handleSkillRepoInstall,
   handleChannelTelegramTest,
   handleChannelFeishuTest,
   handleChannelQQTest
@@ -76,6 +78,8 @@ export const handlers: Record<GatewayMethod, Handler> = {
   'skills:install': handleSkillInstall,
   'skills:update': handleSkillUpdate,
   'skills:delete': handleSkillDelete,
+  'skills:repo:explore': handleSkillRepoExplore,
+  'skills:repo:install': handleSkillRepoInstall,
   'bootstrap:list': handleBootstrapList,
   'bootstrap:save': handleBootstrapSave,
   'usage:stats': handleUsageStats,

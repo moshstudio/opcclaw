@@ -49,7 +49,7 @@ export async function startGatewayServer(opts: GatewayServerOptions): Promise<Ga
   if (opts.logLevel) {
     setGlobalLogLevel(opts.logLevel)
   }
-  setGlobalLogLevel('debug')
+  // setGlobalLogLevel('debug')
 
   const logger = new Logger('[Gateway]')
   const broadcast = createBroadcastFn(clients, logger)

@@ -39,7 +39,13 @@ const DEFAULT_CONFIG: AppConfig = {
     }
   },
   autoLaunch: false,
-  minimizeOnClose: true
+  minimizeOnClose: true,
+  skillsRepositories: [
+    { source: 'github', url: 'ComposioHQ/awesome-claude-skills', branch: 'master' },
+    { source: 'github', url: 'JimLiu/baoyu-skills', branch: 'main' },
+    { source: 'github', url: 'anthropics/skills', branch: 'main' },
+    { source: 'github', url: 'cexll/myclaude', branch: 'master' }
+  ]
 }
 
 export class ConfigService extends EventEmitter {
@@ -83,7 +89,15 @@ export class ConfigService extends EventEmitter {
         if (!data.gateway?.token) {
           data.gateway = { ...DEFAULT_CONFIG.gateway, ...data.gateway, token: this.generateToken() }
         }
-        return { ...DEFAULT_CONFIG, ...data }
+        const config = { ...DEFAULT_CONFIG, ...data }
+        // 兼容性处理：为缺失 source 的仓库添加默认值
+        if (config.skillsRepositories) {
+          config.skillsRepositories = config.skillsRepositories.map((r) => ({
+            source: 'github',
+            ...r
+          }))
+        }
+        return config as AppConfig
       }
     } catch (err) {
       this.logger.error('Failed to load config, using defaults:', err)

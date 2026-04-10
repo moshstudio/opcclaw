@@ -219,18 +219,39 @@ export class QQChannel extends BaseChannel<QQChannelOptions> {
   // ============== BaseChannel 抽象实现 ==============
 
   protected async handleQueueTask(run: CommonRun, task: QueueTask): Promise<void> {
-    const { type, text } = task
+    const { type, text, payload } = task
 
-    if (type === 'text') {
-      // QQ 不支持消息编辑，因此不进行流式推送，仅在生成完成 (isFinal) 后发送完整消息
-      if (!run.isFinal) return
+    switch (type) {
+      case 'text':
+      case 'text-fix': {
+        const isFlush = task.isFlush || false
+        if (!run.isFinal && !isFlush) return
 
-      const data = text || ''
-      if (data.trim()) {
-        await this.sendPlatformMessage(run.chatId.toString(), data)
+        const data = run.accumulatedText
+        if (data.trim()) {
+          await this.sendPlatformMessage(run.chatId.toString(), data)
+        }
+        break
       }
-    } else if (type === 'interaction') {
-      await this.sendPlatformInteraction(run.chatId.toString(), task.payload)
+      case 'think':
+        return
+      case 'tool-call': {
+        const toolName = payload?.toolName || 'unknown'
+        const label = `**工具调用: ${toolName}**`
+        // QQ 无法像飞书或 Telegram 这样优雅地追加，直接发送新消息提示
+        await this.sendPlatformMessage(run.chatId.toString(), label)
+        this.resetMessageContext(run)
+        return
+      }
+      case 'tool-result':
+        this.resetMessageContext(run)
+        return
+      case 'interaction':
+        if (!payload) return
+        this.resetMessageContext(run)
+        await this.sendPlatformInteraction(run.chatId.toString(), payload)
+        run.lastIsTool = false
+        break
     }
   }
 

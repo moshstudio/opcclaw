@@ -9,6 +9,7 @@ import { ChannelManager } from './services/channels/manager' // 新增导入
 import { setSystemClosing, isSystemClosing, Logger } from './services/common/logger'
 import { initIpcServices } from './ipc'
 import { t, initI18n } from './i18n'
+import { SkillRepoService } from './services/skills/repo-service'
 
 const mainLogger = new Logger('[Main]')
 
@@ -158,6 +159,13 @@ app.whenReady().then(async () => {
         .startAll()
         .catch((err) => {
           mainLogger.error('Failed to start integrated channels:', err)
+        })
+
+      // 预加载技能仓库
+      SkillRepoService.getInstance()
+        .initialize()
+        .catch((err) => {
+          mainLogger.error('Failed to initialize skill repo service:', err)
         })
     })
     .catch((err) => {

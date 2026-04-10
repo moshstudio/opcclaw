@@ -102,37 +102,66 @@ export class TelegramChannel extends BaseChannel<TelegramChannelOptions> {
   protected async handleQueueTask(run: CommonRun, task: QueueTask): Promise<void> {
     const { type, text, payload } = task
 
-    if (type === 'text') {
-      const data = text || ''
-      if (!run.channelMessageId) {
-        if (run.isSending) return
-        run.isSending = true
-        try {
-          run.channelMessageId = await this.sendPlatformMessage(run.chatId, data)
-        } finally {
-          run.isSending = false
+    switch (type) {
+      case 'text':
+      case 'text-fix': {
+        const fullData = run.accumulatedText || ''
+
+        if (!run.channelMessageId) {
+          if (run.isSending) return
+          run.isSending = true
+          try {
+            run.channelMessageId = await this.sendPlatformMessage(run.chatId, fullData)
+          } finally {
+            run.isSending = false
+          }
+        } else {
+          await this.editPlatformMessage(run.chatId, run.channelMessageId, fullData)
         }
-      } else {
-        await this.editPlatformMessage(run.chatId, run.channelMessageId, data)
+        break
       }
-    } else if (type === 'interaction' && payload) {
-      const interactionId = payload.interactionId
-      if (!interactionId) return
-      const messageId = await this.sendPlatformInteraction(run.chatId, payload, run.lang)
-      if (messageId) {
-        this.interactionMessages.set(interactionId, {
-          chatId: run.chatId,
-          messageId,
-          options: payload.options
-        })
+      case 'think':
+        return
+      case 'tool-call': {
+        const toolName = payload?.toolName || 'unknown'
+        const label = `**工具调用: ${toolName}**`
+        const prefix = run.accumulatedText ? '\n' : ''
+        const fullData = (run.accumulatedText || '') + prefix + label
+        if (run.channelMessageId) {
+          await this.editPlatformMessage(run.chatId, run.channelMessageId, fullData)
+        } else {
+          run.channelMessageId = await this.sendPlatformMessage(run.chatId, fullData)
+        }
+        this.resetMessageContext(run)
+        return
       }
-    } else if (type === 'interaction-responded' && payload) {
-      const interactionId = payload.interactionId
-      if (!interactionId) return
-      const record = this.interactionMessages.get(interactionId)
-      if (!record) return
-      this.interactionMessages.delete(interactionId)
-      await this.updatePlatformInteraction(record.chatId, record.messageId, payload, run.lang)
+      case 'tool-result':
+        this.resetMessageContext(run)
+        return
+      case 'interaction': {
+        if (!payload?.interactionId) return
+        this.resetMessageContext(run)
+        const messageId = await this.sendPlatformInteraction(run.chatId, payload, run.lang)
+        if (messageId) {
+          run.channelMessageId = messageId
+          this.interactionMessages.set(payload.interactionId, {
+            chatId: run.chatId,
+            messageId,
+            options: payload.options
+          })
+        }
+        run.lastIsTool = false
+        break
+      }
+      case 'interaction-responded': {
+        if (!payload?.interactionId) return
+        const record = this.interactionMessages.get(payload.interactionId)
+        if (!record) return
+        this.interactionMessages.delete(payload.interactionId)
+        await this.updatePlatformInteraction(record.chatId, record.messageId, payload, run.lang)
+        this.resetMessageContext(run)
+        break
+      }
     }
   }
 

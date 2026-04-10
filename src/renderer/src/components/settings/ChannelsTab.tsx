@@ -139,7 +139,7 @@ export const ChannelsTab: React.FC = () => {
   ) => {
     const nextChannels = { ...localChannels }
     const list = nextChannels[type] || []
-    
+
     // 注入唯一标识和创建时间
     const newItem = {
       ...defaultItem,

@@ -238,5 +238,10 @@
   "clear_failed": "清除失败",
   "undo": "撤销修改",
   "reset_success": "已恢复初始配置",
-  "fetch_agents_failed": "获取智能体列表失败。"
+  "fetch_agents_failed": "获取智能体列表失败。",
+  "search": "搜索",
+  "target": "目标",
+  "show_more": "显示更多",
+  "add": "添加",
+  "no_results": "暂无匹配结果"
 }

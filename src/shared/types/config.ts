@@ -85,6 +85,15 @@ export interface RememberedChoice {
 }
 
 /**
+ * 技能仓库配置
+ */
+export interface SkillRepoConfig {
+  source?: 'github' // 来源，目前仅支持 github
+  url: string // e.g. "ComposioHQ/awesome-claude-skills"
+  branch?: string // e.g. "master"
+}
+
+/**
  * 全局应用配置
  */
 export interface AppConfig {
@@ -99,6 +108,7 @@ export interface AppConfig {
   fontSize?: number
   interactionTimeout?: number // 交互超时时长 (秒)
   agentDefaults?: AgentDefaults
+  skillsRepositories?: SkillRepoConfig[] // 技能仓库
   autoLaunch?: boolean
   minimizeOnClose?: boolean
 }

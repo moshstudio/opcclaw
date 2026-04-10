@@ -42,17 +42,29 @@ export class Broadcaster {
    * 业务分发核心入口 (Outlet)
    */
   public dispatch<A extends GatewayAction>(event: EventOf<A>) {
-    // 治本：直接转发完整 event 对象。EventOf<A> 包含了 EventPayloadMap[A] 的所有属性及 type 字段。
-    this.broadcast(event.type, event as EventPayloadMap[A], {})
+    // 治理会话态与链路追踪 (Identity-driven lifecycle)
+    const payload = event as TaggedEvent & { sessionKey?: string; agentId?: string }
+    const { type } = payload
 
-    if (event.type === 'agent:run-start') {
+    if (type === 'agent:run-start') {
       const e = event as EventOf<'agent:run-start'>
       this.sessionToAgentMap.set(e.sessionKey, e.agentId)
-    } else if (event.type === 'session:reset' || event.type === 'session:deleted') {
-      const e = event as EventOf<'session:reset'>
-      this.lastChunkIdMap.delete(e.sessionKey)
-      this.sessionToAgentMap.delete(e.sessionKey)
+      this.lastChunkIdMap.delete(e.sessionKey) // 启动时强制断开旧链条
+    } else if (
+      type === 'agent:run-end' ||
+      type === 'agent:run-error' ||
+      type === 'session:reset' ||
+      type === 'session:deleted'
+    ) {
+      const sk = payload.sessionKey
+      if (sk) {
+        this.lastChunkIdMap.delete(sk)
+        if (type.startsWith('session:')) this.sessionToAgentMap.delete(sk)
+      }
     }
+
+    // 最终广播 (使用原始 identity 和 payload)
+    this.broadcast(event.type, event as EventPayloadMap[A], {})
   }
 
   /**
@@ -70,13 +82,7 @@ export class Broadcaster {
    * 判定动作是否属于聊天核心业务领域 (即具备 BizContext)
    */
   private isChatArea(type: string): type is ChatAction {
-    return (
-      type.startsWith('chat:') ||
-      type.startsWith('agent:run-') ||
-      type.startsWith('agent:turn-') ||
-      type.startsWith('agent:skill-') ||
-      type === 'agent:context-overflow'
-    )
+    return type.startsWith('chat:')
   }
 
   /**
@@ -99,7 +105,7 @@ export class Broadcaster {
     // 3. 构建物理平铺负载
     const chatPayload = {
       ...fields,
-      type: 'chat',
+      type: event.type,
       agentId,
       runId,
       sessionKey,

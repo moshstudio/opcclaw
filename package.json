@@ -4,6 +4,7 @@
   "description": "opcclaw - Advanced Agentic Coding Assistant",
   "main": "./out/main/index.js",
   "author": "example.com",
+  "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://electron-vite.org",
   "scripts": {
     "format": "prettier --write .",

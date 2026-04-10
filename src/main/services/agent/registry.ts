@@ -180,11 +180,15 @@ export class AgentRegistry {
       heartbeatInterval: agentJson.heartbeatInterval,
       heartbeatActiveHours: agentJson.heartbeatActiveHours,
       heartbeatStartTime: agentJson.heartbeatStartTime,
+      heartbeatNotifySessionKey: agentJson.heartbeatNotifySessionKey,
       // 参数设置
       temperature: agentJson.temperature ?? DEFAULT_TEMPERATURE,
       reasoning: agentJson.reasoning,
       maxTurns: agentJson.maxTurns ?? DEFAULT_MAX_TURNS,
-      contextTokens: Math.max(MIN_CONTEXT_TOKENS, agentJson.contextTokens || DEFAULT_CONTEXT_TOKENS),
+      contextTokens: Math.max(
+        MIN_CONTEXT_TOKENS,
+        agentJson.contextTokens || DEFAULT_CONTEXT_TOKENS
+      ),
       maxTokens: agentJson.maxTokens,
       maxConcurrentRuns: DEFAULT_MAX_CONCURRENT_RUNS,
       supportsVision: agentJson.supportsVision, // 保持原始意图

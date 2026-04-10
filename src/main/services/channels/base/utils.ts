@@ -62,7 +62,7 @@ export function parseSessionKey(key: string, channelId: string): SessionKeyInfo 
 /**
  * 获取基于语言的翻译函数
  */
-export function getTranslate(source?: unknown) {
+export function getTranslate(source?: string | { from?: { language_code?: string } }) {
   // 核心原则：遵循软件当前的语言设置 (opcclaw 设置)
   let lang = i18next.language || 'zh'
 
@@ -89,7 +89,7 @@ export function extractText(message?: Message): string {
   return message.content
     .map((b) => {
       if (b.type === 'text') return b.text
-      if (b.type === 'thinking') return b.thinking
+      // 明确排除 thinking 和 toolCall 等非文本块
       return ''
     })
     .join('')

@@ -63,6 +63,8 @@ export interface HeartbeatConfig {
   duplicateWindowMs?: number
   /** 指定的首次运行时间（毫秒时间戳） */
   startTime?: number
+  /** 通知渠道会话 Key */
+  notifySessionKey?: string
   /** 工作空间目录 */
   workspaceDir?: string
 }
@@ -116,6 +118,8 @@ export type HeartbeatCallback = (opts: {
   reason: WakeReason
   /** 来源标识 */
   source?: string
+  /** 通知会话 Key */
+  notifySessionKey?: string
 }) => Promise<{ text?: string } | null>
 
 /**
@@ -317,6 +321,7 @@ export class HeartbeatManager {
       coalesceMs: config.coalesceMs ?? 250,
       duplicateWindowMs: config.duplicateWindowMs ?? 24 * 60 * 60 * 1000,
       activeHours: config.activeHours,
+      notifySessionKey: config.notifySessionKey,
       workspaceDir: config.workspaceDir ?? workspaceDir
     }
 
@@ -465,6 +470,9 @@ export class HeartbeatManager {
     if (config.enabled !== undefined) {
       this.config.enabled = config.enabled
     }
+    if (config.notifySessionKey !== undefined) {
+      this.config.notifySessionKey = config.notifySessionKey
+    }
     if (config.workspaceDir !== undefined && config.workspaceDir !== this.workspaceDir) {
       this.workspaceDir = config.workspaceDir
     }
@@ -490,6 +498,7 @@ export class HeartbeatManager {
     hasPending: boolean
     heartbeatPath: string
     forcedNextDueMs: number | null
+    notifySessionKey?: string
   } {
     return {
       enabled: this.config.enabled,
@@ -502,7 +511,8 @@ export class HeartbeatManager {
       isWithinActiveHours: this.isWithinActiveHours(Date.now()),
       hasPending: this.wake.hasPending(),
       heartbeatPath: this.config.heartbeatPath,
-      forcedNextDueMs: this.state.forcedNextDueMs
+      forcedNextDueMs: this.state.forcedNextDueMs,
+      notifySessionKey: this.config.notifySessionKey
     }
   }
 
@@ -591,7 +601,8 @@ export class HeartbeatManager {
 
       const result = await this.callback({
         content: content,
-        reason: wakeReason
+        reason: wakeReason,
+        notifySessionKey: this.config.notifySessionKey
       })
 
       const replyText = result?.text?.trim()

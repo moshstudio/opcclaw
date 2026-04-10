@@ -4,7 +4,7 @@
  */
 
 import { GatewayClient } from '../../gateway/client'
-import type { EventFrame, ChatPayloadFlat } from '../../gateway/protocol'
+import type { EventFrame, ChatPayloadFlat, ChatAction } from '../../gateway/protocol'
 import { Logger } from '@main/services/common/logger'
 import {
   BaseChannelOptions,
@@ -96,9 +96,17 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
       eventName.startsWith('chat:') ||
       eventName.startsWith('agent:run-') ||
       eventName.startsWith('agent:skill-') ||
-      eventName === 'agent:context-overflow'
+      eventName === 'agent:context-overflow' ||
+      eventName === 'notice:info'
 
     if (!isChannelEvent) return
+
+    if (eventName === 'notice:info') {
+      const p = evt.payload as { sessionKey: string; text: string }
+      const info = parseSessionKey(p.sessionKey, this.channelId)
+      if (info && p.text) await this.sendFullMessage(info.chatId, p.text)
+      return
+    }
 
     const payload = evt.payload as ChatPayloadFlat
     const sessionInfo = parseSessionKey(payload.sessionKey!, this.channelId)
@@ -123,7 +131,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
       case 'chat:toolResult':
       case 'chat:interaction':
       case 'chat:interaction-responded':
-        if (run) this.pushTaskToQueue(run, eventName, payload)
+        if (run) this.pushTaskToQueue(run, eventName as ChatAction, payload)
         break
 
       case 'chat:final':
@@ -145,47 +153,46 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
   /**
    * 将解析后的网关事件转化为具体的 QueueTask 推入队列
    */
-  protected pushTaskToQueue(run: CommonRun, event: string, p: ChatPayloadFlat): void {
-    const task: any = { type: 'text' }
+  protected pushTaskToQueue(run: CommonRun, event: ChatAction, p: ChatPayloadFlat): void {
+    let task: QueueTask | undefined
 
     switch (event) {
-      case 'chat:start':
-        return
       case 'chat:delta':
-        task.text = p.delta
+        task = { type: 'text', text: p.delta }
+        break
+      case 'chat:thinking':
+        task = { type: 'think', text: p.delta }
         break
       case 'chat:toolCall':
-        task.text = this.formatToolExecution('call', p)
+        task = { type: 'tool-call', text: this.formatToolExecution('call', p), payload: p }
         break
       case 'chat:toolResult':
-        task.text = this.formatToolExecution('result', p)
+        task = { type: 'tool-result', text: this.formatToolExecution('result', p) }
         break
       case 'chat:final':
-        task.type = 'text-fix'
-        task.text = extractText(p.message)
+        task = { type: 'text-fix', text: extractText(p.message) }
         break
       case 'agent:run-end':
-        task.type = 'run-end'
+        task = { type: 'run-end' }
         break
       case 'chat:error':
       case 'agent:run-error':
       case 'agent:context-overflow':
-        task.type = 'error'
-        task.payload = p
+        task = { type: 'error', payload: p }
         break
       case 'chat:interaction':
-        task.type = 'interaction'
-        task.payload = p
+        task = { type: 'interaction', payload: p }
         break
       case 'chat:interaction-responded':
-        task.type = 'interaction-responded'
-        task.payload = p
+        task = { type: 'interaction-responded', payload: p }
         break
       default:
         return
     }
 
-    run.taskQueue.push(task)
+    if (task) {
+      run.taskQueue.push(task)
+    }
 
     // 确保消费者循环已启动
     if (!run.isUpdating) {
@@ -204,125 +211,144 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     run.isUpdating = true
 
     try {
-      while (true) {
-        // --- 1. 任务批处理：快速消费队列中的连续非阻塞状态 ---
-        while (run.taskQueue.length > 0) {
-          const nextTask = run.taskQueue[0]
-          // 遇到交互任务，必须先停止批处理，确保文本同步后再发送交互
-          if (nextTask.type === 'interaction' || nextTask.type === 'interaction-responded') {
-            break
-          }
-
-          const task = run.taskQueue.shift()!
-
-          if (task.type === 'text' && task.text) {
-            run.accumulatedText += task.text
-          } else if (task.type === 'text-fix' && task.text) {
-            if (task.text.length > run.accumulatedText.length) {
-              run.accumulatedText = task.text
-            }
-          } else if (task.type === 'run-end') {
-            run.isFinal = true
-          } else if (task.type === 'error') {
-            const t = getTranslate(run.lang)
-            const errorMsg = `\n\n❌ ${t('channel_base:error', { error: task.payload?.error ?? 'unknown' })}`
-            run.accumulatedText += errorMsg
-            run.isFinal = true
-          }
-        }
-
-        // --- 2. 交互任务特殊处理：确保在处理交互前文本已全部同步 ---
-        const interactionTask = run.taskQueue[0]
-        if (
-          interactionTask &&
-          (interactionTask.type === 'interaction' ||
-            interactionTask.type === 'interaction-responded')
-        ) {
-          // 先将之前积累的文本发送出去
-          await this.syncAccumulatedText(run)
-
-          // 取出并执行该交互类任务
-          const task = run.taskQueue.shift()!
-
-          await this.handleQueueTask(run, task)
-
-          // 交互后通常需要一些响应时间，防止后续任务冲突
+      while (!this.isRunConsumerFinished(run)) {
+        if (run.taskQueue.length === 0) {
           await new Promise((r) => setTimeout(r, this.queueInterval))
           continue
         }
 
-        // --- 3. 节流检查与物理分发 ---
-        const textToSent = run.accumulatedText || ''
-        const decorated = this.decorateMessage(textToSent, !!run.isFinal)
-        const truncated = truncate(decorated, this.maxMessageLength)
-
-        const needsSync =
-          truncated !== run.lastSentDecoratedText || (run.isFinal && !run.lastSentText)
-
-        if (needsSync) {
-          await this.waitForThrottle(run, !!run.isFinal)
-
-          // 处理超长文本分页
-          if (decorated.length > this.maxMessageLength && !run.isFinal) {
-            const handled = await this.handleStreamPagination(run, textToSent)
-            if (handled) continue
-          }
-
-          // 调用平台实现进行物理更新
-          await this.handleQueueTask(run, { type: 'text', text: truncated })
-          run.lastSentText = textToSent
-          run.lastSentDecoratedText = truncated
-          run.lastUpdateAt = Date.now()
-        }
-
-        // 退出逻辑：队列清空 且 标记结束 且 物理同步完成
-        if (
-          run.taskQueue.length === 0 &&
-          run.isFinal &&
-          (run.accumulatedText === run.lastSentText || truncated === run.lastSentDecoratedText)
-        ) {
-          break
-        }
-
-        // 队列为空时的休眠保持轮训节奏
-        if (run.taskQueue.length === 0 && !run.isFinal) {
-          await new Promise((r) => setTimeout(r, this.queueInterval))
+        const task = run.taskQueue[0]
+        if (task.type === 'text' || task.type === 'text-fix' || task.type === 'think') {
+          const type = task.type === 'text-fix' ? 'text' : task.type
+          this.batchConsumeCompatibleTasks(run, type)
+          await this.syncAccumulatedText(run, type)
+        } else if (task.type === 'run-end') {
+          run.taskQueue.shift()
+          run.isFinal = true
+        } else if (task.type === 'error') {
+          await this.handleErrorTask(run, run.taskQueue.shift()!)
+        } else {
+          // 非文本任务：先冲刷之前文本，再按序执行
+          await this.syncAccumulatedText(run)
+          await this.processDiscreteTask(run, run.taskQueue.shift()!)
         }
       }
     } finally {
-      run.isUpdating = false
-      this.stopTyping(run.chatId)
+      this.finalizeRunConsumer(run)
+    }
+  }
 
-      // 彻底完成后清理 Run 对象
-      if (run.isFinal && run.taskQueue.length === 0 && run.agentRunId) {
-        const runId = run.agentRunId
-        setTimeout(() => this.activeRuns.delete(runId), 2000)
+  /**
+   * 批处理连续同类型任务 (Throttle 合并)
+   */
+  private batchConsumeCompatibleTasks(run: CommonRun, type: 'text' | 'think'): void {
+    while (run.taskQueue.length > 0) {
+      const task = run.taskQueue[0]
+      const currentType = task.type === 'text-fix' ? 'text' : task.type
+      if (currentType !== type) break
+
+      run.taskQueue.shift()
+      if (task.type === 'text') {
+        if (task.text) run.accumulatedText += task.text
+      } else if (task.type === 'think') {
+        if (task.text) run.accumulatedThink += task.text
+      } else if (task.type === 'text-fix' && task.text) {
+        const part = task.text.slice(run.sentSegmentsLength)
+        if (part.length > run.accumulatedText.length) run.accumulatedText = part
       }
+
+      // 如果下一项仍是同类型，且未达到节流间隔，则继续内部循环合并
+      const next = run.taskQueue[0]
+      const nextType = next && (next.type === 'text-fix' ? 'text' : next.type)
+      const canMerge = nextType === type
+      if (canMerge && Date.now() - run.lastUpdateAt < this.queueInterval) continue
+      break
+    }
+  }
+
+  /**
+   * 处理离散任务 (工具、交互等)
+   */
+  private async processDiscreteTask(run: CommonRun, task: QueueTask): Promise<void> {
+    await this.waitForThrottle(run, false)
+    await this.handleQueueTask(run, task)
+    run.lastUpdateAt = Date.now()
+  }
+
+  /**
+   * 处理错误任务并渲染
+   */
+  private async handleErrorTask(run: CommonRun, task: QueueTask): Promise<void> {
+    const t = getTranslate(run.lang)
+    run.accumulatedText += `\n\n❌ ${t('channel_base:error', { error: task.payload?.error ?? 'unknown' })}`
+    run.isFinal = true
+    await this.syncAccumulatedText(run)
+  }
+
+  /**
+   * 判断消费者循环是否应当退出
+   */
+  private isRunConsumerFinished(run: CommonRun): boolean {
+    const textToSent = run.accumulatedText || ''
+    const thinkToSent = run.accumulatedThink || ''
+
+    const decoratedText = this.decorateMessage(textToSent, !!run.isFinal)
+    const truncatedText = truncate(decoratedText, this.maxMessageLength)
+
+    const isTextSynced =
+      run.accumulatedText === run.lastSentText || truncatedText === run.lastSentDecoratedText
+    const isThinkSynced = run.accumulatedThink === (run.lastSentThink || '')
+
+    return run.taskQueue.length === 0 && !!run.isFinal && isTextSynced && isThinkSynced
+  }
+
+  /**
+   * 运行结束后的清理
+   */
+  private finalizeRunConsumer(run: CommonRun): void {
+    run.isUpdating = false
+    this.stopTyping(run.chatId)
+    if (run.isFinal && run.taskQueue.length === 0 && run.agentRunId) {
+      const runId = run.agentRunId
+      setTimeout(() => this.activeRuns.delete(runId), 2000)
     }
   }
 
   /**
    * 辅助同步累积文本到平台 (增加节流支持)
    */
-  private async syncAccumulatedText(run: CommonRun): Promise<void> {
-    const textToSent = run.accumulatedText || ''
-    const decorated = this.decorateMessage(textToSent, !!run.isFinal)
+  private async syncAccumulatedText(
+    run: CommonRun,
+    type: 'text' | 'think' = 'text'
+  ): Promise<void> {
+    const text = type === 'think' ? run.accumulatedThink || '' : run.accumulatedText || ''
+    const decorated = this.decorateMessage(text, !!run.isFinal)
     const truncated = truncate(decorated, this.maxMessageLength)
 
-    if (truncated === run.lastSentDecoratedText) return
+    const lastSent = type === 'think' ? run.lastSentThink || '' : run.lastSentText || ''
+    const lastSentDecorated =
+      type === 'think' ? run.lastSentThinkDecoratedText || '' : run.lastSentDecoratedText || ''
 
-    // 交互前的同步也必须遵守节流
+    if (truncated === lastSentDecorated && text === lastSent) return
+
+    // 同步前也必须遵守节流
     await this.waitForThrottle(run, !!run.isFinal)
 
-    // 处理超长分页
-    if (decorated.length > this.maxMessageLength && !run.isFinal) {
-      await this.handleStreamPagination(run, textToSent)
+    // 处理超长分页 (思考内容暂不支持分页)
+    if (type === 'text' && decorated.length > this.maxMessageLength && !run.isFinal) {
+      await this.handleStreamPagination(run, text)
       return
     }
 
-    await this.handleQueueTask(run, { type: 'text', text: truncated })
-    run.lastSentText = textToSent
-    run.lastSentDecoratedText = truncated
+    await this.handleQueueTask(run, { type, text: truncated, isFlush: true })
+
+    if (type === 'think') {
+      run.lastSentThink = text
+      run.lastSentThinkDecoratedText = truncated
+    } else {
+      run.lastSentText = text
+      run.lastSentDecoratedText = truncated
+    }
     run.lastUpdateAt = Date.now()
   }
 
@@ -359,6 +385,8 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
       chatId,
       threadId: sessionInfo?.threadId,
       accumulatedText: '',
+      accumulatedThink: '',
+      sentSegmentsLength: 0,
       taskQueue: [],
       lastUpdateAt: 0,
       lastSentText: '',
@@ -422,6 +450,8 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
 
     await this.finalizeMessage(run, finalPart)
 
+    // 记录分页导致的已发送长度
+    run.sentSegmentsLength += finalPart.length
     run.accumulatedText = fullText.slice(finalPart.length)
     run.lastSentText = ''
     run.lastSentDecoratedText = ''
@@ -439,6 +469,22 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     await this.editPlatformMessage(run.chatId, run.channelMessageId, text).catch(() => {})
     run.lastSentText = text
     run.lastSentDecoratedText = text
+  }
+
+  /**
+   * 重置消息上下文，用于开启新的消息气泡
+   */
+  protected resetMessageContext(run: CommonRun): void {
+    // 记录已发送部分的长度
+    run.sentSegmentsLength += run.accumulatedText.length
+    run.channelMessageId = undefined
+    run.accumulatedText = ''
+    run.accumulatedThink = ''
+    run.lastSentText = ''
+    run.lastSentThink = ''
+    run.lastSentDecoratedText = ''
+    run.lastSentThinkDecoratedText = ''
+    run.lastIsTool = false
   }
 
   // ============== 子类平台实现占位 (Abstracts) ==============
@@ -643,6 +689,9 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
         case 'reset':
           await this.handleCmdReset(chatId, lang, threadId)
           return true
+        case 'stop':
+          await this.handleCmdStop(chatId, lang, threadId)
+          return true
         default:
           return false
       }
@@ -681,7 +730,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
     lang?: string
   ): { command: string; description: string; raw: string }[] {
     const t = getTranslate(lang)
-    const commands = ['help', 'agents', 'bind', 'reset', 'id', 'health']
+    const commands = ['help', 'agents', 'bind', 'reset', 'stop', 'id', 'health']
     return commands.map((cmd) => {
       const raw = t(`channel_base:help_${cmd}`)
       const description = raw.includes(':') ? raw.split(':').slice(1).join(':').trim() : raw
@@ -728,10 +777,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
         })
       )
     } catch (err) {
-      await this.replyToCommand(
-        chatId,
-        t('channel_base:error', { error: (err as Error).message })
-      )
+      await this.replyToCommand(chatId, t('channel_base:error', { error: (err as Error).message }))
     }
   }
 
@@ -790,10 +836,7 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
         : t('channel_base:target_current')
       await this.replyToCommand(chatId, t('channel_base:bind_success', { agentId, target }))
     } catch (err) {
-      await this.replyToCommand(
-        chatId,
-        t('channel_base:error', { error: 'Gateway unreachable' })
-      )
+      await this.replyToCommand(chatId, t('channel_base:error', { error: 'Gateway unreachable' }))
     }
   }
 
@@ -816,6 +859,41 @@ export abstract class BaseChannel<TOptions extends BaseChannelOptions> {
         chatId,
         t('channel_base:reset_failed', { error: (err as Error).message })
       )
+    }
+  }
+
+  private async handleCmdStop(
+    chatId: string | number,
+    lang?: string,
+    threadId?: string | number
+  ): Promise<void> {
+    const t = getTranslate(lang)
+    const sessionKey = this.getInternalSessionKey(chatId, threadId)
+    const info = parseSessionKey(sessionKey, this.channelId)
+
+    if (!info) {
+      await this.replyToCommand(chatId, t('channel_base:error', { error: 'Invalid session' }))
+      return
+    }
+
+    try {
+      // 停止本地消费队列
+      for (const run of this.activeRuns.values()) {
+        if (String(run.chatId) === String(chatId) && String(run.threadId) === String(threadId)) {
+          run.isFinal = true
+          run.taskQueue = []
+        }
+      }
+
+      await this.client.request('chat:abort', {
+        agentId: info.agentId,
+        sessionKey
+      })
+
+      await this.replyToCommand(chatId, t('channel_base:stopped'))
+    } catch (err) {
+      this.logger.error(`[Cmd] /stop failed:`, err)
+      await this.replyToCommand(chatId, t('channel_base:error', { error: (err as Error).message }))
     }
   }
 }

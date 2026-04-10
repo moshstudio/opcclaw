@@ -183,3 +183,11 @@ textarea,
 .animate-pulse-subtle {
   animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Ensure Ant Design X components use the correct font family */
+.ant-sender,
+.ant-sender *,
+.ant-sender-content textarea,
+.ant-sender-content textarea::placeholder {
+  font-family: inherit !important;
+}

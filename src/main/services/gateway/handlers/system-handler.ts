@@ -169,6 +169,8 @@ export const handleSkillUpdate: Handler = async (params, _client, ctx) => {
   }
 }
 
+import { SkillRepoService } from '../../skills/repo-service'
+
 /**
  * skills.delete
  */
@@ -185,6 +187,51 @@ export const handleSkillDelete: Handler = async (params, _client, ctx) => {
 
   try {
     await agentCheck.agent.getSkillManager().deleteSkill(name)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: errorShape(ErrorCodes.UNAVAILABLE, String(err)) }
+  }
+}
+
+/**
+ * skills:repo:explore
+ */
+export const handleSkillRepoExplore: Handler = async (params) => {
+  const check = ensureParams(params, { url: 'string', branch: 'string?', refresh: 'boolean?' })
+  if (!check.ok) return check
+
+  const { url, branch = 'main', refresh = false } = check.values
+  try {
+    const skills = await SkillRepoService.getInstance().exploreRepo(url, branch, refresh)
+    return { ok: true, payload: { skills } }
+  } catch (err) {
+    return { ok: false, error: errorShape(ErrorCodes.UNAVAILABLE, String(err)) }
+  }
+}
+
+/**
+ * skills:repo:install
+ */
+export const handleSkillRepoInstall: Handler = async (params, _client, ctx) => {
+  const check = ensureParams(params, {
+    agentId: 'string?',
+    target: 'string',
+    url: 'string',
+    branch: 'string?',
+    path: 'string',
+    name: 'string'
+  })
+  if (!check.ok) return check
+
+  const { agentId = 'main', target, url, branch = 'main', path, name } = check.values
+  const agentCheck = await getAgentOrError(ctx, agentId)
+  if (!agentCheck.ok) return agentCheck
+
+  try {
+    const content = await SkillRepoService.getInstance().getSkillContent(url, path, branch)
+    await agentCheck.agent
+      .getSkillManager()
+      .installSkill(target as 'workspace' | 'managed', name, content)
     return { ok: true }
   } catch (err) {
     return { ok: false, error: errorShape(ErrorCodes.UNAVAILABLE, String(err)) }

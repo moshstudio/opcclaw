@@ -14,7 +14,7 @@ export interface BizContext {
 
 /** 链路追踪字段 */
 export interface ChatTrack {
-  type: 'chat'
+  type: string
   chunkId: string
   parentId?: string
 }
@@ -187,7 +187,7 @@ export type ChatPayloadFlat = Partial<
     AgentTurnBody &
     InteractionPayload &
     ToolCallPayload
-> & { type: 'chat'; state: ChatAction }
+> & { type: string; state: ChatAction }
 
 /** 其余聚合载荷 */
 export type AgentEventPayload = Extract<

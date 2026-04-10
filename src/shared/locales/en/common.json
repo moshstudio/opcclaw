@@ -229,5 +229,10 @@
   "system_shutdown_desc": "The server is shutting down. Please save your work.",
   "reset_failed": "Reset failed",
   "clear_failed": "Clear failed",
-  "fetch_agents_failed": "Failed to fetch agents list."
+  "fetch_agents_failed": "Failed to fetch agents list.",
+  "search": "Search",
+  "target": "Target",
+  "show_more": "Show More",
+  "add": "Add",
+  "no_results": "No results found"
 }

@@ -1,139 +1,19 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { useAgentStore } from '@renderer/store/useAgentStore'
 import { useSkillStore } from '@renderer/store/useSkillStore'
-import { Card } from '@renderer/components/ui/card'
-import { Button } from '@renderer/components/ui/button'
-import { Badge } from '@renderer/components/ui/badge'
-import { Puzzle, Trash2, RefreshCw, Plus, FolderOpen, Info } from 'lucide-react'
+import { Puzzle, RefreshCw, Info } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useConfirm } from '@renderer/hooks/use-confirm'
 import { Skill, Agent } from '@shared/types/agent'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogBody
-} from '@renderer/components/ui/dialog'
+import { Button } from '@renderer/components/ui/button'
+import { cn } from '@renderer/lib/utils'
+import { SkillCard } from './skills/SkillCard'
+import { MarketDialog } from './skills/MarketDialog'
 
 /**
- * 技能详情对话框组件
+ * 技能管理主界面
  */
-const SkillDetail: React.FC<{
-  skill: Skill
-  agent?: Agent
-  onDelete?: () => void
-}> = ({ skill, agent, onDelete }) => {
-  const { t } = useTranslation()
-
-  return (
-    <DialogBody className="space-y-6 py-6 font-sans">
-      <div className="flex items-center gap-4">
-        <div className="p-4 bg-primary/10 rounded-2xl text-primary shrink-0">
-          <Puzzle className="w-8 h-8" />
-        </div>
-        <div>
-          <h3 className="text-xl font-bold">{skill.name}</h3>
-          <div className="flex items-center gap-2 mt-1">
-            <Badge
-              variant={
-                skill.source === 'built-in'
-                  ? 'secondary'
-                  : skill.source === 'managed'
-                    ? 'default'
-                    : 'outline'
-              }
-            >
-              {t(`skills.source.${skill.source}`)}
-            </Badge>
-            {agent && (
-              <Badge variant="outline" className="text-primary/70 border-primary/30">
-                {agent.config.name}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <h4 className="text-sm font-semibold flex items-center gap-2">
-          <Info className="w-4 h-4 text-primary" />
-          {t('common.description')}
-        </h4>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          {skill.description || t('common.no_description')}
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <h4 className="text-sm font-semibold flex items-center gap-2">
-          <FolderOpen className="w-4 h-4 text-primary" />
-          {t('common.path')}
-        </h4>
-        <div className="bg-muted/50 p-3 rounded-xl border group relative overflow-hidden">
-          <code className="text-xs break-all block text-muted-foreground">{skill.path}</code>
-        </div>
-      </div>
-
-      {onDelete && skill.source !== 'built-in' && (
-        <div className="pt-4 mt-4 border-t border-dashed">
-          <Button
-            variant="ghost"
-            className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive gap-2 rounded-xl"
-            onClick={onDelete}
-          >
-            <Trash2 className="w-4 h-4" />
-            {t('common.delete')}
-          </Button>
-        </div>
-      )}
-    </DialogBody>
-  )
-}
-
-/**
- * 紧凑型技能卡片
- */
-const SkillCard: React.FC<{
-  skill: Skill
-  agent?: Agent
-  onDelete?: (agentId: string, name: string) => void
-}> = ({ skill, agent, onDelete }) => {
-  const { t } = useTranslation()
-
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Card className="p-3 flex items-start gap-3 group transition-all hover:border-primary/50 cursor-pointer hover:shadow-md hover:shadow-primary/5 active:scale-[0.98] rounded-2xl">
-          <div className="p-2 bg-primary/5 rounded-xl text-primary shrink-0 group-hover:bg-primary/10 transition-colors">
-            <Puzzle className="w-4 h-4" />
-          </div>
-          <div className="space-y-0.5 overflow-hidden">
-            <div className="flex items-center gap-2">
-              <h4 className="font-bold text-xs truncate uppercase tracking-tight">{skill.name}</h4>
-            </div>
-            <p className="text-[10px] text-muted-foreground line-clamp-1 leading-tight">
-              {skill.description || t('common.no_description')}
-            </p>
-          </div>
-        </Card>
-      </DialogTrigger>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-center">{t('skills.detail') || 'Skill Detail'}</DialogTitle>
-        </DialogHeader>
-        <SkillDetail
-          skill={skill}
-          agent={agent}
-          onDelete={onDelete ? () => onDelete(agent?.id || '', skill.name) : undefined}
-        />
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 const SkillsTab: React.FC = () => {
   const { t } = useTranslation()
   const { agents } = useAgentStore()
@@ -142,21 +22,30 @@ const SkillsTab: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const confirm = useConfirm()
 
+  // 初始加载所有智能体的技能
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true)
-      await Promise.all(agents.map((agent) => fetchSkills(agent.id)))
-      setLoading(false)
+      try {
+        await Promise.all(agents.map((agent) => fetchSkills(agent.id)))
+      } finally {
+        setLoading(false)
+      }
     }
     if (agents.length > 0) {
       fetchAll()
     }
   }, [agents, fetchSkills])
 
-  // 数据处理：分离全局与专属技能
-  const processed = React.useMemo(() => {
+  /**
+   * 数据处理：按来源和智能体对技能进行分类
+   * 1. built-in: 系统内置技能 (去重显示)
+   * 2. managed: 远程仓库托管技能 (全局共享，去重显示)
+   * 3. agentGroups: 智能体专属技能 (Workspace 模式)
+   */
+  const processed = useMemo(() => {
     const builtInMap = new Map<string, Skill>()
-    const managedMap = new Map<string, Skill>()
+    const managedMap = new Map<string, { skill: Skill; agentId: string }>()
     const agentGroups: { agent: Agent; skills: Skill[] }[] = []
 
     Object.entries(skills).forEach(([agentId, agentSkills]) => {
@@ -166,16 +55,20 @@ const SkillsTab: React.FC = () => {
       const workspaceSkills: Skill[] = []
 
       agentSkills.forEach((skill) => {
-        if (skill.source === 'built-in') {
-          if (!builtInMap.has(skill.name)) {
-            builtInMap.set(skill.name, skill)
-          }
-        } else if (skill.source === 'managed') {
-          if (!managedMap.has(skill.name)) {
-            managedMap.set(skill.name, skill)
-          }
-        } else if (skill.source === 'workspace') {
-          workspaceSkills.push(skill)
+        switch (skill.source) {
+          case 'built-in':
+            if (!builtInMap.has(skill.name)) {
+              builtInMap.set(skill.name, skill)
+            }
+            break
+          case 'managed':
+            if (!managedMap.has(skill.name)) {
+              managedMap.set(skill.name, { skill, agentId })
+            }
+            break
+          case 'workspace':
+            workspaceSkills.push(skill)
+            break
         }
       })
 
@@ -193,7 +86,7 @@ const SkillsTab: React.FC = () => {
     }
   }, [skills, agents])
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setLoading(true)
     try {
       await Promise.all(agents.map((agent) => fetchSkills(agent.id)))
@@ -201,27 +94,36 @@ const SkillsTab: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [agents, fetchSkills, t])
 
-  const handleDelete = async (agentId: string, name: string) => {
-    const isConfirmed = await confirm({
-      title: t('common.delete'),
-      description: t('skills.delete_confirm', { name }),
-      variant: 'destructive'
-    })
+  const handleDelete = useCallback(
+    async (agentId: string, name: string) => {
+      const isConfirmed = await confirm({
+        title: t('common.delete'),
+        description: t('skills.delete_confirm', { name }),
+        variant: 'destructive'
+      })
 
-    if (isConfirmed.confirmed) {
-      try {
-        await deleteSkill(agentId, name)
-        toast.success(t('common.success'))
-      } catch (err) {
-        toast.error(t('common.delete_failed') + ': ' + err)
+      if (isConfirmed.confirmed) {
+        try {
+          await deleteSkill(agentId, name)
+          // 如果删除的是托管技能，可能影响多个智能体，刷新全部
+          const isManaged = processed.managed.some((m) => m.skill.name === name)
+          if (isManaged) {
+            await Promise.all(agents.map((a) => fetchSkills(a.id)))
+          }
+          toast.success(t('common.success'))
+        } catch (err) {
+          toast.error(`${t('common.delete_failed')}: ${err}`)
+        }
       }
-    }
-  }
+    },
+    [confirm, deleteSkill, agents, fetchSkills, processed.managed, t]
+  )
 
   return (
     <div className="space-y-8 pb-20">
+      {/* 头部区域 */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
@@ -241,10 +143,7 @@ const SkillsTab: React.FC = () => {
             <RefreshCw className={cn('w-4 h-4 mr-2', loading && 'animate-spin')} />
             {t('skills.refresh')}
           </Button>
-          <Button size="sm" className="rounded-xl">
-            <Plus className="w-4 h-4 mr-2" />
-            {t('skills.create')}
-          </Button>
+          <MarketDialog />
         </div>
       </div>
 
@@ -255,7 +154,7 @@ const SkillsTab: React.FC = () => {
             <div className="w-1 h-3 bg-primary/30 rounded-full" />
             {t('skills.built_in_group') || 'system skills'}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-6">
             {processed.builtIn.map((s) => (
               <SkillCard key={`built-in-${s.name}`} skill={s} />
             ))}
@@ -263,22 +162,27 @@ const SkillsTab: React.FC = () => {
         </section>
       )}
 
-      {/* 全局共享/托管技能 */}
+      {/* 托管技能 (托管在远程仓库，可多智能体共享) */}
       {processed.managed.length > 0 && (
         <section className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground/80 uppercase tracking-widest">
             <div className="w-1 h-3 bg-orange-400/30 rounded-full" />
             {t('skills.managed_group') || 'global shared skills'}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {processed.managed.map((s) => (
-              <SkillCard key={`managed-${s.name}`} skill={s} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-6">
+            {processed.managed.map(({ skill, agentId }) => (
+              <SkillCard
+                key={`managed-${skill.name}`}
+                skill={skill}
+                agentId={agentId}
+                onDelete={handleDelete}
+              />
             ))}
           </div>
         </section>
       )}
 
-      {/* 按照智能体分类渲染专属技能 (Workspace) */}
+      {/* 智能体专属技能 (Workspace) */}
       {processed.agentGroups.length > 0 ? (
         processed.agentGroups.map(({ agent, skills }) => (
           <section key={agent.id} className="space-y-4">
@@ -289,7 +193,7 @@ const SkillsTab: React.FC = () => {
                 ({skills.length})
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-6">
               {skills.map((s) => (
                 <SkillCard
                   key={`${agent.id}-${s.name}`}
@@ -301,7 +205,7 @@ const SkillsTab: React.FC = () => {
             </div>
           </section>
         ))
-      ) : (
+      ) : processed.builtIn.length === 0 && processed.managed.length === 0 ? (
         <section className="space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground/80 uppercase tracking-widest">
             <div className="w-1 h-3 bg-primary/30 rounded-full" />
@@ -312,9 +216,9 @@ const SkillsTab: React.FC = () => {
             <p className="text-sm">{t('skills.empty')}</p>
           </div>
         </section>
-      )}
+      ) : null}
 
-      {/* 说明栏 */}
+      {/* 底部信息提示 */}
       <div className="bg-muted/30 rounded-2xl p-5 border flex gap-4 mt-8">
         <div className="p-2.5 bg-primary/10 rounded-xl text-primary shrink-0 self-start">
           <Info className="w-4 h-4" />
@@ -323,28 +227,19 @@ const SkillsTab: React.FC = () => {
           <h5 className="font-bold text-xs uppercase tracking-wider opacity-80">
             {t('skills.category_label')}
           </h5>
-          <p className="text-muted-foreground leading-relaxed space-y-1">
+          <div className="text-muted-foreground leading-relaxed space-y-1">
             {t('skills.category_desc')
               .split('<br />')
               .map((line, i) => (
                 <span key={i} className="block">
-                  {line
-                    .split('**')
-                    .map((part, index) =>
-                      index % 2 === 1 ? <strong key={index}>{part}</strong> : part
-                    )}
+                  {line}
                 </span>
               ))}
-          </p>
+          </div>
         </div>
       </div>
     </div>
   )
-}
-
-/** 辅助工具 */
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(' ')
 }
 
 export default SkillsTab

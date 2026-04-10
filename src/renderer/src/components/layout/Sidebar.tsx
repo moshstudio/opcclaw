@@ -269,6 +269,10 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, toggleSidebar }) => {
                 title={t('common.settings')}
                 onMouseEnter={handleSettingsOpen}
                 onMouseLeave={handleSettingsClose}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleSettingsOpen()
+                }}
               >
                 <Settings2 className="w-[18px] h-[18px]" />
               </Button>

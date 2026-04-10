@@ -204,28 +204,31 @@ export const applyChatEvent = (payload: ChatPayload, patch: SessionPatch): Sessi
   let nextStatus = currentStatus
   let nextError = errorMessage ?? null
 
-  // 1. 状态映射逻辑
-  const mappedStatus = STATUS_MAP[payload.state]
+  // 1. 动作识别 (兼容封装负载与原生负载)
+  const action = (payload as ChatPayloadFlat).state || payload.type
+  const mappedStatus = STATUS_MAP[action]
+
   if (mappedStatus) {
     const isUserMsgInterrupt =
-      payload.state === 'chat:userMessage' &&
+      action === 'chat:userMessage' &&
       !['idle', 'completed', 'error', 'aborted'].includes(currentStatus)
     if (!isUserMsgInterrupt) nextStatus = mappedStatus
   }
 
   // 2. 消息处理 (这里断言为 Flat 以便映射表调用)
-  const handler = ChatSubHandlers[payload.state] as
+  const flatPayload = payload as ChatPayloadFlat
+  const handler = ChatSubHandlers[action] as
     | ((p: ChatPayloadFlat, m: Message[], s: SessionPatch) => void)
     | undefined
-  handler?.(payload as any, messages, patch)
+  handler?.(flatPayload, messages, patch)
 
   // 3. 错误状态处理
   if (
-    payload.state === 'chat:error' ||
-    payload.state === 'agent:run-error' ||
-    payload.state === 'agent:context-overflow'
+    action === 'chat:error' ||
+    action === 'agent:run-error' ||
+    action === 'agent:context-overflow'
   ) {
-    const errText = String(payload.error || 'Unknown error')
+    const errText = String(flatPayload.error || 'Unknown error')
     const isAbort = errText.toLowerCase().includes('abort')
     nextStatus = isAbort ? 'aborted' : 'error'
     nextError = isAbort ? null : errText.startsWith('Error:') ? errText : `Error: ${errText}`

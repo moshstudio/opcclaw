@@ -251,8 +251,7 @@ export class ChannelManager {
               ...qqConfig,
               gatewayUrl,
               gatewayToken,
-              onBindingChange: (newBindings) =>
-                this.updateQQBindings(qqConfig.appId, newBindings)
+              onBindingChange: (newBindings) => this.updateQQBindings(qqConfig.appId, newBindings)
             })
             await instance.start()
             this.runningQQBots.set(qqConfig.appId, { instance, fingerPrint })
