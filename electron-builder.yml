@@ -12,7 +12,6 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
-includeSubNodeModules: true
 win:
   executableName: opcclaw
   icon: resources/icon.png
