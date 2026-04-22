@@ -12,7 +12,7 @@ export default defineConfig({
     },
     plugins: [
       externalizeDepsPlugin({
-        exclude: ['@mariozechner/pi-ai']
+        exclude: ['@mariozechner/pi-ai', 'linkedom', 'entities', '@mozilla/readability']
       })
     ]
   },
