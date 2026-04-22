@@ -33,13 +33,6 @@ jobs:
           node-version: 22
           cache: 'pnpm'
 
-      - name: Configure pnpm for CI
-        run: |
-          pnpm config set store-dir .pnpm-store
-          # 仅在 CI 中移除镜像配置，防止 404，但不破坏原始 .npmrc
-          sed -i '/mirror/d' .npmrc
-        shell: bash
-
       - name: Install dependencies
         run: pnpm install
 
