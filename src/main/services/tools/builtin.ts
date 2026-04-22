@@ -855,7 +855,7 @@ export const webFetchTool: Tool<{
 }> = {
   name: 'web_fetch',
   category: 'network',
-  description: '获取指定 URL 的内容并提取为 Markdown 或纯文本',
+  description: '通过api请求的方式来获取指定 URL 的内容并提取为 Markdown 或纯文本',
   inputSchema: {
     type: 'object',
     properties: {

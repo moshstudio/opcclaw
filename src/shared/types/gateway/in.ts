@@ -33,6 +33,7 @@ export interface RequestMethodMap {
   'sessions:delete': { params: { agentId: string; sessionKey: string }; result: void }
   'tools:list': { params: void; result: { tools: unknown[] } }
   'skills:list': { params: { agentId?: string }; result: { skills: any[] } }
+  'skills:commands': { params: { agentId?: string }; result: { commands: any[] } }
   'skills:install': {
     params: { agentId?: string; target: 'workspace' | 'managed'; name: string; content: string }
     result: void

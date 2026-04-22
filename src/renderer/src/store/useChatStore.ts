@@ -2,6 +2,7 @@ import { create, StoreApi } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { getGatewayClient } from '../services/gateway-client'
 import { ConfirmService } from '../components/ui/confirm-context'
+import { toast } from 'sonner'
 import { Message, ChatStatus, Agent } from '@shared/types/agent'
 import { ChatPayload, AgentEventPayload, NoticePayload, ModelsPayload } from '@shared/types/gateway'
 import { mapHistoryMessage, RESET_TIMEOUT } from './gateway/chat-handler'
@@ -209,7 +210,10 @@ export const useChatStore = create<ChatState>()(
       newSession: async (agentId: string) => {
         const currentSk = get().sessionKeys[agentId]
         const currentMsgs = currentSk ? get().sessions[currentSk] || [] : []
-        if (currentMsgs.length === 0 && currentSk) return
+        if (currentMsgs.length === 0 && currentSk) {
+          toast.info('当前已经是全新会话')
+          return
+        }
 
         try {
           if (currentSk) {

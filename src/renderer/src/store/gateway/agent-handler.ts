@@ -98,7 +98,7 @@ export const applyAgentEvent = (
           role: 'assistant',
           content: [{ type: 'text', text: i18n.t('skills.activated', { name: skillName }) }],
           timestamp: Date.now(),
-          id: `skill-${Date.now()}`
+          id: `skill-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
         })
         updates.sessions = { ...state.sessions, [sk]: [...currentMsgs, noticeMsg] }
         break

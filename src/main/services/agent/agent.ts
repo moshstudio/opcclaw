@@ -22,7 +22,6 @@ import { createModelDef } from '@main/services/provider/model-factory'
 import type { MiniAgentEvent } from './agent-events'
 import type { AgentConfig, RunResult, Message, InteractionResult } from '@shared/types/agent'
 import { DEFAULT_CONTEXT_TOKENS, MIN_CONTEXT_TOKENS } from '@shared/types/agent'
-import type { EventOf } from '@shared/types/gateway'
 export type { AgentConfig, RunResult, Message }
 
 // 导入核心子服务
@@ -259,7 +258,9 @@ export class Agent {
         )
 
         if (canNotify) {
-          this.logger.info(`Triggering notification run in designated session: ${o.notifySessionKey}`)
+          this.logger.info(
+            `Triggering notification run in designated session: ${o.notifySessionKey}`
+          )
           // 在原频道发起一次主动运行，提示词要求 AI 向用户汇报结果
           // 这样用户能看到 AI 在原频道里针对这个结果的实时回复
           await this.run(
@@ -267,7 +268,9 @@ export class Agent {
             `### [定时任务完成通报]\n\n后台任务已执行完毕，以下是执行结果。请根据此结果向频道用户进行简要通报（如果结果提示没有重要更新，则可礼貌地忽略）：\n\n---\n\n${res.text}`
           )
         } else if (o.notifySessionKey) {
-          this.logger.warn(`Heartbeat notify skipped: Result text is empty for ${o.notifySessionKey}`)
+          this.logger.warn(
+            `Heartbeat notify skipped: Result text is empty for ${o.notifySessionKey}`
+          )
         }
 
         return { text: 'Executed heartbeat task' }
@@ -449,9 +452,14 @@ export class Agent {
         if (match) {
           matchedSkillName = match.command.skillName
           const args = match.args || ''
-          // 对齐 OpenClaw: 改写消息告诉模型使用哪个技能
-          processedInput = `Use the "${matchedSkillName}" skill for this request.\n\nUser input:\n${args}`
-          this.logger.info(`Skill command matched: /${match.command.name} -> ${matchedSkillName}`)
+
+          // 核心更变：直接加载并渲染 Markdown 模板 (Claude Code style)
+          const renderedPrompt = await this.skillManager.renderTemplate(matchedSkillName, args)
+          processedInput = renderedPrompt
+
+          this.logger.info(
+            `Skill command matched and expanded: /${match.command.name} -> ${matchedSkillName}`
+          )
 
           // 发送技能触发事件，让 UI 能够感知到
           this.emit({

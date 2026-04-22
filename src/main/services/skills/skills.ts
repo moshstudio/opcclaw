@@ -542,4 +542,28 @@ export class SkillManager {
   getRoots(): string[] {
     return [this.builtInDir, this.managedDir, path.join(this.workspaceDir, 'skills')]
   }
+
+  /**
+   * 渲染技能模板 (Claude Code style)
+   * 支持替换 $ARGUMENTS 和 {{args}}
+   */
+  public async renderTemplate(skillName: string, args: string = ''): Promise<string> {
+    const entry = this.entries.find((e) => e.skill.name === skillName)
+    if (!entry) return args
+
+    try {
+      const raw = await fs.readFile(entry.skill.filePath, 'utf-8')
+      // 移除 frontmatter
+      const body = raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '')
+
+      // 替换占位符
+      return body
+        .replace(/\$ARGUMENTS/g, args)
+        .replace(/\{\{args\}\}/g, args)
+        .trim()
+    } catch (err) {
+      console.error(`Failed to render skill template for ${skillName}:`, err)
+      return args
+    }
+  }
 }

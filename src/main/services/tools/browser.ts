@@ -374,7 +374,24 @@ abstract class BasePlaywrightEngine implements BrowserEngine {
     return `✅ 已切换到标签页 T${index}: "${await session.page.title().catch(() => '...')}"`
   }
 
-  abstract setVisible(sessionKey: string, visible: boolean): Promise<string>
+  protected async setWindowState(page: Page, state: 'normal' | 'minimized'): Promise<boolean> {
+    try {
+      const cdp = await page.context().newCDPSession(page)
+      const { windowId } = (await cdp.send('Browser.getWindowForTarget')) as { windowId: number }
+      await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: state } })
+      await cdp.detach()
+      return true
+    } catch (err) {
+      logger.warn(`设置窗口状态失败 [${state}]:`, err)
+      return false
+    }
+  }
+
+  async setVisible(sessionKey: string, visible: boolean) {
+    const { page } = await this.ensureSession(sessionKey)
+    const success = await this.setWindowState(page, visible ? 'normal' : 'minimized')
+    return success ? `✅ 窗口已${visible ? '还原' : '最小化'}` : `❌ 显隐操作失败`
+  }
 
   async close(sessionKey?: string) {
     if (sessionKey) {
@@ -452,6 +469,9 @@ class PlaywrightHostEngine extends BasePlaywrightEngine {
         page = await context.newPage()
       }
       this.sessions.set(sessionKey, { context, page })
+
+      // 启动时自动最小化窗口
+      await this.setWindowState(page, 'minimized')
     }
   }
 
@@ -527,28 +547,6 @@ class PlaywrightHostEngine extends BasePlaywrightEngine {
     return paths.find((p) => existsSync(p)) || null
   }
 
-  async setVisible(sessionKey: string, visible: boolean) {
-    const { page } = await this.ensureSession(sessionKey)
-    const success = await this.setWindowState(page, visible ? 'normal' : 'minimized')
-    return success ? `✅ 窗口已${visible ? '还原' : '最小化'}` : `❌ 显隐操作失败`
-  }
-
-  /**
-   * 内部方法：设置指定页面的窗口状态
-   */
-  private async setWindowState(page: Page, state: 'normal' | 'minimized'): Promise<boolean> {
-    try {
-      const cdp = await page.context().newCDPSession(page)
-      const { windowId } = (await cdp.send('Browser.getWindowForTarget')) as { windowId: number }
-      await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: state } })
-      await cdp.detach()
-      return true
-    } catch (err) {
-      logger.warn(`设置窗口状态失败 [${state}]:`, err)
-      return false
-    }
-  }
-
   async navigate(sessionKey: string, url: string) {
     const res = await super.navigate(sessionKey, url)
     const { page } = await this.ensureSession(sessionKey)
@@ -602,7 +600,10 @@ class PlaywrightSandboxEngine extends BasePlaywrightEngine {
     }
 
     if (!this.browser) {
-      this.browser = await chromium.launch({ headless: false })
+      this.browser = await chromium.launch({
+        headless: false,
+        args: ['--start-minimized']
+      })
     }
 
     if (this.sessions.has(sessionKey) && !this.isSessionValid(sessionKey)) {
@@ -617,15 +618,10 @@ class PlaywrightSandboxEngine extends BasePlaywrightEngine {
       })
       const page = await context.newPage()
       this.sessions.set(sessionKey, { context, page })
-    }
-  }
 
-  async setVisible(sessionKey: string, visible: boolean) {
-    if (visible) {
-      const { page } = await this.ensureSession(sessionKey)
-      await page.bringToFront().catch(() => {})
+      // 启动时自动最小化窗口
+      await this.setWindowState(page, 'minimized')
     }
-    return '✅ [Sandbox] 已尝试置顶'
   }
 }
 
@@ -659,7 +655,7 @@ export const browserTool: Tool<{
         type: 'string',
         enum: ['sandbox', 'host'],
         description:
-          '运行环境：一次性简单操作使用 sandbox；登录账号、长流程或预期有后续步骤的操作使用 host。默认 host'
+          '运行环境：；登录账号、长流程或预期有后续步骤的操作使用 host; 一次性简单操作使用 sandbox。默认(优先使用) host'
       },
       url: { type: 'string', description: '跳转 URL' },
       targetId: { type: 'string', description: '操作目标 ID (见 snapshot 输出)' },

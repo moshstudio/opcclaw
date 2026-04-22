@@ -321,7 +321,7 @@ export class HeartbeatManager {
       coalesceMs: config.coalesceMs ?? 250,
       duplicateWindowMs: config.duplicateWindowMs ?? 24 * 60 * 60 * 1000,
       activeHours: config.activeHours,
-      notifySessionKey: config.notifySessionKey,
+      notifySessionKey: config.notifySessionKey ?? 'main:s1',
       workspaceDir: config.workspaceDir ?? workspaceDir
     }
 
@@ -469,6 +469,10 @@ export class HeartbeatManager {
     }
     if (config.enabled !== undefined) {
       this.config.enabled = config.enabled
+      // 关键修复：如果禁用，立即停止所有计时器
+      if (!this.config.enabled && this.started) {
+        this.stop()
+      }
     }
     if (config.notifySessionKey !== undefined) {
       this.config.notifySessionKey = config.notifySessionKey
@@ -477,7 +481,7 @@ export class HeartbeatManager {
       this.workspaceDir = config.workspaceDir
     }
 
-    // 重新调度 (scheduleNext 内部现在已自带清理逻辑)
+    // 重新调度 (如果启用的话)
     if (this.started && this.config.enabled) {
       this.scheduleNext()
     }
@@ -526,7 +530,7 @@ export class HeartbeatManager {
    * 增加随机偏移 (Jitter)，防止多个 Agent 同时触发
    */
   private scheduleNext(): void {
-    if (!this.started) return
+    if (!this.started || !this.config.enabled) return
 
     // 修复: 必须先清理旧定时器，防止并行定时器导致采集频率倍增
     if (this.state.timer) {
@@ -563,6 +567,11 @@ export class HeartbeatManager {
   private async runOnce(reason?: string): Promise<HeartbeatResult> {
     const startMs = Date.now()
     const wakeReason = (reason as WakeReason) || 'requested'
+
+    // 关键检查：如果任务已禁用，且不是手动强制触发，则跳过
+    if (!this.config.enabled && wakeReason !== 'requested') {
+      return { status: 'skipped', reason: 'disabled' }
+    }
 
     this.state.isRunning = true
     this.statusCallback?.()

@@ -88,6 +88,33 @@ export const handleToolsList: Handler = async (_params, _client, _ctx) => {
 }
 
 /**
+ * skills:commands
+ */
+export const handleSkillsCommands: Handler = async (params, _client, ctx) => {
+  const check = ensureParams(params, { agentId: 'string?' })
+  if (!check.ok) return check
+
+  const { agentId = 'main' } = check.values
+  const agentCheck = await getAgentOrError(ctx, agentId)
+  if (!agentCheck.ok) return agentCheck
+
+  try {
+    const skillManager = agentCheck.agent.getSkillManager()
+    const commands = await skillManager.listCommands()
+
+    return {
+      ok: true,
+      payload: {
+        agentId,
+        commands
+      }
+    }
+  } catch (err) {
+    return { ok: false, error: errorShape(ErrorCodes.UNAVAILABLE, String(err)) }
+  }
+}
+
+/**
  * skills.list
  */
 export const handleSkillsList: Handler = async (params, _client, ctx) => {

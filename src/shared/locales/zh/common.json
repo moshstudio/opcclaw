@@ -243,5 +243,7 @@
   "target": "目标",
   "show_more": "显示更多",
   "add": "添加",
-  "no_results": "暂无匹配结果"
+  "no_results": "暂无匹配结果",
+  "reset_agent": "重置智能体",
+  "commands": "可用指令"
 }

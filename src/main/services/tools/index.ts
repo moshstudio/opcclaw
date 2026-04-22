@@ -17,6 +17,7 @@ export {
   memorySaveTool,
   sessionsSpawnTool,
   scheduleTaskTool,
+  webFetchTool,
   browserTool
 } from './builtin'
 export { combineAbortSignals, wrapToolWithAbortSignal, abortable } from './abort'

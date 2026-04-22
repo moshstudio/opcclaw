@@ -2,10 +2,20 @@ import { create } from 'zustand'
 import { getGatewayClient } from '../services/gateway-client'
 import { Skill } from '@shared/types/agent'
 
+export interface SkillCommand {
+  name: string
+  skillName: string
+  description: string
+}
+
 interface SkillState {
   skills: Record<string, Skill[]> // Key: agentId
   isLoading: Record<string, boolean> // Key: agentId
   error: string | null
+  commands: SkillCommand[]
+
+  // Actions
+  fetchCommands: (agentId?: string) => Promise<void>
 
   // Actions
   fetchSkills: (agentId: string) => Promise<void>
@@ -24,6 +34,21 @@ export const useSkillStore = create<SkillState>((set, get) => ({
   skills: {},
   isLoading: {},
   error: null,
+  commands: [],
+
+  fetchCommands: async (agentId) => {
+    try {
+      const res = await getGatewayClient().request<{ commands: SkillCommand[] }>(
+        'skills:commands',
+        {
+          agentId
+        }
+      )
+      set({ commands: res.commands || [] })
+    } catch (err) {
+      console.error('[SkillStore] Failed to fetch commands:', err)
+    }
+  },
 
   fetchSkills: async (agentId: string) => {
     set((s) => ({
@@ -94,6 +119,10 @@ export const useSkillStore = create<SkillState>((set, get) => ({
     const types = ['agent:updated', 'agent:skill-triggered']
     if (types.includes(payload.type) && payload.agentId) {
       get().fetchSkills(payload.agentId)
+      // skill-triggered 时也刷新命令列表，确保 UI 补全菜单与后端同步
+      if (payload.type === 'agent:skill-triggered') {
+        get().fetchCommands(payload.agentId)
+      }
     }
   }
 }))

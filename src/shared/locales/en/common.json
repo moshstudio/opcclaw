@@ -234,5 +234,7 @@
   "target": "Target",
   "show_more": "Show More",
   "add": "Add",
-  "no_results": "No results found"
+  "no_results": "No results found",
+  "reset_agent": "Reset Agent",
+  "commands": "Available Commands"
 }

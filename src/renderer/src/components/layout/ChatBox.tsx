@@ -91,8 +91,26 @@ const ChatBox: React.FC<ChatBoxProps> = ({ settingsVisible, toggleSettings }) =>
       return
     }
 
-    const text = input
+    const text = input.trim()
     setInput('')
+
+    // 处理内置 Slash 命令
+    if (text === '/new') {
+      if (activeAgentId) await newSession(activeAgentId)
+      return
+    }
+    if (text === '/reset') {
+      if (activeAgentId) {
+        await resetSession(activeAgentId)
+        // 此处可以增加重启智能体逻辑，目前业务逻辑主要依赖 session 重置
+      }
+      return
+    }
+    if (text === '/settings') {
+      toggleSettings()
+      return
+    }
+
     await sendMessage(text, activeAgentId)
   }
 
@@ -132,6 +150,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ settingsVisible, toggleSettings }) =>
         inputRef={inputRef}
         currentError={currentError}
         chatStatus={chatStatus}
+        activeAgentId={activeAgentId}
       />
     </div>
   )
