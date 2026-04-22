@@ -25,17 +25,19 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 10.29.2
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'pnpm'
 
-      - name: Remove mirror settings for CI
+      - name: Configure pnpm for CI
         run: |
-          echo "shamefully-hoist=true" > .npmrc
+          pnpm config set store-dir .pnpm-store
+          # 仅在 CI 中移除镜像配置，防止 404，但不破坏原始 .npmrc
+          sed -i '/mirror/d' .npmrc
         shell: bash
 
       - name: Install dependencies
